@@ -1,0 +1,15 @@
+{
+  "name": "study-buddy",
+  "version": "1.0.0",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix frontend\" \"cross-env NODE_ENV=development electron .\"",
+    "build": "npm run build --prefix frontend && electron-forge make"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.4.0",
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3",
+    "electron": "^31.0.0"
+  }
+}
