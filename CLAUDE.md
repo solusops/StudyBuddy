@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Study Buddy is a **local-first Electron desktop app** — an agentic study partner. Gemma 4 on Cerebras acts as a Cognitive Translator: it organises and rephrases student-uploaded content, never generates facts from its own weights. Students must upload their own material (no free lunch). The app ships as a native desktop executable; Python FastAPI runs as a child process spawned by Electron.
+Study Buddy is a **local-first Electron desktop app** — an agentic study partner. Gemma 4 on Cerebras acts as a Cognitive Translator: it organises and rephrases student-uploaded content, never generates facts from its own weights. Students must upload their own material. The app ships as a native desktop executable; Python FastAPI runs as a child process spawned by Electron.
 
 **Implementation plan:** `C:\Users\SystemSu\.claude\plans\deep-forging-lampson.md`
 
@@ -13,10 +13,11 @@ Study Buddy is a **local-first Electron desktop app** — an agentic study partn
 ## Running the App
 
 ```bash
-# Prerequisites: Python 3.11+, Node.js 20+
+# Prerequisites: Python 3.11+, Node.js 20+, uv (https://docs.astral.sh/uv/)
 
 # First time
-pip install -r backend/requirements.txt
+cd backend && uv sync              # installs all Python deps + dev group via uv
+cd ..
 npm install                        # root Electron deps
 npm install --prefix frontend      # React deps
 
@@ -24,15 +25,15 @@ npm install --prefix frontend      # React deps
 npm run dev
 ```
 
-Backend only: `cd backend && uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+Backend only: `cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
 Frontend only: `cd frontend && npm run dev`
 
 ## Running Tests
 
 ```bash
 # Backend
-cd backend && pytest tests/ -v
-cd backend && pytest tests/test_cerebras_errors.py -v   # single file
+cd backend && uv run pytest tests/ -v
+cd backend && uv run pytest tests/test_cerebras_errors.py -v   # single file
 
 # Frontend
 cd frontend && npx vitest run
@@ -44,6 +45,7 @@ cd frontend && npx vitest run src/store/__tests__/       # single dir
 ## Architecture
 
 Three processes at runtime:
+
 - **Electron main** (`electron/main.js`) — spawns Python on port 8000, owns the BrowserWindow, exposes file-system IPC via `contextBridge`
 - **Vite/React renderer** — `http://localhost:5173` in dev, `dist/index.html` in prod. Connects to backend at hardcoded `http://127.0.0.1:8000` / `ws://127.0.0.1:8000` (no env var in prod)
 - **FastAPI backend** — all agents, RAG, WebSocket dispatch
@@ -60,6 +62,7 @@ ChromaDB holds **what the uploaded material says**. Cognee holds **how this stud
 ### Upload Flow
 
 Two dropboxes per session:
+
 - **Content** (required): PDFs/DOCX/TXT — the student's textbook or notes
 - **Questions** (optional): past exam papers, Q&A sheets
 
@@ -80,6 +83,7 @@ All agents call `CerebrasClient.structured_complete()` with `strict=True` Pydant
 ### Familiarity Profiles
 
 Student-selected level changes prompt vocabulary throughout the session:
+
 - `eli5` — sensory analogies, zero math, ≤2-syllable vocabulary
 - `high_school` — standard terminology defined inline, real-world examples
 - `graduate` — assume domain competence, focus on edge cases
@@ -90,6 +94,7 @@ Student-selected level changes prompt vocabulary throughout the session:
 React Flow canvas. 6–25 concept nodes derived from uploaded content. Nodes: typed edges, sized by average mastery score, coloured by status (`LOCKED` grey / `ACTIVE` blue / `MASTERED` green). Four scores per node: **Memory, Comprehension, Structure, Application** (0–100).
 
 **Node score invariant — monotone non-decreasing.** Scores can only increase. Enforced in two places — both must stay correct or student progress is permanently corrupted:
+
 - `backend/app/services/graph_state.py` → `GraphStateManager.apply_node_patch()`
 - `frontend/src/store/graphStore.ts` → `applyNodePatch()`
 
@@ -183,6 +188,6 @@ Structured outputs always use `strict=True` + `additionalProperties: false` at e
 - Cognee never writes to cloud — local LanceDB only at `~/.studybuddy/cognee/`
 - Python 3.11+ required on host machine (assumed installed; not bundled in v1)
 
-## Cut from v1
+## Planned V2
 
-Story Agent, Crunch Mode / Google Calendar, Handwriting synthesis engine, Daily cron logs, OER fetching (no Zero-to-Hero content generation from external APIs)
+Google Tasks/Calendar, TTS/STT, Voice AI, Handwriting synthesis engine, Daily cron logs, OER fetching (no Zero-to-Hero content generation from external APIs)
