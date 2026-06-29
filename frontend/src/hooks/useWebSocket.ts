@@ -3,7 +3,10 @@ import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import type { Flashcard, MCQ, NodePatch, WSMessage } from "../types"
 
-const API_BASE = "ws://127.0.0.1:8000"
+// In dev, Vite proxies /ws/* to the backend. In Electron prod, use direct localhost.
+const WS_BASE = window.location.protocol === "file:"
+  ? "ws://127.0.0.1:8000"
+  : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
 
 export function useWebSocket(sessionId: string | null) {
   const ws = useRef<WebSocket | null>(null)
@@ -31,7 +34,7 @@ export function useWebSocket(sessionId: string | null) {
   useEffect(() => {
     if (!sessionId) return
 
-    const socket = new WebSocket(`${API_BASE}/ws/${sessionId}`)
+    const socket = new WebSocket(`${WS_BASE}/ws/${sessionId}`)
     ws.current = socket
 
     socket.onmessage = (event) => {

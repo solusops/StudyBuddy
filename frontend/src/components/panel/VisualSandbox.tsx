@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { HTML5VisualPayload } from "../../types"
 
-const API_BASE = "http://127.0.0.1:8000"
+const API_BASE = ""
 
 // Wraps the visual HTML with an onerror handler that posts SANDBOX_ERROR to parent
 function wrapHtml(htmlCode: string): string {

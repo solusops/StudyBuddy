@@ -1,7 +1,7 @@
 import { useState } from "react"
 import type { FamiliarityLevel } from "../../types"
 
-const API_BASE = "http://127.0.0.1:8000"
+const API_BASE = ""
 
 const FAMILIARITY_OPTIONS: { value: FamiliarityLevel; label: string; desc: string }[] = [
   { value: "eli5", label: "ELI5", desc: "Sensory analogies, no math" },
