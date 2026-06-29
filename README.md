@@ -116,7 +116,7 @@ npx vitest run src/store/__tests__/
 
 ## Project structure
 
-```
+```tree
 
 StudyBuddy/
 ├── electron/           # Electron main process + preload IPC bridge

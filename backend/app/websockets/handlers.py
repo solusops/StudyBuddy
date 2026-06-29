@@ -14,6 +14,7 @@ from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.rag.chromadb_client import ChromaDBClient
+from app.rag.ingestion import LIBRARY_COLLECTION
 from app.schemas.journal import JournalEntry, JournalEventType
 from app.schemas.graph import NodeData
 from app.services.graph_state import GraphStateManager
@@ -76,7 +77,7 @@ async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str |
     loop = asyncio.get_event_loop()
     embedding = await loop.run_in_executor(None, db.embedder.embed, [query])
     where = {"type": chunk_type} if chunk_type else None
-    return db.query(session_id, embedding[0], n_results=n, where=where)
+    return db.query(LIBRARY_COLLECTION, embedding[0], n_results=n, where=where)
 
 
 def _safe_get_node(session_id: str, node_id: str) -> NodeData:

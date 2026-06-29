@@ -8,7 +8,7 @@ from pydantic import BaseModel
 logger = logging.getLogger(__name__)
 
 from app.agents.brain_agent import BrainAgent
-from app.rag.ingestion import ChunkType, ingest_file, ingest_text
+from app.rag.ingestion import LIBRARY_COLLECTION, ChunkType, ingest_file, ingest_text
 from app.schemas.session import FamiliarityLevel
 from app.services.student_memory import StudentMemoryService
 from app.websockets.handlers import get_db, get_graph_manager
@@ -56,7 +56,7 @@ async def ingest_file_endpoint(
     db = get_db()
     loop = asyncio.get_event_loop()
     count = await loop.run_in_executor(
-        None, ingest_file, content, filename, session_id, chunk_type, db
+        None, ingest_file, content, filename, LIBRARY_COLLECTION, chunk_type, db
     )
     return {"chunks_indexed": count, "filename": file.filename}
 
@@ -81,7 +81,7 @@ async def finalize_ingest(body: FinalizeRequest):
         db = get_db()
         loop = asyncio.get_event_loop()
         query_emb = await loop.run_in_executor(None, db.embedder.embed, ["main topics overview"])
-        chunks = db.query(body.session_id, query_emb[0], n_results=20)
+        chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
         if not chunks:
             raise HTTPException(400, "No content indexed. Upload at least one content file.")
 

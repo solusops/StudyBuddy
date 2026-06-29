@@ -1,14 +1,14 @@
-"""Library router — folder-based content management.
+"""Library router — folder-based content management and direct file uploads.
 
-The student configures their content and questions folders once. The app
-scans those folders, chunks new files in the background, and generates
-the curriculum tree instantly from document structure (no RAG needed).
+Two content paths:
+- Folder-based (Electron): configure content/questions folders, scan in background
+- Upload-based (browser/Electron): drag-and-drop files, instant tree, background chunking
 """
 import asyncio
 import os
 from typing import List, Optional
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from app.agents.brain_agent import BrainAgent
@@ -200,3 +200,102 @@ async def highlight_concepts(req: HighlightConceptsRequest):
         req.familiarity,
     )
     return {"concepts": concepts}
+
+
+@router.post("/upload-and-start")
+async def upload_and_start(
+    background_tasks: BackgroundTasks,
+    session_id: str = Form(...),
+    familiarity: str = Form("high_school"),
+    topic_hint: str = Form(""),
+    files: List[UploadFile] = File(...),
+):
+    """Accept direct file uploads (drag-and-drop), generate tree instantly, chunk in background.
+
+    Works in both browser (no Electron needed) and Electron.
+    - Reads document structure (headings/first pages) immediately — no embedding needed
+    - Generates curriculum tree in ~2s
+    - Chunks full documents into LIBRARY_COLLECTION in background
+    """
+    if not files:
+        raise HTTPException(400, "No files uploaded")
+
+    overviews = []
+    file_store: List[tuple] = []  # (bytes, filename) for background chunking
+
+    for f in files[:5]:  # cap at 5 to keep prompt manageable
+        content = await f.read()
+        filename = f.filename or "upload"
+        structure = extract_document_structure(content, filename)
+        overviews.append({"filename": filename, "structure_text": structure})
+        file_store.append((content, filename))
+
+    loop = asyncio.get_event_loop()
+    nodes = await loop.run_in_executor(
+        None,
+        _get_brain().extract_curriculum_from_documents,
+        overviews,
+        familiarity,
+        topic_hint,
+        "",
+    )
+
+    get_graph_manager().set_graph(session_id, nodes)
+
+    # Background: chunk full documents into LIBRARY_COLLECTION for RAG
+    db = get_db()
+
+    def _chunk_all():
+        for content, filename in file_store:
+            ingest_file(content, filename, LIBRARY_COLLECTION, db=db)
+
+    background_tasks.add_task(_chunk_all)
+
+    return {
+        "status": "ready",
+        "nodes": [n.model_dump() for n in nodes],
+        "filenames": [name for _, name in file_store],
+    }
+
+
+class RefineTreeRequest(BaseModel):
+    session_id: str
+    user_feedback: str
+    familiarity: str = "high_school"
+
+
+@router.post("/refine-tree")
+async def refine_tree(req: RefineTreeRequest):
+    """Regenerate the curriculum tree based on student feedback.
+
+    Queries existing RAG chunks and re-derives the tree with the student's
+    guidance injected as context. The tree stays grounded in the uploaded content.
+    """
+    db = get_db()
+    chunk_count = db.collection_count(LIBRARY_COLLECTION)
+    if chunk_count == 0:
+        raise HTTPException(
+            400,
+            "Content is still being indexed — wait a moment, then try again.",
+        )
+
+    loop = asyncio.get_event_loop()
+    query_emb = await loop.run_in_executor(
+        None, db.embedder.embed, ["main topics overview summary table of contents"]
+    )
+    chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
+
+    guidance_note = f"Student feedback on the previous tree: {req.user_feedback}"
+    nodes = await loop.run_in_executor(
+        None,
+        _get_brain().extract_curriculum,
+        chunks,
+        req.familiarity,
+        guidance_note,
+    )
+
+    get_graph_manager().set_graph(req.session_id, nodes)
+    return {
+        "status": "ready",
+        "nodes": [n.model_dump() for n in nodes],
+    }

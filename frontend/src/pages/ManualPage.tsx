@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { PDFReader } from "../components/reader/PDFReader"
 import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
-import { useWebSocket } from "../hooks/useWebSocket"
 import { saveMarkdownFile, sanitizeFilename } from "../lib/fileSystem"
 import type { AppSession } from "../App"
 import type { NodeData } from "../types"
@@ -11,11 +10,12 @@ import type { Edge, Node } from "@xyflow/react"
 
 interface Props {
   session: AppSession | null
+  sendEvent: (type: string, data?: Record<string, unknown>) => void
   onShowTree: () => void
   onNeedSetup: () => void
 }
 
-export function ManualPage({ session, onShowTree, onNeedSetup }: Props) {
+export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph } = useGraphStore()
   const { setSession, resetNodeData, activeNodeId, setActiveNode } = useSessionStore()
 
@@ -140,8 +140,7 @@ export function ManualPage({ session, onShowTree, onNeedSetup }: Props) {
     setTimeout(() => clearInterval(interval), 120_000)
   }
 
-  // -- WebSocket ----------------------------------------------------------
-  const { sendEvent } = useWebSocket(sessionId)
+  // -- WebSocket -- sendEvent is provided by parent App (single connection) --
 
   // Listen for session complete
   useEffect(() => {

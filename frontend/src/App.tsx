@@ -2,6 +2,7 @@ import { useEffect, useState } from "react"
 import { SetupModal } from "./components/init/SetupModal"
 import { ManualPage } from "./pages/ManualPage"
 import { TreePage } from "./pages/TreePage"
+import { useWebSocket } from "./hooks/useWebSocket"
 import type { FamiliarityLevel, NodeData } from "./types"
 
 export type AppView = "setup" | "manual" | "tree"
@@ -11,7 +12,7 @@ export interface AppSession {
   topic: string
   familiarity: FamiliarityLevel
   nodes: NodeData[]
-  contentFiles: string[]  // file paths
+  contentFiles: string[]
 }
 
 export default function App() {
@@ -19,23 +20,25 @@ export default function App() {
   const [session, setSession] = useState<AppSession | null>(null)
   const [checking, setChecking] = useState(true)
 
+  // Single WebSocket at App level — persists across view transitions
+  const { sendEvent } = useWebSocket(session?.sessionId ?? null)
+
   // On mount, check if library is already configured
   useEffect(() => {
     fetch("/library/status")
       .then((r) => r.json())
       .then((status) => {
         if (status.configured && status.content_files.length > 0) {
-          // Library ready — go directly to manual view (setup in background)
           setView("manual")
         }
       })
-      .catch(() => {/* network not ready yet */})
+      .catch(() => {/* backend not ready yet */})
       .finally(() => setChecking(false))
   }, [])
 
   const handleSessionReady = (s: AppSession) => {
     setSession(s)
-    setView("manual")
+    setView("tree")  // show tree first after upload
   }
 
   if (checking) {
@@ -53,8 +56,10 @@ export default function App() {
   if (view === "tree") {
     return (
       <TreePage
-        nodes={session?.nodes ?? []}
+        session={session}
+        sendEvent={sendEvent}
         onBack={() => setView("manual")}
+        onNeedSetup={() => setView("setup")}
       />
     )
   }
@@ -62,6 +67,7 @@ export default function App() {
   return (
     <ManualPage
       session={session}
+      sendEvent={sendEvent}
       onShowTree={() => setView("tree")}
       onNeedSetup={() => setView("setup")}
     />
