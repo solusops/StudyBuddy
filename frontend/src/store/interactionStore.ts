@@ -43,7 +43,13 @@ interface InteractionStore {
   addAnnotation: (annotation: CommittedAnnotation) => void
   updateAnnotationNote: (id: string, note: string) => void
   removeAnnotation: (id: string) => void
+  notePositions: Record<string, number>
+  updateNotePosition: (id: string, yNorm: number) => void
 }
+
+// Load initial note positions from localStorage
+const savedPositions = localStorage.getItem("studybuddy_note_positions")
+const initialPositions = savedPositions ? JSON.parse(savedPositions) : {}
 
 export const useInteractionStore = create<InteractionStore>((set) => ({
   cursorMode: "DEFAULT",
@@ -51,6 +57,7 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
   activeAnnotationId: null,
   committedAnnotations: [],
   documentId: null,
+  notePositions: initialPositions,
 
   setCursorMode: (mode) => set({ cursorMode: mode }),
   pushSnippet: (snippet) =>
@@ -71,4 +78,10 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
     set((s) => ({
       committedAnnotations: s.committedAnnotations.filter((a) => a.annotation_id !== id),
     })),
+  updateNotePosition: (id, yNorm) =>
+    set((s) => {
+      const next = { ...s.notePositions, [id]: yNorm }
+      localStorage.setItem("studybuddy_note_positions", JSON.stringify(next))
+      return { notePositions: next }
+    }),
 }))

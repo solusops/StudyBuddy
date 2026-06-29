@@ -22,7 +22,83 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
     clearGroup,
     addAnnotation,
     cursorMode,
+    notePositions,
+    updateNotePosition,
+    updateAnnotationNote,
+    removeAnnotation,
   } = useInteractionStore()
+
+  // Editing states
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null)
+  const [editingNoteText, setEditingNoteText] = useState("")
+
+  // Draggable states
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const dragStartYRef = useRef(0)
+  const dragStartNormYRef = useRef(0)
+
+  // Drag listeners
+  useEffect(() => {
+    if (!draggingId) return
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaY = e.clientY - dragStartYRef.current
+      const deltaNormY = deltaY / pageHeightPx
+      let nextNormY = dragStartNormYRef.current + deltaNormY
+      nextNormY = Math.max(0, Math.min(1, nextNormY))
+      updateNotePosition(draggingId, nextNormY)
+    }
+
+    const handleMouseUp = () => {
+      setDraggingId(null)
+    }
+
+    window.addEventListener("mousemove", handleMouseMove)
+    window.addEventListener("mouseup", handleMouseUp)
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove)
+      window.removeEventListener("mouseup", handleMouseUp)
+    }
+  }, [draggingId, pageHeightPx, updateNotePosition])
+
+  const handleMouseDown = (e: React.MouseEvent, annotationId: string, currentYNorm: number) => {
+    if (e.button !== 0) return // only left click
+    // Don't drag if we are editing this note
+    if (editingNoteId === annotationId) return
+    e.stopPropagation()
+    setDraggingId(annotationId)
+    dragStartYRef.current = e.clientY
+    dragStartNormYRef.current = currentYNorm
+  }
+
+  const finishEditing = async (annotationId: string) => {
+    setEditingNoteId(null)
+    const trimmed = editingNoteText.trim()
+
+    if (trimmed === "") {
+      // Empty note text -> delete the note and its highlights
+      try {
+        await fetch(`/annotations/${annotationId}`, {
+          method: "DELETE",
+        })
+      } catch (err) {
+        console.error("Failed to delete annotation on backend:", err)
+      }
+      removeAnnotation(annotationId)
+    } else {
+      // Save changes
+      try {
+        await fetch(`/annotations/${annotationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note_text: trimmed }),
+        })
+        updateAnnotationNote(annotationId, trimmed)
+      } catch (err) {
+        console.error("Failed to update annotation note on backend:", err)
+      }
+    }
+  }
 
   const [draftNote, setDraftNote] = useState("")
   const [draftStatus, setDraftStatus] = useState<"idle" | "draft" | "saving" | "error">("idle")
@@ -34,7 +110,10 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
     .map((ann) => {
       const firstSnippet = ann.target_snippets.find((s) => s.page_number === pageNumber)
       if (!firstSnippet || !firstSnippet.boxes[0]) return null
-      return { annotation: ann, yNorm: firstSnippet.boxes[0].y }
+      // Use override position if exists, otherwise fallback to the first snippet box y
+      const savedYNorm = notePositions[ann.annotation_id]
+      const yNorm = typeof savedYNorm === "number" ? savedYNorm : firstSnippet.boxes[0].y
+      return { annotation: ann, yNorm }
     })
     .filter(Boolean) as GutterNote[]
 
@@ -121,33 +200,76 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
       {gutterNotes.map(({ annotation, yNorm }) => {
         const topPx = Math.round(yNorm * pageHeightPx)
         const isActive = annotation.annotation_id === activeAnnotationId
+        const isDraggingThis = annotation.annotation_id === draggingId
+        const isEditingThis = annotation.annotation_id === editingNoteId
+
         return (
           <div
             key={annotation.annotation_id}
-            onClick={() => setActiveAnnotation(isActive ? null : annotation.annotation_id)}
+            onClick={(e) => {
+              if (cursorMode === "NOTE_APPEND") {
+                e.stopPropagation()
+                setEditingNoteId(annotation.annotation_id)
+                setEditingNoteText(annotation.note_text || "")
+              } else {
+                setActiveAnnotation(isActive ? null : annotation.annotation_id)
+              }
+            }}
+            onMouseDown={(e) => handleMouseDown(e, annotation.annotation_id, yNorm)}
             style={{
               position: "absolute",
               top: topPx,
               left: 8,
               right: 8,
               background: isActive ? "#EEF3F8" : "#FFFFFF",
-              border: `1.5px solid ${isActive ? "#1A3557" : "#E8E0D5"}`,
+              border: `1.5px solid ${isEditingThis ? "#F59E0B" : isActive ? "#1A3557" : "#E8E0D5"}`,
               borderRadius: 6,
-              padding: "6px 8px",
-              cursor: "pointer",
-              zIndex: 5,
-              boxShadow: isActive ? "0 2px 8px rgba(26,53,87,0.15)" : "0 1px 3px rgba(0,0,0,0.06)",
-              transition: "border-color 0.15s",
+              padding: isEditingThis ? "4px" : "6px 8px",
+              cursor: isEditingThis ? "text" : isDraggingThis ? "grabbing" : "grab",
+              zIndex: isEditingThis ? 10 : 5,
+              boxShadow: isEditingThis
+                ? "0 2px 12px rgba(245,158,11,0.25)"
+                : isActive
+                  ? "0 2px 8px rgba(26,53,87,0.15)"
+                  : "0 1px 3px rgba(0,0,0,0.06)",
+              transition: isDraggingThis ? "none" : "border-color 0.15s, top 0.1s",
+              userSelect: isEditingThis ? "text" : "none",
             }}
           >
-            <p style={{ margin: 0, fontSize: 12, color: "#1A3557", lineHeight: 1.45, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
-              {annotation.note_text || (
-                <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
-              )}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: 10, color: "#9CA3AF" }}>
-              {annotation.target_snippets.map((s) => s.text).join(" … ").slice(0, 60)}…
-            </p>
+            {isEditingThis ? (
+              <textarea
+                autoFocus
+                value={editingNoteText}
+                onChange={(e) => setEditingNoteText(e.target.value)}
+                onBlur={() => finishEditing(annotation.annotation_id)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault()
+                    ;(e.target as HTMLElement).blur()
+                  }
+                }}
+                rows={2}
+                style={{
+                  width: "100%",
+                  border: "none",
+                  background: "transparent",
+                  resize: "none",
+                  outline: "none",
+                  fontSize: 12,
+                  color: "#1A1A2E",
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                  boxSizing: "border-box",
+                  lineHeight: 1.45,
+                  padding: 2,
+                }}
+              />
+            ) : (
+              <p style={{ margin: 0, fontSize: 12, color: "#1A3557", lineHeight: 1.45, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                {annotation.note_text || (
+                  <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
+                )}
+              </p>
+            )}
           </div>
         )
       })}

@@ -48,7 +48,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
         zIndex: 10,
       }}
     >
-      {/* Committed annotations — blue */}
+      {/* Committed annotations — pink and dashed */}
       {committedAnnotations.map((ann: CommittedAnnotation) =>
         ann.target_snippets
           .filter((s) => s.page_number === pageNumber)
@@ -64,9 +64,9 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
                   width: `${box.w * 100}%`,
                   height: `${box.h * 100}%`,
                   background: activeAnnotationId === ann.annotation_id
-                    ? "rgba(26,53,87,0.25)"
-                    : "rgba(26,53,87,0.12)",
-                  borderBottom: "2px solid rgba(26,53,87,0.5)",
+                    ? "rgba(219, 39, 119, 0.25)"
+                    : "rgba(219, 39, 119, 0.12)",
+                  borderBottom: "2px dashed #DB2777",
                   cursor: "pointer",
                   pointerEvents: "auto",
                 }}
