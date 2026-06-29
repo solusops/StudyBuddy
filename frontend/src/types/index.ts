@@ -45,6 +45,7 @@ export interface LessonPayload {
 export interface HTML5VisualPayload {
   html_code: string
   animation_type: AnimationType
+  explanation?: string
 }
 
 export interface Flashcard {

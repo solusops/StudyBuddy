@@ -92,9 +92,20 @@ def _safe_get_node(session_id: str, node_id: str) -> NodeData:
         return NodeData(id=node_id, label=node_id, status="ACTIVE")
 
 
-# ------------------------------------------------------------------ #
-# Dispatch                                                            #
-# ------------------------------------------------------------------ #
+def _should_visualize(term: str, content: str) -> bool:
+    keywords = [
+        "orbit", "gravity", "body", "wave", "motion", "pendulum", "force", "vector", "trajectory", 
+        "projectile", "collision", "particle", "atom", "molecule", "energy", "equation", "function", 
+        "graph", "chart", "matrix", "tree", "sort", "algorithm", "binary", "optics", "light", "lens", 
+        "circuit", "resistor", "voltage", "current", "magnetic", "electric", "field", "cell", "mitosis", 
+        "heart", "brain", "muscle", "skeleton", "flow", "fluid", "pressure", "thermodynamics", "entropy", 
+        "chemical", "reaction", "equilibrium", "enzyme", "dna", "rna", "protein", "synthesis", "photosynthesis", 
+        "neuron", "synapse", "signal", "frequency", "amplitude", "fourier"
+    ]
+    term_lower = term.lower()
+    content_lower = content.lower()
+    return any(k in term_lower or k in content_lower for k in keywords)
+
 
 async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -> None:
     node_id: str = data.get("node_id", "")
@@ -430,6 +441,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             for word in cached.split(" "):
                 await _cm.send(session_id, "WIKI_TOKEN", {"token": word + " "})
             await _cm.send(session_id, "WIKI_DONE", {})
+            full = cached
         else:
             full = ""
             async for token in _wiki.stream_card(
@@ -439,6 +451,26 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 await _cm.send(session_id, "WIKI_TOKEN", {"token": token})
             _cache.put(cache_key, full)
             await _cm.send(session_id, "WIKI_DONE", {})
+
+        # ---- Generate visual if appropriate ----
+        if _should_visualize(selection_text, full):
+            await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
+            try:
+                import asyncio
+                loop = asyncio.get_event_loop()
+                visual = await loop.run_in_executor(
+                    None,
+                    _get_tutor().generate_visual,
+                    selection_text,
+                    "canvas",
+                    familiarity
+                )
+                await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
+                    "term": selection_text,
+                    "visual": visual.model_dump()
+                })
+            except Exception as e:
+                print("Error generating wiki visual:", e)
 
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":

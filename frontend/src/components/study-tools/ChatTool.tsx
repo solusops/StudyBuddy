@@ -32,6 +32,77 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
     })
   }
 
+  const renderInline = (text: string): string => {
+    // Bold: **text**
+    let result = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    // Links: [text](url)
+    result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
+    return result
+  }
+
+  const renderChatContent = (text: string) => {
+    const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
+    const lines = cleaned.split(/\r?\n/)
+    const elements: React.ReactNode[] = []
+    let listItems: string[] = []
+
+    const flushList = (key: string | number) => {
+      if (listItems.length > 0) {
+        elements.push(
+          <ul key={`list-${key}`} style={{ margin: "0 0 10px", paddingLeft: 20, lineHeight: 1.55 }}>
+            {listItems.map((item, li) => (
+              <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item) }} />
+            ))}
+          </ul>
+        )
+        listItems = []
+      }
+    }
+
+    lines.forEach((line, index) => {
+      const trimmed = line.trim()
+      if (!trimmed) return
+
+      // Headings
+      if (trimmed.startsWith("#")) {
+        flushList(index)
+        const headerText = trimmed.replace(/^#+\s*/, "")
+        elements.push(
+          <h4 key={index} style={{
+            fontFamily: "'Libre Caslon Text', Georgia, serif",
+            color: "#1A3557",
+            fontSize: 16,
+            fontWeight: 700,
+            margin: "14px 0 6px 0",
+            borderBottom: "1px solid #E8E0D5",
+            paddingBottom: 2
+          }}>
+            {headerText}
+          </h4>
+        )
+        return
+      }
+
+      // Bullets
+      if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+        const bulletContent = trimmed.replace(/^[*-]\s*/, "")
+        listItems.push(bulletContent)
+        return
+      }
+
+      flushList(index)
+
+      // Paragraph
+      elements.push(
+        <p key={index} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
+           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
+      )
+    })
+
+    flushList("trailing")
+    return elements
+  }
+
   const hasContext = !!selectionText
 
   return (
@@ -58,12 +129,11 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
               borderRadius: 10,
               maxWidth: "85%",
               fontSize: 14,
-              whiteSpace: "pre-wrap",
               lineHeight: 1.55,
               fontFamily: msg.role === "assistant" ? "'Libre Caslon Text', Georgia, serif" : "system-ui, sans-serif",
             }}
           >
-            {msg.content}
+            {msg.role === "assistant" ? renderChatContent(msg.content) : msg.content}
           </div>
         ))}
         {streamingChat && (
@@ -76,12 +146,11 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             borderRadius: 10,
             maxWidth: "85%",
             fontSize: 14,
-            whiteSpace: "pre-wrap",
             lineHeight: 1.55,
             fontFamily: "'Libre Caslon Text', Georgia, serif",
           }}>
-            {streamingChat}
-            <span style={{ opacity: 0.4 }}>▌</span>
+            {renderChatContent(streamingChat)}
+            <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
           </div>
         )}
         <div ref={bottomRef} />

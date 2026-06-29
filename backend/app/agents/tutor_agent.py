@@ -239,14 +239,18 @@ class TutorAgent:
                     f"Generate a self-contained HTML5 page visualising '{concept}'. "
                     f"{instruction} "
                     "No external URLs except the CDN scripts listed above. "
-                    "Inline all CSS. Dark background #0f0f0f."
+                    "Inline all CSS. Dark background #0f0f0f. "
+                    "Provide a clear, contextual explanation in the 'explanation' field of the schema for the student, "
+                    "explaining what is shown, what the interactive controls/sliders do, and how it helps them understand this concept."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Create an interactive {animation_type} visualisation of '{concept}' "
-                    f"for {familiarity} level students."
+                    f"for {familiarity} level students. "
+                    "Fill the 'explanation' field of the schema with a 2-3 sentence guide explaining what it represents, "
+                    "how to interact with it, and what it demonstrates."
                 ),
             },
         ]

@@ -21,9 +21,8 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
   const { nodes } = useGraphStore()
   const { setSelection } = useContextStore()
 
-  // Two independent tab controllers
-  const [activeTopTab, setActiveTopTab] = useState("Flashcards")
-  const [activeBottomTab, setActiveBottomTab] = useState("Chat")
+  // Unified tab controller for all 5 tabs
+  const [activeTab, setActiveTab] = useState("Infinite Wiki")
 
   const node = nodes.find((n) => n.id === activeNodeId)
 
@@ -31,14 +30,14 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
   // so Infinite Wiki can auto-fire on them
   const handlePanelMouseUp = useCallback(() => {
     const sel = window.getSelection()
-    if (activeBottomTab === "Infinite Wiki") return
+    if (activeTab === "Infinite Wiki") return
     if (!sel || sel.isCollapsed) {
       return
     }
     const text = sel.toString().trim()
     if (text.length < 3) return
     setSelection([], text, "")
-  }, [activeBottomTab, setSelection])
+  }, [activeTab, setSelection])
 
   const showScoreBar = node && (
     node.data.scores.memory > 0 ||
@@ -48,15 +47,16 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
   )
 
   return (
-    <div style={{
-      width: "44%",
-      minWidth: 340,
-      display: "flex",
-      flexDirection: "column",
-      background: "#FAF7F2",
-      borderLeft: "1px solid #E8E0D5",
-      height: "100%",
-    }}>
+    <div
+      style={{
+        width: "40%",
+        display: "flex",
+        flexDirection: "column",
+        background: "#FAF7F2",
+        borderLeft: "1px solid #E8E0D5",
+        height: "100%",
+      }}
+    >
       {/* Score bar (when a node has progress) */}
       {showScoreBar && (
         <div style={{ padding: "6px 16px", borderBottom: "1px solid #E8E0D5", background: "#FDFBF8", flexShrink: 0 }}>
@@ -64,60 +64,55 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
         </div>
       )}
 
-      {/* TOP HALF: Flashcards, Quiz, Feynman */}
-      <div style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-        borderBottom: "1px solid #E8E0D5",
-      }}>
-        <TabBar tabs={["Flashcards", "Quiz", "Feynman"]} active={activeTopTab} onChange={setActiveTopTab} />
-        <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-          {activeTopTab === "Flashcards" && (
-            activeNodeId ? (
-              <FlashcardTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
-            ) : (
-              <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to see flashcards.</div>
-            )
-          )}
-          {activeTopTab === "Quiz" && (
-            activeNodeId ? (
-              <QuizTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
-            ) : (
-              <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to take a quiz.</div>
-            )
-          )}
-          {activeTopTab === "Feynman" && (
-            activeNodeId ? (
-              <FeynmanTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
-            ) : (
-              <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Feynman mode.</div>
-            )
-          )}
-        </div>
-      </div>
+      {/* Main Tab bar */}
+      <TabBar
+        tabs={["Infinite Wiki", "Chat", "Flashcards", "Quiz", "Feynman"]}
+        active={activeTab}
+        onChange={setActiveTab}
+      />
 
-      {/* BOTTOM HALF: Chat, Infinite Wiki */}
-      <div style={{
-        flex: 1,
-        display: "flex",
-        flexDirection: "column",
-        minHeight: 0,
-      }} onMouseUp={handlePanelMouseUp}>
-        <TabBar tabs={["Chat", "Infinite Wiki"]} active={activeBottomTab} onChange={setActiveBottomTab} />
-        <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-          {activeBottomTab === "Chat" && (
-            activeNodeId ? (
-              <ChatTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
-            ) : (
-              <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to chat.</div>
-            )
-          )}
-          {activeBottomTab === "Infinite Wiki" && (
-            <InfiniteWiki isActive={activeBottomTab === "Infinite Wiki"} sendEvent={sendEvent} />
-          )}
-        </div>
+      {/* Tab contents */}
+      <div
+        style={{
+          flex: 1,
+          overflow: "auto",
+          display: "flex",
+          flexDirection: "column",
+          minHeight: 0,
+        }}
+        onMouseUp={handlePanelMouseUp}
+      >
+        {activeTab === "Flashcards" && (
+          activeNodeId ? (
+            <FlashcardTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
+          ) : (
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to see flashcards.</div>
+          )
+        )}
+        {activeTab === "Quiz" && (
+          activeNodeId ? (
+            <QuizTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
+          ) : (
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to take a quiz.</div>
+          )
+        )}
+        {activeTab === "Feynman" && (
+          activeNodeId ? (
+            <FeynmanTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
+          ) : (
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Feynman mode.</div>
+          )
+        )}
+        {activeTab === "Chat" && (
+          activeNodeId ? (
+            <ChatTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
+          ) : (
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to chat.</div>
+          )
+        )}
+        {activeTab === "Infinite Wiki" && (
+          <InfiniteWiki isActive={activeTab === "Infinite Wiki"} sendEvent={sendEvent} />
+        )}
       </div>
     </div>
   )

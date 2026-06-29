@@ -13,9 +13,10 @@ interface Props {
   visual: HTML5VisualPayload | null
   nodeId: string
   animationType?: string
+  height?: number
 }
 
-export function VisualSandbox({ visual, nodeId, animationType = "canvas" }: Props) {
+export function VisualSandbox({ visual, nodeId, animationType = "canvas", height }: Props) {
   const [srcDoc, setSrcDoc] = useState<string>("")
   const [repairing, setRepairing] = useState(false)
 
@@ -63,30 +64,48 @@ export function VisualSandbox({ visual, nodeId, animationType = "canvas" }: Prop
   }
 
   return (
-    <div style={{ position: "relative", width: "100%", height: 380, borderRadius: 8, overflow: "hidden" }}>
-      {repairing && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: "rgba(0,0,0,0.7)",
-            color: "white",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
-            fontSize: 14,
-          }}
-        >
-          Repairing visual…
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ position: "relative", width: "100%", height: height || 380, borderRadius: 8, overflow: "hidden", flexShrink: 0 }}>
+        {repairing && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.7)",
+              color: "white",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              zIndex: 10,
+              fontSize: 14,
+            }}
+          >
+            Repairing visual…
+          </div>
+        )}
+        <iframe
+          title="visual-sandbox"
+          srcDoc={srcDoc}
+          sandbox="allow-scripts"
+          style={{ width: "100%", height: "100%", border: "none", background: "#0f0f0f" }}
+        />
+      </div>
+
+      {visual && visual.explanation && (
+        <div style={{
+          padding: "10px 14px",
+          background: "#F0F5FA",
+          borderLeft: "4px solid #4A7FB5",
+          borderRadius: "0 8px 8px 0",
+          color: "#1A3557",
+          fontSize: 13,
+          lineHeight: 1.45,
+          fontFamily: "system-ui, sans-serif"
+        }}>
+          <strong style={{ display: "block", marginBottom: 4, fontSize: 13.5 }}>How it works:</strong>
+          {visual.explanation}
         </div>
       )}
-      <iframe
-        title="visual-sandbox"
-        srcDoc={srcDoc}
-        sandbox="allow-scripts"
-        style={{ width: "100%", height: "100%", border: "none", background: "#0f0f0f" }}
-      />
     </div>
   )
 }

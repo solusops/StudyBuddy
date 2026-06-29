@@ -98,6 +98,12 @@ export function useWebSocket(sessionId: string | null) {
         case "WIKI_DONE":
           window.dispatchEvent(new CustomEvent("wiki-done", {}))
           break
+        case "WIKI_VISUAL_START":
+          window.dispatchEvent(new CustomEvent("wiki-visual-start", { detail: msg.data }))
+          break
+        case "WIKI_VISUAL_PAYLOAD":
+          window.dispatchEvent(new CustomEvent("wiki-visual-payload", { detail: msg.data }))
+          break
       }
     }
 

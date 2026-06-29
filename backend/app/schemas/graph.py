@@ -42,6 +42,7 @@ class NodePatch(BaseModel):
 class HTML5VisualPayload(BaseModel):
     html_code: str = Field(description="Self-contained HTML5/CSS/JS code with inline styles.")
     animation_type: Literal["three.js", "canvas", "katex", "plot", "quote"]
+    explanation: str = Field("", description="A 2-3 sentence explanation describing exactly what the visualization demonstrates, how to use the interactive elements/sliders, and how it connects to the study material.")
 
 
 class ExternalAction(BaseModel):

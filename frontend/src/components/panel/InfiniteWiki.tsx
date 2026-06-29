@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
+import { VisualSandbox } from "./VisualSandbox"
 
 interface WikiPage {
   term: string
   content: string
   streaming: boolean
+  visual?: { html_code: string; animation_type: string } | null
+  visualLoading?: boolean
 }
 
 interface Props {
@@ -25,7 +28,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     (term: string, surrounding: string, parentContext: string = "") => {
       if (!term.trim() || term === lastFiredRef.current) return
       lastFiredRef.current = term
-      const page: WikiPage = { term, content: "", streaming: true }
+      const page: WikiPage = { term, content: "", streaming: true, visual: null, visualLoading: false }
       setStack((prev) => {
         const truncated = prev.slice(0, currentIdx + 1)
         return [...truncated, page]
@@ -52,7 +55,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
   }, [isActive, selectionText, surroundingContext, fireCard])
 
-  // Listen for WIKI_TOKEN / WIKI_DONE events dispatched from useWebSocket
+  // Listen for WIKI_TOKEN / WIKI_DONE and WIKI_VISUAL events dispatched from useWebSocket
   useEffect(() => {
     const onToken = (e: Event) => {
       const { token } = (e as CustomEvent).detail
@@ -71,11 +74,38 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         return next
       })
     }
+    const onVisualStart = (e: Event) => {
+      const { term } = (e as CustomEvent).detail
+      setStack((prev) => {
+        const next = [...prev]
+        const last = next[next.length - 1]
+        if (last && last.term === term) {
+          next[next.length - 1] = { ...last, visualLoading: true }
+        }
+        return next
+      })
+    }
+    const onVisualPayload = (e: Event) => {
+      const { term, visual } = (e as CustomEvent).detail
+      setStack((prev) => {
+        const next = [...prev]
+        const last = next[next.length - 1]
+        if (last && last.term === term) {
+          next[next.length - 1] = { ...last, visualLoading: false, visual }
+        }
+        return next
+      })
+    }
+
     window.addEventListener("wiki-token", onToken)
     window.addEventListener("wiki-done", onDone)
+    window.addEventListener("wiki-visual-start", onVisualStart)
+    window.addEventListener("wiki-visual-payload", onVisualPayload)
     return () => {
       window.removeEventListener("wiki-token", onToken)
       window.removeEventListener("wiki-done", onDone)
+      window.removeEventListener("wiki-visual-start", onVisualStart)
+      window.removeEventListener("wiki-visual-payload", onVisualPayload)
     }
   }, [])
 
@@ -229,7 +259,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       {/* Content area */}
       <div
         onMouseUp={handleDrillDown}
-        style={{ flex: 1, overflow: "auto", padding: "16px 20px", userSelect: "text" }}
+        style={{ flex: 1, overflow: "auto", padding: "16px 20px 48px", userSelect: "text" }}
       >
         {!currentPage ? (
           <div style={{ color: "#9CA3AF", fontSize: 14, fontFamily: "'Libre Caslon Text', Georgia, serif", textAlign: "center", paddingTop: 40 }}>
@@ -244,6 +274,43 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                 <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
               )}
             </div>
+            
+            {(currentPage.visual || currentPage.visualLoading) && (
+              <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
+                <h4 style={{
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                  color: "#1A3557",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  margin: "0 0 12px 0"
+                }}>
+                  Interactive Simulation
+                </h4>
+                {currentPage.visualLoading ? (
+                  <div style={{
+                    height: 240,
+                    background: "#0f0f0f",
+                    borderRadius: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#64748b",
+                    fontSize: 13,
+                    fontFamily: "system-ui, sans-serif"
+                  }}>
+                    Generating simulation...
+                  </div>
+                ) : (
+                  <VisualSandbox 
+                    visual={currentPage.visual || null} 
+                    nodeId={currentPage.term} 
+                    animationType="canvas" 
+                    height={330}
+                  />
+                )}
+              </div>
+            )}
+
             {!currentPage.streaming && currentPage.content && (
               <p style={{ marginTop: 18, fontSize: 12, color: "#9CA3AF", fontStyle: "italic", fontFamily: "system-ui, sans-serif" }}>
                 Highlight any word above to drill deeper ↓
