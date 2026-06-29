@@ -1,8 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&family=Caveat:wght@400;600;700&family=Patrick+Hand&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
   /* Kami palette */
-  --bg:           #FAF7F2;
+  --bg:           #FDFBF7;
   --surface:      #FFFFFF;
   --accent:       #1A3557;
   --accent-light: #4A7FB5;
@@ -11,6 +11,10 @@
   --border:       #E8E0D5;
   --success:      #2D6A4F;
   --warning:      #92400E;
+
+  /* Paperback Doodle fonts */
+  --font-hand:  'Caveat', 'Patrick Hand', cursive;
+  --font-serif: 'Merriweather', 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
 
   font: 18px/160% system-ui, 'Segoe UI', sans-serif;
   color: var(--text);
@@ -25,7 +29,25 @@
 
 body {
   margin: 0;
-  background: var(--bg);
+  background-color: var(--bg);
+}
+
+/* App-wide paper grain — a fixed, non-interactive overlay so the texture shows over
+   every surface (components hardcode their own backgrounds). Very low alpha = crisp text. */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 99999;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* Handwritten surfaces (margin notes, doodle labels) */
+.hand {
+  font-family: var(--font-hand);
+  letter-spacing: 0.01em;
 }
 
 #root {
@@ -54,6 +76,27 @@ body {
 @keyframes blink {
   0%, 100% { opacity: 1; }
   50%       { opacity: 0; }
+}
+
+/* Hand-drawn highlighter marker — animates a left-to-right swipe, scrolls with the page */
+@keyframes markerSwipe {
+  from { background-size: 0% 100%; }
+  to   { background-size: 100% 100%; }
+}
+.doodle-mark {
+  background-repeat: no-repeat;
+  background-position: left center;
+  background-size: 100% 100%;
+  border-radius: 6px 9px 7px 8px;   /* irregular = hand-drawn */
+  transform: rotate(-0.4deg);
+  animation: markerSwipe 0.45s ease-out both;
+  mix-blend-mode: multiply;
+}
+.doodle-mark--yellow {
+  background-image: linear-gradient(110deg, rgba(251,191,36,0.55), rgba(253,224,71,0.45));
+}
+.doodle-mark--pink {
+  background-image: linear-gradient(110deg, rgba(244,114,182,0.40), rgba(219,39,119,0.30));
 }
 
 /* React Flow overrides for Kami theme */

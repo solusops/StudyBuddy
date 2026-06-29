@@ -56,6 +56,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
             s.boxes.map((box, bi) => (
               <div
                 key={`${ann.annotation_id}-${si}-${bi}`}
+                className="doodle-mark doodle-mark--pink"
                 onClick={(e) => { e.stopPropagation(); setActiveAnnotation(ann.annotation_id) }}
                 style={{
                   position: "absolute",
@@ -63,10 +64,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
                   top: `${box.y * 100}%`,
                   width: `${box.w * 100}%`,
                   height: `${box.h * 100}%`,
-                  background: activeAnnotationId === ann.annotation_id
-                    ? "rgba(219, 39, 119, 0.25)"
-                    : "rgba(219, 39, 119, 0.12)",
-                  borderBottom: "2px dashed #DB2777",
+                  opacity: activeAnnotationId === ann.annotation_id ? 1 : 0.7,
                   cursor: "pointer",
                   pointerEvents: "auto",
                 }}
@@ -74,18 +72,17 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
             ))
           )
       )}
-      {/* Live selection — yellow */}
+      {/* Live selection — hand-drawn yellow marker */}
       {liveBoxes.map((box, i) => (
         <div
           key={`live-${i}`}
+          className="doodle-mark doodle-mark--yellow"
           style={{
             position: "absolute",
             left: `${box.x * 100}%`,
             top: `${box.y * 100}%`,
             width: `${box.w * 100}%`,
             height: `${box.h * 100}%`,
-            background: "rgba(251,191,36,0.35)",
-            borderBottom: "2px solid rgba(217,119,6,0.7)",
           }}
         />
       ))}

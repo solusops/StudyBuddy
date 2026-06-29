@@ -255,11 +255,11 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                   background: "transparent",
                   resize: "none",
                   outline: "none",
-                  fontSize: 12,
+                  fontSize: 16,
                   color: "#1A1A2E",
-                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                  fontFamily: "var(--font-hand)",
                   boxSizing: "border-box",
-                  lineHeight: 1.45,
+                  lineHeight: 1.3,
                   padding: 2,
                 }}
               />
@@ -272,7 +272,7 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                     style={{ maxWidth: "100%", borderRadius: 4, objectFit: "contain", border: "1px solid #E8E0D5" }}
                   />
                 )}
-                <p style={{ margin: 0, fontSize: 12, color: "#1A3557", lineHeight: 1.45, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                <p style={{ margin: 0, fontSize: 16, color: "#1A3557", lineHeight: 1.3, fontFamily: "var(--font-hand)" }}>
                   {annotation.note_text || (
                     <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
                   )}
@@ -315,9 +315,9 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
               background: "transparent",
               resize: "none",
               outline: "none",
-              fontSize: 13,
+              fontSize: 17,
               color: "#1A1A2E",
-              fontFamily: "'Libre Caslon Text', Georgia, serif",
+              fontFamily: "var(--font-hand)",
               boxSizing: "border-box",
             }}
           />
