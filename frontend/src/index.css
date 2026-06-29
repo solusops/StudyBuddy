@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap');
 
 :root {
   /* Kami palette */
@@ -12,7 +12,7 @@
   --success:      #2D6A4F;
   --warning:      #92400E;
 
-  font: 16px/150% system-ui, 'Segoe UI', sans-serif;
+  font: 18px/160% system-ui, 'Segoe UI', sans-serif;
   color: var(--text);
   background: var(--bg);
   -webkit-font-smoothing: antialiased;
@@ -35,7 +35,7 @@ body {
 
 /* Lesson / Feynman serif text */
 .serif {
-  font-family: 'Lora', Georgia, 'Times New Roman', serif;
+  font-family: 'Libre Caslon Text', Georgia, 'Times New Roman', serif;
 }
 
 /* Concept highlight marks from PDF text layer */

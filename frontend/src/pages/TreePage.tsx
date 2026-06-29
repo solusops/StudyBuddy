@@ -22,8 +22,36 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [refinementText, setRefinementText] = useState("")
   const [isRefining, setIsRefining] = useState(false)
   const [refineError, setRefineError] = useState("")
+  const [isPushing, setIsPushing] = useState(false)
+  const [pushDone, setPushDone] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
+
+  const applyNodes = (rawNodes: NodeData[]) => {
+    const flowNodes: Node<NodeData>[] = rawNodes.map((n, i) => ({
+      id: n.id,
+      type: "concept",
+      position: { x: i * 200, y: 0 },
+      data: n,
+    }))
+    const edges: Edge[] = rawNodes.flatMap((n) =>
+      (n.children_ids ?? []).map((cid) => ({
+        id: `${n.id}-${cid}`,
+        source: n.id,
+        target: cid,
+        type: "smoothstep",
+      }))
+    )
+    setGraph(flowNodes, edges)
+  }
+
+  // Seed the graph store from session nodes on first mount
+  useEffect(() => {
+    if (session?.nodes?.length) {
+      applyNodes(session.nodes)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // When node is selected, pre-fill the description edit box
   useEffect(() => {
@@ -86,25 +114,49 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     }
   }
 
-  const applyNodes = (rawNodes: NodeData[]) => {
-    const flowNodes: Node<NodeData>[] = rawNodes.map((n, i) => ({
-      id: n.id,
-      type: "concept",
-      position: { x: i * 200, y: 0 },
-      data: n,
-    }))
-    const edges: Edge[] = rawNodes.flatMap((n) =>
-      (n.children_ids ?? []).map((cid) => ({
-        id: `${n.id}-${cid}`,
-        source: n.id,
-        target: cid,
-        type: "smoothstep",
-      }))
-    )
-    setGraph(flowNodes, edges)
+  const lessonText = lessonStreaming ? streamingLesson : (lesson?.grounded_truth ?? "")
+
+  const commitSession = async () => {
+    const { nodes } = useGraphStore.getState()
+    await fetch("/session/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: session?.sessionId,
+        topic: session?.topic ?? "Study Session",
+        familiarity: session?.familiarity ?? "high_school",
+        nodes: nodes.map((n) => n.data),
+        content_files: session?.contentFiles ?? [],
+      }),
+    })
+    const saved = localStorage.getItem("studybuddy_session")
+    if (saved) {
+      try {
+        const s = JSON.parse(saved)
+        s.nodes = nodes.map((n) => n.data)
+        localStorage.setItem("studybuddy_session", JSON.stringify(s))
+      } catch { /* ignore */ }
+    }
   }
 
-  const lessonText = lessonStreaming ? streamingLesson : (lesson?.grounded_truth ?? "")
+  const pushSession = () => {
+    if (isPushing || !session) return
+    setIsPushing(true)
+    setPushDone(false)
+    const onDone = () => { setIsPushing(false); setPushDone(true) }
+    window.addEventListener("evaluation-done", onDone, { once: true })
+    sendEvent("EVALUATE_SESSION", { topic: session.topic, familiarity: session.familiarity })
+  }
+
+  const clearSession = async () => {
+    await fetch("/session/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: session?.sessionId }),
+    })
+    localStorage.removeItem("studybuddy_session")
+    onNeedSetup()
+  }
 
   return (
     <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: "#FAF7F2" }}>
@@ -126,17 +178,47 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         >
           ←
         </button>
-        <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 15, flex: 1 }}>
+        <span style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 17, flex: 1 }}>
           {session?.topic || "Knowledge Tree"}
         </span>
-        <span style={{ color: "#9CA3AF", fontSize: 12 }}>
+        <span style={{ color: "#9CA3AF", fontSize: 14 }}>
           Click a node to explore · edit its description · refine the whole tree below
         </span>
+        {/* Commit */}
         <button
-          onClick={() => { setSelectedId(null); onNeedSetup() }}
-          style={{ background: "transparent", color: "#9CA3AF", border: "1px solid #E8E0D5", borderRadius: 6, padding: "4px 12px", fontSize: 12, cursor: "pointer" }}
+          onClick={commitSession}
+          title="Save progress to disk"
+          style={{ background: "transparent", color: "#2D6A4F", border: "1px solid #2D6A4F", borderRadius: 6, padding: "4px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
         >
-          New session
+          Commit
+        </button>
+
+        {/* Push */}
+        <button
+          onClick={pushSession}
+          disabled={isPushing}
+          title="Evaluate work against skill tree"
+          style={{
+            background: isPushing ? "#E8E0D5" : "#1A3557",
+            color: isPushing ? "#9CA3AF" : "#FAF7F2",
+            border: "none",
+            borderRadius: 6,
+            padding: "4px 12px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: isPushing ? "not-allowed" : "pointer",
+          }}
+        >
+          {isPushing ? "Evaluating…" : pushDone ? "Pushed ✓" : "Push"}
+        </button>
+
+        {/* Clear */}
+        <button
+          onClick={clearSession}
+          title="Delete session and start fresh"
+          style={{ background: "transparent", color: "#9CA3AF", border: "1px solid #E8E0D5", borderRadius: 6, padding: "4px 12px", fontSize: 14, cursor: "pointer" }}
+        >
+          Clear
         </button>
       </div>
 
@@ -161,11 +243,11 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             {/* Panel header */}
             <div style={{ padding: "14px 16px", borderBottom: "1px solid #E8E0D5", display: "flex", alignItems: "flex-start", gap: 8 }}>
               <div style={{ flex: 1 }}>
-                <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1A3557", fontFamily: "Georgia, serif" }}>
+                <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#1A3557", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
                   {selectedNode.data.label}
                 </h3>
                 <span style={{
-                  display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 500,
+                  display: "inline-block", marginTop: 4, fontSize: 13, fontWeight: 500,
                   color: selectedNode.data.status === "MASTERED" ? "#2D6A4F" : selectedNode.data.status === "ACTIVE" ? "#1A3557" : "#9CA3AF",
                   background: selectedNode.data.status === "MASTERED" ? "#E6F4ED" : selectedNode.data.status === "ACTIVE" ? "#EEF3F8" : "#F3F0ED",
                   borderRadius: 4, padding: "2px 8px",
@@ -185,7 +267,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             <div style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
               {/* Editable description */}
               <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                   Node description
                 </label>
                 <textarea
@@ -198,11 +280,11 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                     border: "1px solid #E8E0D5",
                     borderRadius: 8,
                     padding: "8px 10px",
-                    fontSize: 13,
+                    fontSize: 15,
                     color: "#1A1A2E",
                     resize: "vertical",
                     boxSizing: "border-box",
-                    fontFamily: "Georgia, serif",
+                    fontFamily: "'Libre Caslon Text', Georgia, serif",
                     outline: "none",
                   }}
                 />
@@ -216,7 +298,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                       border: "none",
                       borderRadius: 6,
                       padding: "6px 14px",
-                      fontSize: 12,
+                      fontSize: 14,
                       cursor: "pointer",
                       fontWeight: 600,
                     }}
@@ -228,22 +310,22 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
               {/* Lesson content */}
               <div>
-                <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
                   Lesson
                 </label>
                 {lessonStreaming && (
-                  <div style={{ fontSize: 13, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "Georgia, serif", whiteSpace: "pre-wrap" }}>
+                  <div style={{ fontSize: 15, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", whiteSpace: "pre-wrap" }}>
                     {streamingLesson}
                     <span style={{ display: "inline-block", width: 2, height: "1em", background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
                   </div>
                 )}
                 {!lessonStreaming && lessonText && (
-                  <div style={{ fontSize: 13, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "Georgia, serif", whiteSpace: "pre-wrap" }}>
+                  <div style={{ fontSize: 15, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", whiteSpace: "pre-wrap" }}>
                     {lessonText}
                   </div>
                 )}
                 {!lessonStreaming && !lessonText && (
-                  <p style={{ color: "#9CA3AF", fontSize: 13, margin: 0 }}>Loading lesson…</p>
+                  <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>Loading lesson…</p>
                 )}
               </div>
 
@@ -256,10 +338,10 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                   border: "1.5px solid #1A3557",
                   borderRadius: 8,
                   padding: "9px 0",
-                  fontSize: 13,
+                  fontSize: 15,
                   cursor: "pointer",
                   fontWeight: 600,
-                  fontFamily: "Georgia, serif",
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
                 }}
               >
                 Open study tools →
@@ -281,7 +363,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
       }}>
         <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#9CA3AF", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#9CA3AF", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.05em" }}>
               Refine curriculum
             </label>
             <textarea
@@ -296,7 +378,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 border: "1px solid #E8E0D5",
                 borderRadius: 8,
                 padding: "8px 12px",
-                fontSize: 13,
+                fontSize: 15,
                 color: "#1A1A2E",
                 resize: "none",
                 boxSizing: "border-box",
@@ -314,7 +396,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
               border: "none",
               borderRadius: 8,
               padding: "10px 20px",
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: 600,
               cursor: isRefining || !refinementText.trim() ? "not-allowed" : "pointer",
               flexShrink: 0,
@@ -324,7 +406,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             {isRefining ? "Regenerating…" : "Regenerate"}
           </button>
         </div>
-        {refineError && <p style={{ color: "#EF4444", fontSize: 12, margin: 0 }}>{refineError}</p>}
+        {refineError && <p style={{ color: "#EF4444", fontSize: 14, margin: 0 }}>{refineError}</p>}
       </div>
     </div>
   )

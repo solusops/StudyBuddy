@@ -33,15 +33,15 @@ export function ConceptNode({ id, data, selected }: NodeProps<NodeData>) {
           opacity: isLocked ? 0.55 : 1,
           userSelect: "none",
           boxShadow: selected ? `0 0 0 3px ${colors.border}33` : "0 1px 4px rgba(26,53,87,0.08)",
-          fontFamily: "Georgia, 'Times New Roman', serif",
+          fontFamily: "'Libre Caslon Text', 'Libre Caslon Text', Georgia, serif",
         }}
       >
-        <div style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{data.label}</div>
+        <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.3 }}>{data.label}</div>
         {avg > 0 && (
-          <div style={{ fontSize: 11, marginTop: 4, opacity: 0.75 }}>{avg}% mastery</div>
+          <div style={{ fontSize: 13, marginTop: 4, opacity: 0.75 }}>{avg}% mastery</div>
         )}
         {isLocked && (
-          <div style={{ fontSize: 10, marginTop: 3, opacity: 0.5 }}>locked</div>
+          <div style={{ fontSize: 12, marginTop: 3, opacity: 0.5 }}>locked</div>
         )}
       </div>
       <Handle type="source" position={Position.Bottom} style={{ background: colors.border, width: 8, height: 8 }} />

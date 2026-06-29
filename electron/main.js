@@ -17,7 +17,7 @@ function startPython() {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1400, height: 900, minWidth: 1200, minHeight: 750,
+    width: 1600, height: 1000, minWidth: 1400, minHeight: 860,
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true },
   })
   if (process.env.NODE_ENV === 'development') {

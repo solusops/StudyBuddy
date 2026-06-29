@@ -60,7 +60,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
       }}>
         <div style={{ flex: 1 }}>
           {activeConcept ? (
-            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#1A3557", fontFamily: "Georgia, serif" }}>
+            <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#1A3557", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
               {activeConcept}
             </h3>
           ) : (
@@ -114,7 +114,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
                 textAlign: "center",
               }}>
                 <div style={{ fontSize: 40 }}>✦</div>
-                <p style={{ margin: 0, fontSize: 14, fontFamily: "Georgia, serif" }}>
+                <p style={{ margin: 0, fontSize: 14, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
                   Click any highlighted concept in the document to see its interactive figure here.
                 </p>
               </div>
@@ -125,7 +125,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
                 {/* Streaming lesson text while figure loads */}
                 {lessonStreaming && (
                   <div style={{ padding: 20, width: "100%", boxSizing: "border-box" }}>
-                    <p style={{ fontSize: 13, lineHeight: 1.8, color: "#1A1A2E", fontFamily: "Georgia, serif", whiteSpace: "pre-wrap", margin: 0 }}>
+                    <p style={{ fontSize: 13, lineHeight: 1.8, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", whiteSpace: "pre-wrap", margin: 0 }}>
                       {streamingLesson}
                       <span style={{ display: "inline-block", width: 2, height: "1em", background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
                     </p>
@@ -144,7 +144,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
                       fontSize: 14,
                       cursor: figureRequested ? "default" : "pointer",
                       opacity: figureRequested ? 0.6 : 1,
-                      fontFamily: "Georgia, serif",
+                      fontFamily: "'Libre Caslon Text', Georgia, serif",
                     }}
                   >
                     {figureRequested ? "Generating figure…" : "Generate Figure →"}

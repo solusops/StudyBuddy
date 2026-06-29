@@ -194,8 +194,50 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     [sendEvent, setActiveNode, resetNodeData]
   )
 
-  const endSession = () => {
-    sendEvent("END_SESSION", { topic, familiarity: "high_school" })
+  const [isPushing, setIsPushing] = useState(false)
+  const [pushDone, setPushDone] = useState(false)
+
+  const commitSession = async () => {
+    const { nodes } = useGraphStore.getState()
+    await fetch("/session/commit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_id: sessionId,
+        topic,
+        familiarity: "high_school",
+        nodes: nodes.map((n) => n.data),
+        content_files: contentFiles,
+      }),
+    })
+    // Update localStorage with latest node state
+    const saved = localStorage.getItem("studybuddy_session")
+    if (saved) {
+      try {
+        const s = JSON.parse(saved)
+        s.nodes = nodes.map((n) => n.data)
+        localStorage.setItem("studybuddy_session", JSON.stringify(s))
+      } catch { /* ignore */ }
+    }
+  }
+
+  const pushSession = async () => {
+    if (isPushing) return
+    setIsPushing(true)
+    setPushDone(false)
+    const onDone = () => { setIsPushing(false); setPushDone(true) }
+    window.addEventListener("evaluation-done", onDone, { once: true })
+    sendEvent("EVALUATE_SESSION", { topic, familiarity: "high_school" })
+  }
+
+  const clearSession = async () => {
+    await fetch("/session/clear", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: sessionId }),
+    })
+    localStorage.removeItem("studybuddy_session")
+    onNeedSetup()
   }
 
   // -- Render -------------------------------------------------------------
@@ -213,12 +255,12 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         flexShrink: 0,
       }}>
         {/* App name */}
-        <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 15, marginRight: 8 }}>
+        <span style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 17, marginRight: 8 }}>
           Study Buddy
         </span>
 
         {/* Document title */}
-        <span style={{ color: "#1A1A2E", fontSize: 13, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ color: "#1A1A2E", fontSize: 15, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {topic}
         </span>
 
@@ -227,7 +269,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           <span style={{
             background: "#EEF3F8",
             color: "#4A7FB5",
-            fontSize: 11,
+            fontSize: 13,
             padding: "3px 10px",
             borderRadius: 20,
             fontWeight: 500,
@@ -249,7 +291,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
                 borderColor: activePDFPath?.endsWith(f) ? "#1A3557" : "#E8E0D5",
                 borderRadius: 6,
                 padding: "4px 10px",
-                fontSize: 11,
+                fontSize: 13,
                 cursor: "pointer",
                 fontWeight: activePDFPath?.endsWith(f) ? 600 : 400,
                 maxWidth: 120,
@@ -272,7 +314,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             border: "1.5px solid #1A3557",
             borderRadius: 8,
             padding: "5px 14px",
-            fontSize: 12,
+            fontSize: 14,
             cursor: "pointer",
             fontWeight: 600,
           }}
@@ -280,20 +322,58 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           Tree
         </button>
 
-        {/* End session */}
+        {/* Commit */}
         <button
-          onClick={endSession}
+          onClick={commitSession}
+          title="Save progress to disk"
           style={{
             background: "transparent",
-            color: "#6B7280",
+            color: "#2D6A4F",
+            border: "1px solid #2D6A4F",
+            borderRadius: 8,
+            padding: "5px 14px",
+            fontSize: 14,
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Commit
+        </button>
+
+        {/* Push */}
+        <button
+          onClick={pushSession}
+          disabled={isPushing}
+          title="Evaluate work against skill tree"
+          style={{
+            background: isPushing ? "#E8E0D5" : "#1A3557",
+            color: isPushing ? "#9CA3AF" : "#FAF7F2",
+            border: "none",
+            borderRadius: 8,
+            padding: "5px 14px",
+            fontSize: 14,
+            cursor: isPushing ? "not-allowed" : "pointer",
+            fontWeight: 600,
+          }}
+        >
+          {isPushing ? "Evaluating…" : pushDone ? "Pushed ✓" : "Push"}
+        </button>
+
+        {/* Clear */}
+        <button
+          onClick={clearSession}
+          title="Delete session and start fresh"
+          style={{
+            background: "transparent",
+            color: "#9CA3AF",
             border: "1px solid #E8E0D5",
             borderRadius: 8,
             padding: "5px 14px",
-            fontSize: 12,
+            fontSize: 14,
             cursor: "pointer",
           }}
         >
-          End Session
+          Clear
         </button>
       </div>
 
@@ -318,11 +398,11 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             color: "#9CA3AF",
           }}>
             <div style={{ fontSize: 32 }}>📄</div>
-            <p style={{ margin: 0, fontSize: 14, fontFamily: "Georgia, serif" }}>
+            <p style={{ margin: 0, fontSize: 16, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
               {isElectron ? "Loading document…" : "Run in Electron to view PDFs"}
             </p>
             {!isElectron && (
-              <p style={{ margin: 0, fontSize: 12, color: "#D1C9C0" }}>
+              <p style={{ margin: 0, fontSize: 14, color: "#D1C9C0" }}>
                 In browser dev mode, concept highlighting is still active via the study tools.
               </p>
             )}

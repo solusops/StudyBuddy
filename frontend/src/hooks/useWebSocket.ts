@@ -76,6 +76,9 @@ export function useWebSocket(sessionId: string | null) {
         case "SCORE_PATCH":
           applyNodePatch(msg.data as unknown as NodePatch)
           break
+        case "EVALUATION_DONE":
+          window.dispatchEvent(new CustomEvent("evaluation-done", { detail: msg.data }))
+          break
         case "QUIZ_FEEDBACK":
           // Handled inside QuizTool via sessionStore
           break

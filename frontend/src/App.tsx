@@ -23,12 +23,22 @@ export default function App() {
   // Single WebSocket at App level — persists across view transitions
   const { sendEvent } = useWebSocket(session?.sessionId ?? null)
 
-  // On mount, check if library is already configured
+  // On mount, check if library is already configured and restore any saved session
   useEffect(() => {
     fetch("/library/status")
       .then((r) => r.json())
       .then((status) => {
         if (status.configured && status.content_files.length > 0) {
+          // Try to restore a committed session from localStorage
+          const saved = localStorage.getItem("studybuddy_session")
+          if (saved) {
+            try {
+              const s: AppSession = JSON.parse(saved)
+              setSession(s)
+              setView("tree")
+              return
+            } catch { /* corrupt data, fall through */ }
+          }
           setView("manual")
         }
       })
@@ -38,13 +48,14 @@ export default function App() {
 
   const handleSessionReady = (s: AppSession) => {
     setSession(s)
+    localStorage.setItem("studybuddy_session", JSON.stringify(s))
     setView("tree")  // show tree first after upload
   }
 
   if (checking) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "#FAF7F2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <span style={{ color: "#6B7280", fontFamily: "Georgia, serif" }}>Loading Study Buddy…</span>
+        <span style={{ color: "#6B7280", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>Loading Study Buddy…</span>
       </div>
     )
   }

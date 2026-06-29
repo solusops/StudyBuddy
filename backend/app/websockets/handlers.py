@@ -241,6 +241,15 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         )
         await _cm.send(session_id, "INFINITY_WIKI_RESULT", result)
 
+    # ---- EVALUATE_SESSION (Push) --------------------------------
+    elif event_type == "EVALUATE_SESSION":
+        evaluator = EvaluatorAgent(journal_service=_journal)
+        patches, _ = evaluator.evaluate_session(session_id)
+        for patch in patches:
+            _graph_mgr.apply_node_patch(session_id, patch)
+            await _cm.send(session_id, "SCORE_PATCH", patch.model_dump())
+        await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
+
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":
         evaluator = EvaluatorAgent(journal_service=_journal)

@@ -113,7 +113,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick }
         file={fileUrl}
         onLoadSuccess={onDocumentLoadSuccess}
         loading={
-          <div style={{ color: "#9CA3AF", padding: 40, fontFamily: "Georgia, serif" }}>
+          <div style={{ color: "#9CA3AF", padding: 40, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
             Loading document…
           </div>
         }

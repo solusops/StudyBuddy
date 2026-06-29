@@ -7,7 +7,7 @@ import chromadb
 from app.rag.embeddings import Embedder
 
 _CHROMA_PATH = os.path.expanduser("~/.studybuddy/chroma")
-_FILE_INDEX_COLLECTION = "_file_index"
+_FILE_INDEX_COLLECTION = "file-index"
 
 
 class ChromaDBClient:

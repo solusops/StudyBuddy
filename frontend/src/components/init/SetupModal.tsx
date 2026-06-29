@@ -97,10 +97,10 @@ export function SetupModal({ onSessionReady }: Props) {
 
         {/* Header */}
         <div>
-          <h1 style={{ margin: 0, color: "#1A3557", fontSize: 32, fontWeight: 700, fontFamily: "Georgia, serif" }}>
+          <h1 style={{ margin: 0, color: "#1A3557", fontSize: 32, fontWeight: 700, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
             Study Buddy
           </h1>
-          <p style={{ margin: "8px 0 0", color: "#6B7280", fontSize: 15 }}>
+          <p style={{ margin: "8px 0 0", color: "#6B7280", fontSize: 16 }}>
             Drop your material. Get an instant curriculum, interactive figures and self-graded drills.
           </p>
         </div>
@@ -122,10 +122,10 @@ export function SetupModal({ onSessionReady }: Props) {
           }}
         >
           <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.6 }}>📄</div>
-          <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 15 }}>
+          <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 17 }}>
             Drop PDFs, DOCX or TXT here
           </p>
-          <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 13 }}>
+          <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 15 }}>
             or{" "}
             <span style={{ color: "#1A3557", textDecoration: "underline" }}>
               browse files
@@ -150,10 +150,10 @@ export function SetupModal({ onSessionReady }: Props) {
                 background: "#FFFFFF", border: "1px solid #E8E0D5",
                 borderRadius: 8, padding: "8px 12px",
               }}>
-                <span style={{ flex: 1, fontSize: 13, color: "#1A1A2E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span style={{ flex: 1, fontSize: 15, color: "#1A1A2E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {f.name}
                 </span>
-                <span style={{ fontSize: 12, color: "#9CA3AF", flexShrink: 0 }}>
+                <span style={{ fontSize: 14, color: "#9CA3AF", flexShrink: 0 }}>
                   {(f.size / 1024).toFixed(0)} KB
                 </span>
                 <button
@@ -195,7 +195,7 @@ export function SetupModal({ onSessionReady }: Props) {
                   background: familiarity === opt.value ? "#EEF3F8" : "transparent",
                   color: familiarity === opt.value ? "#1A3557" : "#6B7280",
                   cursor: "pointer",
-                  fontSize: 12,
+                  fontSize: 14,
                   fontWeight: familiarity === opt.value ? 600 : 400,
                 }}
               >
@@ -205,10 +205,10 @@ export function SetupModal({ onSessionReady }: Props) {
           </div>
         </div>
 
-        {error && <p style={{ color: "#EF4444", fontSize: 13, margin: 0 }}>{error}</p>}
+        {error && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{error}</p>}
 
         {phase === "starting" && (
-          <p style={{ color: "#4A7FB5", fontSize: 13, margin: 0 }}>
+          <p style={{ color: "#4A7FB5", fontSize: 15, margin: 0 }}>
             Reading document structure and building your curriculum tree…
           </p>
         )}
@@ -222,11 +222,11 @@ export function SetupModal({ onSessionReady }: Props) {
             border: "none",
             borderRadius: 10,
             padding: "15px 0",
-            fontSize: 15,
+            fontSize: 17,
             fontWeight: 600,
             cursor: phase === "starting" ? "not-allowed" : "pointer",
             opacity: phase === "starting" ? 0.7 : 1,
-            fontFamily: "Georgia, serif",
+            fontFamily: "'Libre Caslon Text', Georgia, serif",
             letterSpacing: "0.02em",
           }}
         >
@@ -240,7 +240,7 @@ export function SetupModal({ onSessionReady }: Props) {
 const labelStyle: React.CSSProperties = {
   display: "block",
   color: "#1A1A2E",
-  fontSize: 13,
+  fontSize: 15,
   fontWeight: 600,
   marginBottom: 6,
 }
@@ -252,7 +252,7 @@ const inputStyle: React.CSSProperties = {
   border: "1px solid #E8E0D5",
   borderRadius: 8,
   padding: "10px 14px",
-  fontSize: 13,
+  fontSize: 15,
   boxSizing: "border-box",
   outline: "none",
 }
