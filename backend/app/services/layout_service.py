@@ -108,9 +108,12 @@ def segment_page(
             if overlap:
                 continue
             kept.append(rect)
-            mat = fitz.Matrix(_CROP_ZOOM, _CROP_ZOOM)
-            pix = page.get_pixmap(clip=rect, matrix=mat)
-            crop_b64 = base64.b64encode(pix.tobytes("png")).decode()
+            try:
+                mat = fitz.Matrix(_CROP_ZOOM, _CROP_ZOOM)
+                pix = page.get_pixmap(clip=rect, matrix=mat)
+                crop_b64 = base64.b64encode(pix.tobytes("png")).decode()
+            except Exception:
+                continue  # skip regions that fail to crop
             regions.append({
                 "id": f"r{len(regions)}",
                 "type": rtype,

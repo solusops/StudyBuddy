@@ -41,6 +41,12 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
   const [selected, setSelected] = useState<string | null>(null)
 
+  // Reset when page or document changes so we re-fetch for the new page.
+  useEffect(() => {
+    setRegions(null)
+    setStatus("idle")
+  }, [documentId, pageIndex])
+
   useEffect(() => {
     if (!regionsOn || !documentId || regions || status === "loading") return
     let cancelled = false
@@ -71,6 +77,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
       } catch (e) {
         if (!cancelled) {
           console.error("RegionLayer segment error:", e)
+          setRegions([])   // Mark as resolved (empty) to stop infinite retry loop
           setStatus("error")
         }
       }
