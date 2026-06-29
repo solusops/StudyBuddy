@@ -3,6 +3,7 @@ import katex from "katex"
 import "katex/dist/katex.min.css"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
+import { useInteractionStore } from "../../store/interactionStore"
 import { VisualSandbox } from "./VisualSandbox"
 import type { AnimationType, HTML5VisualPayload } from "../../types"
 
@@ -56,9 +57,11 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   const [stack, setStack] = useState<WikiPage[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
   const { selectionText, surroundingContext, selectionImageBase64 } = useContextStore()
+  const { documentId, wikiHistory, pushWikiPage, updateWikiPage } = useInteractionStore()
   const { familiarity, knowledgeMode } = useSessionStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFiredRef = useRef("")
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const fireCard = useCallback(
     (term: string, surrounding: string, parentContext: string = "", imageBase64?: string) => {
@@ -108,21 +111,31 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       setStack((prev) => {
         const next = [...prev]
         const last = next[next.length - 1]
-        if (last) next[next.length - 1] = { ...last, streaming: false }
+        if (last) {
+          const updated = { ...last, streaming: false }
+          next[next.length - 1] = updated
+          if (documentId) pushWikiPage(documentId, updated)
+        }
         return next
       })
     }
     const onVisualAvailable = (e: Event) => {
       const { term, modality, recommended_tool, label } = (e as CustomEvent).detail
-      setStack((prev) =>
-        prev.map((p) =>
+      setStack((prev) => {
+        const next = prev.map((p) =>
           p.term === term ? { ...p, visualOffer: { modality, recommended_tool, label } } : p
         )
-      )
+        if (documentId) updateWikiPage(documentId, term, { visualOffer: { modality, recommended_tool, label } })
+        return next
+      })
     }
     const onFurtherReading = (e: Event) => {
       const { term, papers } = (e as CustomEvent).detail
-      setStack((prev) => prev.map((p) => (p.term === term ? { ...p, papers } : p)))
+      setStack((prev) => {
+        const next = prev.map((p) => (p.term === term ? { ...p, papers } : p))
+        if (documentId) updateWikiPage(documentId, term, { papers })
+        return next
+      })
     }
     const onVisualStart = (e: Event) => {
       const { term } = (e as CustomEvent).detail
@@ -132,9 +145,11 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     }
     const onVisualPayload = (e: Event) => {
       const { term, visual } = (e as CustomEvent).detail
-      setStack((prev) =>
-        prev.map((p) => (p.term === term ? { ...p, visualLoading: false, visual } : p))
-      )
+      setStack((prev) => {
+        const next = prev.map((p) => (p.term === term ? { ...p, visualLoading: false, visual } : p))
+        if (documentId) updateWikiPage(documentId, term, { visual })
+        return next
+      })
     }
 
     window.addEventListener("wiki-token", onToken)
@@ -180,6 +195,19 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       familiarity,
       modality: page.visualOffer.modality,
       recommended_tool: page.visualOffer.recommended_tool,
+      card_content: page.content,
+    })
+  }
+
+  // Generate active recall quiz on demand
+  const requestRecall = (page: WikiPage) => {
+    setStack((prev) =>
+      prev.map((p) => (p.term === page.term ? { ...p, recallGenerated: true } : p))
+    )
+    if (documentId) updateWikiPage(documentId, page.term, { recallGenerated: true })
+    sendEvent("WIKI_RECALL_GENERATE", {
+      selection_text: page.term,
+      familiarity,
       card_content: page.content,
     })
   }
@@ -308,29 +336,80 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* Breadcrumb nav */}
-      {stack.length > 0 && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderBottom: "1px solid #E8E0D5", flexShrink: 0, flexWrap: "wrap" }}>
-          {stack.slice(0, currentIdx + 1).map((p, i) => (
-            <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              {i > 0 && <span style={{ color: "#D1C9C0" }}>›</span>}
+      {/* Breadcrumb nav & History Toggle */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", borderBottom: "1px solid #E8E0D5", flexShrink: 0 }}>
+        {stack.length > 0 ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {stack.slice(0, currentIdx + 1).map((p, i) => (
+              <span key={i} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                {i > 0 && <span style={{ color: "#D1C9C0" }}>›</span>}
+                <button
+                  onClick={() => { setCurrentIdx(i); setHistoryOpen(false); }}
+                  style={{
+                    border: "none",
+                    padding: "2px 6px",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    fontSize: 12,
+                    color: i === currentIdx ? "#1A3557" : "#4A7FB5",
+                    fontWeight: i === currentIdx ? 600 : 400,
+                    background: i === currentIdx ? "#EEF3F8" : "transparent",
+                  }}
+                >
+                  {p.term.length > 28 ? p.term.slice(0, 28) + "…" : p.term}
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : <div />}
+        
+        {documentId && (wikiHistory[documentId]?.length > 0) && (
+          <button
+            onClick={() => setHistoryOpen(!historyOpen)}
+            style={{
+              background: historyOpen ? "#1A3557" : "transparent",
+              color: historyOpen ? "white" : "#4A7FB5",
+              border: "1px solid",
+              borderColor: historyOpen ? "#1A3557" : "#4A7FB5",
+              borderRadius: 6,
+              padding: "4px 8px",
+              fontSize: 12,
+              cursor: "pointer",
+              marginLeft: 8,
+            }}
+          >
+            History
+          </button>
+        )}
+      </div>
+
+      {/* History Drawer */}
+      {historyOpen && documentId && (wikiHistory[documentId]?.length > 0) && (
+        <div style={{ background: "#F8F9FA", borderBottom: "1px solid #E8E0D5", padding: "8px 16px", maxHeight: 150, overflowY: "auto" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Past Wiki Sessions</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {wikiHistory[documentId].map((p, i) => (
               <button
-                onClick={() => setCurrentIdx(i)}
+                key={i}
+                onClick={() => {
+                  setStack([p]);
+                  setCurrentIdx(0);
+                  setHistoryOpen(false);
+                }}
                 style={{
-                  border: "none",
-                  padding: "2px 6px",
+                  background: "white",
+                  border: "1px solid #E2E8F0",
                   borderRadius: 4,
-                  cursor: "pointer",
+                  padding: "4px 8px",
                   fontSize: 12,
-                  color: i === currentIdx ? "#1A3557" : "#4A7FB5",
-                  fontWeight: i === currentIdx ? 600 : 400,
-                  background: i === currentIdx ? "#EEF3F8" : "transparent",
+                  color: "#1A3557",
+                  cursor: "pointer",
                 }}
               >
                 {p.term.length > 28 ? p.term.slice(0, 28) + "…" : p.term}
               </button>
-            </span>
-          ))}
+            ))}
+          </div>
         </div>
       )}
 
@@ -450,6 +529,37 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                 </ul>
               </div>
             )}
+
+            {/* Active Recall Button */}
+            {!currentPage.streaming && !currentPage.recallGenerated && (
+              <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
+                <button
+                  onClick={() => requestRecall(currentPage)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#EEF3F8",
+                    border: "1.5px solid #4A7FB5",
+                    borderRadius: 10,
+                    padding: "10px 16px",
+                    cursor: "pointer",
+                    color: "#1A3557",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    fontFamily: "system-ui, sans-serif",
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  Generate Active Recall Quiz
+                </button>
+              </div>
+            )}
+
 
             {!currentPage.streaming && currentPage.content && (
               <p style={{ marginTop: 18, fontSize: 12, color: "#9CA3AF", fontStyle: "italic", fontFamily: "system-ui, sans-serif" }}>

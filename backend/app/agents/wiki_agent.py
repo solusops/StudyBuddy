@@ -25,10 +25,6 @@ Structure your response exactly as:
 * (core fact/formula 2 from the source chunks)
 * (core fact/formula 3 from the source chunks)
 
-**Active-Recall Quiz:**
-* Question 1: (Conceptual active-recall question based purely on this concept, matching the {level} difficulty)
-* Question 2: (Another active-recall question)
-
 Cite inline with [Source: X, chunk N]. Ground every claim. Be concise."""
 
 _WIKI_SYSTEM_NET_SUPPORT = """You are a knowledgeable study helper with internet search support.
@@ -49,10 +45,6 @@ Structure your response exactly as:
 * (core fact/formula 1 from the source chunks or web results)
 * (core fact/formula 2 from the source chunks or web results)
 * (core fact/formula 3 from the source chunks or web results)
-
-**Active-Recall Quiz:**
-* Question 1: (Conceptual active-recall question based purely on this concept, matching the {level} difficulty)
-* Question 2: (Another active-recall question)
 
 Keep citations accurate. Ground every claim. Be concise."""
 
@@ -149,3 +141,20 @@ class WikiAgent:
 
         async for token in self._client.stream_complete(messages):
             yield token
+
+    async def stream_recall_quiz(self, term: str, card_content: str, familiarity: str):
+        sys_prompt = f"""You are a study tutor. Based on the provided explanation of '{term}', generate exactly 2 short, conceptual active-recall questions appropriate for a {familiarity} level student.
+Do NOT output anything else except the questions. Do NOT provide the answers.
+Format:
+
+**Active-Recall Quiz:**
+* Question 1: ...
+* Question 2: ...
+"""
+        messages = [
+            {"role": "system", "content": sys_prompt},
+            {"role": "user", "content": f"Explanation:\n{card_content}"}
+        ]
+        
+        async for chunk in self._client.stream_complete(messages, max_tokens=256, temperature=0.7):
+            yield chunk

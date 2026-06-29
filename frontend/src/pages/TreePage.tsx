@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
-  const { nodes, setGraph } = useGraphStore()
+  const { nodes, setGraph, reset } = useGraphStore()
   const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -56,10 +56,16 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     setGraph(flowNodes, flowEdges)
   }
 
-  // Seed the graph store from session nodes on first mount
+  // On first mount: restored session → seed nodes; fresh upload → stream via BUILD_GRAPH.
   useEffect(() => {
     if (session?.nodes?.length) {
       applyGraph(session.nodes, session.edges)
+    } else if (session?.sessionId) {
+      reset()
+      sendEvent("BUILD_GRAPH", {
+        familiarity: session.familiarity ?? "high_school",
+        topic: session.topic ?? "",
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

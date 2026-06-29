@@ -67,6 +67,46 @@ export interface MCQ {
   explanation: string
 }
 
+export interface ChatMessage {
+  role: "system" | "user" | "assistant"
+  content: string
+  selectionText?: string
+  selectionImageBase64?: string
+}
+
+export interface ChatSession {
+  id: string
+  timestamp: number
+  documentId: string | null
+  messages: ChatMessage[]
+}
+
+export interface VisualOffer {
+  modality: "STATIC_PLOT" | "INTERACTIVE_SIMULATION"
+  recommended_tool: string
+  label: string
+}
+
+export interface ScholarPaper {
+  title: string
+  authors: string
+  year: number | null
+  cited_by: number
+  url: string
+}
+
+export interface WikiPage {
+  term: string
+  content: string
+  streaming: boolean
+  visual?: HTML5VisualPayload | null
+  visualLoading?: boolean
+  visualOffer?: VisualOffer | null
+  papers?: ScholarPaper[]
+  imageBase64?: string
+  recallGenerated?: boolean
+}
+
 export interface WSMessage {
   type: string
   data: Record<string, unknown>

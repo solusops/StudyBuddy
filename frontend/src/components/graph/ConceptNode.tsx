@@ -83,6 +83,7 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
           fontFamily: "'Libre Caslon Text', Georgia, serif",
           textAlign: "center",
           transition: "box-shadow 0.2s, transform 0.15s",
+          animation: "nodePop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both",
         }}
       >
         <div style={{ fontWeight: isRoot ? 800 : 700, fontSize, lineHeight: 1.3 }}>

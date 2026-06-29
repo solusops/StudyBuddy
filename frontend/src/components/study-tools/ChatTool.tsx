@@ -3,6 +3,7 @@ import katex from "katex"
 import "katex/dist/katex.min.css"
 import { useSessionStore } from "../../store/sessionStore"
 import { useContextStore } from "../../store/contextStore"
+import { useInteractionStore } from "../../store/interactionStore"
 import { splitFencedBlocks } from "../../lib/chatBlocks"
 import { MermaidBlock } from "./MermaidBlock"
 import { PlotlyBlock } from "./PlotlyBlock"
@@ -30,10 +31,12 @@ interface Props {
 }
 
 export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
-  const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage, knowledgeMode } = useSessionStore()
+  const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage, setChatHistory, knowledgeMode } = useSessionStore()
   const { selectionText, surroundingContext, selectionImageBase64, clearSelection } = useContextStore()
+  const { chatSessions, activeChatSessionId, setActiveChatSession, addChatSession, updateChatSession } = useInteractionStore()
   const bottomRef = useRef<HTMLDivElement>(null)
   const [webSearching, setWebSearching] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const hasContext = !!selectionText || !!selectionImageBase64
 
@@ -53,11 +56,35 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
     if (streamingChat || chatHistory.length) setWebSearching(false)
   }, [streamingChat, chatHistory.length])
 
+  // Sync to interactionStore when a chat finishes or user sends
+  useEffect(() => {
+    if (chatHistory.length > 0 && !streamingChat) {
+      if (!activeChatSessionId) {
+        const newId = Date.now().toString()
+        setActiveChatSession(newId)
+        addChatSession({
+          id: newId,
+          title: chatHistory[0].content.slice(0, 30) || "New Chat",
+          messages: [...chatHistory],
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        })
+      } else {
+        updateChatSession(activeChatSessionId, [...chatHistory])
+      }
+    }
+  }, [chatHistory, streamingChat])
+
   const send = () => {
     const content = chatDraft.trim()
     if (!content && !selectionText && !selectionImageBase64) return
     const userMessage = content || `Explain: "${selectionText ? selectionText.slice(0, 120) : "this image"}"`
-    addChatMessage({ role: "student", content: userMessage })
+    addChatMessage({
+      role: "user",
+      content: userMessage,
+      selectionText: selectionText || undefined,
+      selectionImageBase64: selectionImageBase64 || undefined
+    })
     setChatDraft("")
     sendEvent("CHAT_TURN", {
       node_id: nodeId,
@@ -67,6 +94,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
       selection_text: selectionText || undefined,
       surrounding_context: surroundingContext || undefined,
       selection_image_base64: selectionImageBase64 || undefined,
+      history: chatHistory,
     })
   }
 
@@ -199,6 +227,77 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>
+      {/* Top Bar for History */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid #E8E0D5", flexShrink: 0, background: "#F8F9FA" }}>
+        <button
+          onClick={() => {
+            setActiveChatSession(null);
+            setChatHistory([]);
+            setHistoryOpen(false);
+          }}
+          style={{
+            background: "transparent",
+            color: "#1A3557",
+            border: "1px solid #1A3557",
+            borderRadius: 6,
+            padding: "4px 10px",
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          + New Chat
+        </button>
+        {chatSessions.length > 0 && (
+          <button
+            onClick={() => setHistoryOpen(!historyOpen)}
+            style={{
+              background: historyOpen ? "#1A3557" : "transparent",
+              color: historyOpen ? "white" : "#4A7FB5",
+              border: "1px solid",
+              borderColor: historyOpen ? "#1A3557" : "#4A7FB5",
+              borderRadius: 6,
+              padding: "4px 10px",
+              fontSize: 12,
+              cursor: "pointer",
+            }}
+          >
+            History
+          </button>
+        )}
+      </div>
+
+      {/* History Drawer */}
+      {historyOpen && chatSessions.length > 0 && (
+        <div style={{ background: "#F8F9FA", borderBottom: "1px solid #E8E0D5", padding: "8px 12px", maxHeight: 150, overflowY: "auto", flexShrink: 0 }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>Past Chat Sessions</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {chatSessions.map((s, i) => (
+              <button
+                key={i}
+                onClick={() => {
+                  setActiveChatSession(s.id);
+                  setChatHistory(s.messages);
+                  setHistoryOpen(false);
+                }}
+                style={{
+                  background: s.id === activeChatSessionId ? "#EEF3F8" : "white",
+                  border: "1px solid #E2E8F0",
+                  borderRadius: 4,
+                  padding: "6px 10px",
+                  fontSize: 13,
+                  color: "#1A3557",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  fontWeight: s.id === activeChatSessionId ? 600 : 400,
+                }}
+              >
+                {s.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Message history */}
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8, padding: "12px" }}>
@@ -213,8 +312,8 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
           <div
             key={i}
             style={{
-              alignSelf: msg.role === "student" ? "flex-end" : "flex-start",
-              background: msg.role === "student" ? "#EEF3F8" : "#FFFFFF",
+              alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+              background: msg.role === "user" ? "#EEF3F8" : "#FFFFFF",
               color: "#1A1A2E",
               border: "1px solid #E8E0D5",
               padding: "8px 12px",
@@ -225,6 +324,22 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
               fontFamily: msg.role === "assistant" ? "'Libre Caslon Text', Georgia, serif" : "system-ui, sans-serif",
             }}
           >
+            {(msg.selectionImageBase64 || msg.selectionText) && (
+              <div style={{ marginBottom: 8, padding: 8, background: "#FFFFFF", borderRadius: 6, border: "1px solid #E2E8F0" }}>
+                {msg.selectionImageBase64 && (
+                  <img
+                    src={`data:image/png;base64,${msg.selectionImageBase64}`}
+                    alt="Context"
+                    style={{ maxWidth: "100%", maxHeight: 200, objectFit: "contain", borderRadius: 4, display: "block", marginBottom: msg.selectionText ? 8 : 0 }}
+                  />
+                )}
+                {msg.selectionText && (
+                  <div style={{ fontSize: 12, color: "#4A7FB5", fontStyle: "italic", borderLeft: "2px solid #4A7FB5", paddingLeft: 8 }}>
+                    "{msg.selectionText.slice(0, 150)}{msg.selectionText.length > 150 ? "..." : ""}"
+                  </div>
+                )}
+              </div>
+            )}
             {msg.role === "assistant" ? renderChatContent(msg.content) : msg.content}
           </div>
         ))}

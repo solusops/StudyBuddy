@@ -1,10 +1,5 @@
 import { create } from "zustand"
-import type { FamiliarityLevel, Flashcard, MCQ, LessonPayload, HTML5VisualPayload } from "../types"
-
-interface ChatMessage {
-  role: "student" | "assistant"
-  content: string
-}
+import type { FamiliarityLevel, Flashcard, MCQ, LessonPayload, HTML5VisualPayload, ChatMessage } from "../types"
 
 interface FeynmanMessage {
   role: "student" | "clara"
@@ -57,6 +52,7 @@ interface SessionStore {
   addChatMessage: (msg: ChatMessage) => void
   addFeynmanMessage: (msg: FeynmanMessage) => void
   setChatDraft: (draft: string) => void
+  setChatHistory: (history: ChatMessage[]) => void
   setLessonCache: (cache: Record<string, string>) => void
   resetNodeData: () => void
   reset: () => void
@@ -150,6 +146,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
     set((s) => ({ feynmanHistory: [...s.feynmanHistory, msg] })),
 
   setChatDraft: (draft) => set({ chatDraft: draft }),
+  setChatHistory: (history) => set({ chatHistory: history }),
 
   setLessonCache: (cache) => set({ lessonCache: cache }),
 

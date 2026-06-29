@@ -20,9 +20,9 @@ interface Props {
 }
 
 export function SetupModal({ onSessionReady }: Props) {
-  const [topic, setTopic] = useState("")
-  const [familiarity, setFamiliarity] = useState<FamiliarityLevel>("high_school")
-  const [knowledgeMode, setKnowledgeMode] = useState<"content_only" | "net_support">("content_only")
+  const [topic, setTopic] = useState(() => localStorage.getItem("sb_topic") || "")
+  const [familiarity, setFamiliarity] = useState<FamiliarityLevel>(() => (localStorage.getItem("sb_familiarity") as FamiliarityLevel) || "high_school")
+  const [knowledgeMode, setKnowledgeMode] = useState<"content_only" | "net_support">(() => (localStorage.getItem("sb_knowledgeMode") as "content_only" | "net_support") || "content_only")
   const [files, setFiles] = useState<File[]>([])
   const [dragging, setDragging] = useState(false)
   const [backendReady, setBackendReady] = useState(false)
@@ -36,6 +36,11 @@ export function SetupModal({ onSessionReady }: Props) {
   const [keyStatus, setKeyStatus] = useState<Record<string, boolean>>({})
   const [keySaving, setKeySaving] = useState(false)
   const [keySaved, setKeySaved] = useState(false)
+
+  // ── Persist Settings ────────────────────────────────────────────────
+  useEffect(() => { localStorage.setItem("sb_topic", topic) }, [topic])
+  useEffect(() => { localStorage.setItem("sb_familiarity", familiarity) }, [familiarity])
+  useEffect(() => { localStorage.setItem("sb_knowledgeMode", knowledgeMode) }, [knowledgeMode])
 
   // Poll until backend is reachable — disables the button during cold start
   useEffect(() => {

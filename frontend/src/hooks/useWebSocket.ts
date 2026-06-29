@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from "react"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
-import type { Flashcard, MCQ, NodePatch, WSMessage } from "../types"
+import type { Flashcard, MCQ, NodeData, NodePatch, WSMessage } from "../types"
 
 // In dev, Vite proxies /ws/* to the backend. In Electron prod, use direct localhost.
 const WS_BASE = window.location.protocol === "file:"
@@ -10,7 +10,8 @@ const WS_BASE = window.location.protocol === "file:"
 
 export function useWebSocket(sessionId: string | null) {
   const ws = useRef<WebSocket | null>(null)
-  const { applyNodePatch } = useGraphStore()
+  const pending = useRef<string[]>([])
+  const { applyNodePatch, addNode, addEdge } = useGraphStore()
   const {
     setLesson,
     setVisual,
@@ -26,8 +27,12 @@ export function useWebSocket(sessionId: string | null) {
 
   const sendEvent = useCallback(
     (type: string, data: Record<string, unknown> = {}) => {
+      const payload = JSON.stringify({ type, data })
       if (ws.current?.readyState === WebSocket.OPEN) {
-        ws.current.send(JSON.stringify({ type, data }))
+        ws.current.send(payload)
+      } else {
+        // Socket not open yet — buffer and flush on open (avoids dropping BUILD_GRAPH).
+        pending.current.push(payload)
       }
     },
     []
@@ -81,6 +86,17 @@ export function useWebSocket(sessionId: string | null) {
           break
         case "SCORE_PATCH":
           applyNodePatch(msg.data as unknown as NodePatch)
+          break
+        case "GRAPH_NODE_ADDED":
+          addNode(msg.data as unknown as NodeData)
+          break
+        case "GRAPH_EDGE_ADDED": {
+          const e = msg.data as { source: string; target: string; relationship?: string }
+          addEdge(e.source, e.target, e.relationship)
+          break
+        }
+        case "GRAPH_BUILD_DONE":
+          window.dispatchEvent(new CustomEvent("graph-build-done", { detail: msg.data }))
           break
         case "EVALUATION_DONE":
           window.dispatchEvent(new CustomEvent("evaluation-done", { detail: msg.data }))

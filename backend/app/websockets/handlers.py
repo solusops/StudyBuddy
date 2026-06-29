@@ -129,6 +129,116 @@ def _safe_get_node(session_id: str, node_id: str) -> NodeData:
         return NodeData(id=node_id, label=node_id, status="ACTIVE")
 
 
+def _read_session_structure() -> str:
+    """Concatenate document structure (headings/first pages) of the uploaded content."""
+    import os
+    from app.rag.ingestion import extract_document_structure
+    from app.services.settings_service import get_content_folder
+
+    folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
+    if not os.path.isdir(folder):
+        return ""
+    parts = []
+    for name in os.listdir(folder):
+        if not name.lower().endswith((".pdf", ".docx", ".txt")):
+            continue
+        try:
+            with open(os.path.join(folder, name), "rb") as f:
+                content = f.read()
+            parts.append(f"Document: {name}\n{extract_document_structure(content, name)[:3000]}")
+        except Exception:
+            continue
+    return "\n\n---\n\n".join(parts)[:10000]
+
+
+async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) -> None:
+    """Root-first, then parallel section expansion. Streams each node/edge as it resolves.
+
+    Falls back to a single-call tree if the streaming path fails, so the graph always
+    populates.
+    """
+    loop = asyncio.get_event_loop()
+    structure = await loop.run_in_executor(None, _read_session_structure)
+    if not structure:
+        await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
+        return
+
+    try:
+        rs = await loop.run_in_executor(
+            None, _get_brain().derive_root_and_sections, structure, familiarity, topic, ""
+        )
+        nodes: list[NodeData] = []
+
+        root = NodeData(
+            id="n0", label=rs.root_label or (topic or "Topic"),
+            description=rs.root_description, depth=0, complexity=3,
+            parent_id=None, status="ACTIVE",
+        )
+        nodes.append(root)
+        _graph_mgr.add_node(session_id, root)
+        await _cm.send(session_id, "GRAPH_NODE_ADDED", root.model_dump())
+
+        section_nodes: list[NodeData] = []
+        for i, s in enumerate(rs.sections):
+            sid = f"s{i + 1}"
+            sn = NodeData(
+                id=sid, label=s.label, description=s.description, depth=1,
+                complexity=s.complexity, parent_id="n0", status="ACTIVE",
+            )
+            section_nodes.append(sn)
+            nodes.append(sn)
+            _graph_mgr.add_node(session_id, sn)
+            await _cm.send(session_id, "GRAPH_NODE_ADDED", sn.model_dump())
+            await _cm.send(session_id, "GRAPH_EDGE_ADDED",
+                           {"source": "n0", "target": sid, "relationship": "prerequisite"})
+
+        async def expand(sn: NodeData) -> list[NodeData]:
+            try:
+                exp = await loop.run_in_executor(
+                    None, _get_brain().expand_section, sn.label, structure, familiarity
+                )
+                children = exp.children
+            except Exception as e:
+                print("expand_section error:", e)
+                children = []
+            out: list[NodeData] = []
+            for j, ch in enumerate(children):
+                cid = f"{sn.id}c{j + 1}"
+                cn = NodeData(
+                    id=cid, label=ch.label, description=ch.description, depth=sn.depth + 1,
+                    complexity=ch.complexity, parent_id=sn.id, status="ACTIVE",
+                )
+                out.append(cn)
+                _graph_mgr.add_node(session_id, cn)
+                await _cm.send(session_id, "GRAPH_NODE_ADDED", cn.model_dump())
+                await _cm.send(session_id, "GRAPH_EDGE_ADDED",
+                               {"source": sn.id, "target": cid, "relationship": ch.relationship})
+            return out
+
+        results = await asyncio.gather(*(expand(sn) for sn in section_nodes))
+        for child_list in results:
+            nodes.extend(child_list)
+
+        _graph_mgr.set_graph(session_id, nodes)
+        await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": len(nodes)})
+    except Exception as e:
+        print("BUILD_GRAPH streaming failed, falling back to single-call:", e)
+        try:
+            overviews = [{"filename": "content", "structure_text": structure}]
+            nodes, edges = await loop.run_in_executor(
+                None, _get_brain().extract_curriculum_from_documents, overviews, familiarity, topic, ""
+            )
+            _graph_mgr.set_graph(session_id, nodes)
+            for n in nodes:
+                await _cm.send(session_id, "GRAPH_NODE_ADDED", n.model_dump())
+            for e2 in edges:
+                await _cm.send(session_id, "GRAPH_EDGE_ADDED", e2)
+            await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": len(nodes)})
+        except Exception as e3:
+            print("BUILD_GRAPH fallback also failed:", e3)
+            await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
+
+
 
 async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -> None:
     node_id: str = data.get("node_id", "")
@@ -181,6 +291,14 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _cache.put(cache_key, full_lesson)
             await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
 
+    # ---- BUILD_GRAPH (parallel curriculum streaming — "fireworks") ------
+    elif event_type == "BUILD_GRAPH":
+        await _build_graph_streaming(
+            session_id,
+            familiarity,
+            data.get("topic", ""),
+        )
+
     # ---- GENERATE_VISUAL ------------------------------------------
     elif event_type == "GENERATE_VISUAL":
         label = data.get("node_label", node_id)
@@ -198,6 +316,15 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             await _cm.send(session_id, "VISUAL_PAYLOAD", payload)
 
     # ---- CHAT_TURN -----------------------------------------------
+    elif event_type == "WIKI_RECALL_GENERATE":
+        selection_text = data.get("selection_text", "")
+        familiarity = data.get("familiarity", "high_school")
+        card_content = data.get("card_content", "")
+        
+        async for token in _wiki.stream_recall_quiz(selection_text, card_content, familiarity):
+            await _cm.send(session_id, "WIKI_TOKEN", {"token": token})
+        await _cm.send(session_id, "WIKI_DONE", {})
+
     elif event_type == "CHAT_TURN":
         query = data.get("content", "")
         selection_text = data.get("selection_text", "")
@@ -263,10 +390,12 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             else:
                 user_msg = {"role": "user", "content": user_content}
 
-            messages = [
-                {"role": "system", "content": system_msg},
-                user_msg,
-            ]
+            history_msgs = data.get("history", [])
+            messages = [{"role": "system", "content": system_msg}]
+            for h in history_msgs[-10:]:
+                role = "user" if h.get("role") in ("student", "user") else "assistant"
+                messages.append({"role": role, "content": h.get("content", "")})
+            messages.append(user_msg)
             # Let the model decide whether it needs the web (tool-calling, "auto when helpful").
             decision = await loop.run_in_executor(
                 None,
@@ -326,10 +455,12 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             else:
                 user_msg = {"role": "user", "content": user_content}
 
-            messages = [
-                {"role": "system", "content": system_msg},
-                user_msg,
-            ]
+            history_msgs = data.get("history", [])
+            messages = [{"role": "system", "content": system_msg}]
+            for h in history_msgs[-10:]:
+                role = "user" if h.get("role") in ("student", "user") else "assistant"
+                messages.append({"role": role, "content": h.get("content", "")})
+            messages.append(user_msg)
             async for token in _get_tutor()._client.stream_complete(messages):
                 full_response += token
                 await _cm.send(session_id, "CHAT_TOKEN", {"token": token})

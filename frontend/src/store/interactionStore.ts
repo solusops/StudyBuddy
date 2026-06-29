@@ -1,4 +1,5 @@
 import { create } from "zustand"
+import type { ChatSession, WikiPage } from "../types"
 
 export type CursorMode = "DEFAULT" | "NOTE_APPEND"
 
@@ -47,11 +48,27 @@ interface InteractionStore {
   removeAnnotation: (id: string) => void
   notePositions: Record<string, number>
   updateNotePosition: (id: string, yNorm: number) => void
+
+  wikiHistory: Record<string, WikiPage[]> // key = documentId
+  pushWikiPage: (docId: string, page: WikiPage) => void
+  updateWikiPage: (docId: string, term: string, patch: Partial<WikiPage>) => void
+
+  chatSessions: ChatSession[]
+  activeChatSessionId: string | null
+  setActiveChatSession: (id: string | null) => void
+  addChatSession: (session: ChatSession) => void
+  updateChatSession: (id: string, messages: ChatSession["messages"]) => void
 }
 
 // Load initial note positions from localStorage
 const savedPositions = localStorage.getItem("studybuddy_note_positions")
 const initialPositions = savedPositions ? JSON.parse(savedPositions) : {}
+
+const savedWikiHistory = localStorage.getItem("studybuddy_wiki_history")
+const initialWikiHistory = savedWikiHistory ? JSON.parse(savedWikiHistory) : {}
+
+const savedChatSessions = localStorage.getItem("studybuddy_chat_sessions")
+const initialChatSessions = savedChatSessions ? JSON.parse(savedChatSessions) : []
 
 export const useInteractionStore = create<InteractionStore>((set) => ({
   cursorMode: "DEFAULT",
@@ -87,5 +104,38 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
       const next = { ...s.notePositions, [id]: yNorm }
       localStorage.setItem("studybuddy_note_positions", JSON.stringify(next))
       return { notePositions: next }
+    }),
+
+  wikiHistory: initialWikiHistory,
+  pushWikiPage: (docId, page) =>
+    set((s) => {
+      const nextList = [...(s.wikiHistory[docId] || []), page]
+      const next = { ...s.wikiHistory, [docId]: nextList }
+      localStorage.setItem("studybuddy_wiki_history", JSON.stringify(next))
+      return { wikiHistory: next }
+    }),
+  updateWikiPage: (docId, term, patch) =>
+    set((s) => {
+      const list = s.wikiHistory[docId] || []
+      const nextList = list.map((p) => (p.term === term ? { ...p, ...patch } : p))
+      const next = { ...s.wikiHistory, [docId]: nextList }
+      localStorage.setItem("studybuddy_wiki_history", JSON.stringify(next))
+      return { wikiHistory: next }
+    }),
+
+  chatSessions: initialChatSessions,
+  activeChatSessionId: null,
+  setActiveChatSession: (id) => set({ activeChatSessionId: id }),
+  addChatSession: (session) =>
+    set((s) => {
+      const next = [...s.chatSessions, session]
+      localStorage.setItem("studybuddy_chat_sessions", JSON.stringify(next))
+      return { chatSessions: next }
+    }),
+  updateChatSession: (id, messages) =>
+    set((s) => {
+      const next = s.chatSessions.map((c) => (c.id === id ? { ...c, messages } : c))
+      localStorage.setItem("studybuddy_chat_sessions", JSON.stringify(next))
+      return { chatSessions: next }
     }),
 }))

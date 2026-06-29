@@ -62,9 +62,10 @@ def _load_region_cache(document_id: str) -> dict:
     p = _region_cache_path(document_id)
     if os.path.exists(p):
         try:
-            os.remove(p)
-        except Exception:
-            pass
+            with open(p, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"[REGIONS] Error loading cache for {document_id}: {e}")
     return {}
 
 
@@ -183,7 +184,7 @@ async def snip(req: SnipRequest):
         desc = await loop.run_in_executor(
             None, _get_senses().describe_region, crop_base64, "snippet"
         )
-        return {
+        new_region = {
             "id": f"snip_{req.page_number}_{req.bbox_norm['y']:.3f}",
             "type": desc.type,
             "bbox_norm": req.bbox_norm,
@@ -191,6 +192,16 @@ async def snip(req: SnipRequest):
             "extracted_content": desc.extracted_content,
             "crop_base64": crop_base64,
         }
+        
+        # Save to cache
+        cache = _load_region_cache(req.document_id)
+        page_key = str(req.page_number)
+        if page_key not in cache:
+            cache[page_key] = []
+        cache[page_key].append(new_region)
+        _save_region_cache(req.document_id, cache)
+        
+        return new_region
     except Exception as e:
         print(f"[REGIONS] describe_region error: {e}")
         raise HTTPException(status_code=500, detail="vision_failed")

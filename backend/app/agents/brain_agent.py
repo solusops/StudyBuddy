@@ -86,9 +86,101 @@ class _SyllabusBlueprint(BaseModel):
     )
 
 
+class _SectionItem(BaseModel):
+    label: str = Field(description="≤6 word section title")
+    description: str = Field("", description="≤80 char summary")
+    complexity: int = Field(3, ge=1, le=5)
+
+
+class _RootAndSections(BaseModel):
+    root_label: str = Field(description="Overall subject/topic name")
+    root_description: str = Field("", description="≤80 char summary of the whole subject")
+    sections: List[_SectionItem] = Field(description="Top-level subtopics of the subject")
+
+
+class _ExpansionChild(BaseModel):
+    label: str = Field(description="≤6 word concept title")
+    description: str = Field("", description="≤80 char summary")
+    complexity: int = Field(3, ge=1, le=5)
+    relationship: str = Field("prerequisite", description="prerequisite | related | builds-on")
+
+
+class _SectionExpansion(BaseModel):
+    children: List[_ExpansionChild] = Field(
+        default_factory=list, description="1-3 specific concepts under this section"
+    )
+
+
 class BrainAgent:
     def __init__(self, client: Optional[CerebrasClient] = None) -> None:
         self._client = client or CerebrasClient()
+
+    # ------------------------------------------------------------------ #
+    # Streaming curriculum — root-first, then parallel section expansion  #
+    # ------------------------------------------------------------------ #
+
+    def derive_root_and_sections(
+        self,
+        structure_text: str,
+        familiarity: str,
+        topic_hint: str = "",
+        memory_context: str = "",
+    ) -> _RootAndSections:
+        """One fast call: the root subject + its top-level sections (no children yet)."""
+        tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
+        familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        topic_note = f"The student wants to study: {topic_hint}\n" if topic_hint else ""
+        memory_note = f"Prior student knowledge:\n{memory_context}\n" if memory_context else ""
+        # Aim for roughly half the node budget as top-level sections.
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a curriculum organiser. {familiarity_note}\n{topic_note}{memory_note}\n"
+                    "Identify the overall subject (root) and its top-level sections ONLY — "
+                    "do not list sub-concepts yet. "
+                    f"GRANULARITY:\n{tree_shape['guidance']}\n"
+                    "Use ONLY topics evidenced in the material. Provide 4-8 sections."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Document structure:\n{structure_text[:10000]}\n\n"
+                    f"root_label should be '{topic_hint}' if provided, else the subject name. "
+                    "List the top-level sections (each ≤6 words)."
+                ),
+            },
+        ]
+        return self._client.structured_complete(messages, _RootAndSections)
+
+    def expand_section(
+        self,
+        section_label: str,
+        structure_text: str,
+        familiarity: str,
+    ) -> _SectionExpansion:
+        """Expand one section into 1-3 specific child concepts (one parallel call per section)."""
+        familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a curriculum organiser. {familiarity_note}\n"
+                    "Given ONE section of a subject, list 1-3 specific concepts a student must learn "
+                    "within it. Use ONLY topics evidenced in the material. Keep labels ≤6 words."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Section: {section_label}\n\n"
+                    f"Document structure (for grounding):\n{structure_text[:4000]}\n\n"
+                    "List 1-3 child concepts for this section."
+                ),
+            },
+        ]
+        return self._client.structured_complete(messages, _SectionExpansion)
 
     def _build_nodes_and_edges(
         self, blueprint: _SyllabusBlueprint

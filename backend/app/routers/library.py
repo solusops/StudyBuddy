@@ -252,27 +252,14 @@ async def upload_and_start(
     if not files:
         raise HTTPException(400, "No files uploaded")
 
-    overviews = []
     file_store: List[tuple] = []  # (bytes, filename) for background chunking
-
     for f in files[:5]:  # cap at 5 to keep prompt manageable
         content = await f.read()
         filename = f.filename or "upload"
-        structure = extract_document_structure(content, filename)
-        overviews.append({"filename": filename, "structure_text": structure})
         file_store.append((content, filename))
 
-    loop = asyncio.get_event_loop()
-    nodes, edges = await loop.run_in_executor(
-        None,
-        _get_brain().extract_curriculum_from_documents,
-        overviews,
-        familiarity,
-        topic_hint,
-        "",
-    )
-
-    get_graph_manager().set_graph(session_id, nodes)
+    # The curriculum tree is NOT generated here — the client opens the WebSocket and
+    # fires BUILD_GRAPH, which streams nodes in parallel ("fireworks"). This returns fast.
 
     # Persist uploaded files to disk so /library/file/{name} can serve them later
     uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
@@ -311,8 +298,8 @@ async def upload_and_start(
     document_id = hashlib.sha256(file_store[0][0]).hexdigest() if file_store else ""
     return {
         "status": "ready",
-        "nodes": [n.model_dump() for n in nodes],
-        "edges": edges,
+        "nodes": [],   # streamed via BUILD_GRAPH over the WebSocket
+        "edges": [],
         "filenames": [name for _, name in file_store],
         "document_id": document_id,
     }

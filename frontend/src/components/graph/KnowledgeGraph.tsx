@@ -1,5 +1,5 @@
 import { useEffect } from "react"
-import { Background, Controls, ReactFlow, useEdgesState, useNodesState } from "@xyflow/react"
+import { Background, Controls, ReactFlow, useEdgesState, useNodesState, useReactFlow } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import dagre from "@dagrejs/dagre"
 import type { Edge, Node, NodeTypes } from "@xyflow/react"
@@ -61,6 +61,15 @@ function applyDagreLayout(
   return { nodes: laid, edges }
 }
 
+// Re-fit the viewport as nodes stream in during BUILD_GRAPH so the graph stays framed.
+function FitOnChange({ count }: { count: number }) {
+  const rf = useReactFlow()
+  useEffect(() => {
+    if (count > 0) rf.fitView({ padding: 0.2, duration: 350 })
+  }, [count, rf])
+  return null
+}
+
 interface Props {
   onNodeClick: (id: string, label: string) => void
 }
@@ -88,6 +97,7 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
+      <style>{`@keyframes nodePop { 0% { opacity: 0; transform: scale(0.4); } 100% { opacity: 1; transform: scale(1); } }`}</style>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -103,6 +113,7 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
       >
+        <FitOnChange count={nodes.length} />
         <Background color="#E8E0D5" gap={24} style={{ background: "#FAF7F2" }} />
         <Controls style={{ background: "#FFFFFF", border: "1px solid #E8E0D5", borderRadius: 8 }} />
       </ReactFlow>
