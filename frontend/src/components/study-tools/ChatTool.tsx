@@ -1,6 +1,27 @@
-import { useRef, useEffect } from "react"
+import { useRef, useEffect, useState } from "react"
+import katex from "katex"
+import "katex/dist/katex.min.css"
 import { useSessionStore } from "../../store/sessionStore"
 import { useContextStore } from "../../store/contextStore"
+import { splitFencedBlocks } from "../../lib/chatBlocks"
+import { MermaidBlock } from "./MermaidBlock"
+import { PlotlyBlock } from "./PlotlyBlock"
+
+// Render $$display$$, $inline$, \[display\], \(inline\) LaTeX to HTML; leave bad math as-is.
+function renderMath(text: string): string {
+  const tex = (src: string, displayMode: boolean) => {
+    try {
+      return katex.renderToString(src, { displayMode, throwOnError: false })
+    } catch {
+      return displayMode ? `$$${src}$$` : `$${src}$`
+    }
+  }
+  return text
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => tex(m, true))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => tex(m, true))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => tex(m, false))
+    .replace(/\$([^$\n]+?)\$/g, (_, m) => tex(m, false))
+}
 
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
@@ -9,13 +30,26 @@ interface Props {
 }
 
 export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
-  const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage } = useSessionStore()
-  const { selectionText, surroundingContext, selectionSnippets, clearSelection } = useContextStore()
+  const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage, knowledgeMode } = useSessionStore()
+  const { selectionText, surroundingContext, clearSelection } = useContextStore()
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [webSearching, setWebSearching] = useState(false)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [chatHistory, streamingChat])
+
+  // Show a transient "searching the web" indicator when the model calls the web_search tool.
+  useEffect(() => {
+    const onTool = () => setWebSearching(true)
+    window.addEventListener("chat-tool", onTool)
+    return () => window.removeEventListener("chat-tool", onTool)
+  }, [])
+
+  // Clear the indicator once the answer starts streaming or a new message commits.
+  useEffect(() => {
+    if (streamingChat || chatHistory.length) setWebSearching(false)
+  }, [streamingChat, chatHistory.length])
 
   const send = () => {
     const content = chatDraft.trim()
@@ -27,20 +61,23 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
       node_id: nodeId,
       content: content || "",
       familiarity,
+      knowledge_mode: knowledgeMode,
       selection_text: selectionText || undefined,
       surrounding_context: surroundingContext || undefined,
     })
   }
 
   const renderInline = (text: string): string => {
+    // Math first (KaTeX HTML must not be touched by the markdown regexes below).
+    let result = renderMath(text)
     // Bold: **text**
-    let result = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     // Links: [text](url)
     result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
     return result
   }
 
-  const renderChatContent = (text: string) => {
+  const renderProse = (text: string, keyPrefix: string) => {
     const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
     const lines = cleaned.split(/\r?\n/)
     const elements: React.ReactNode[] = []
@@ -49,7 +86,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
     const flushList = (key: string | number) => {
       if (listItems.length > 0) {
         elements.push(
-          <ul key={`list-${key}`} style={{ margin: "0 0 10px", paddingLeft: 20, lineHeight: 1.55 }}>
+          <ul key={`${keyPrefix}-list-${key}`} style={{ margin: "0 0 10px", paddingLeft: 20, lineHeight: 1.55 }}>
             {listItems.map((item, li) => (
               <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item) }} />
             ))}
@@ -68,7 +105,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
         flushList(index)
         const headerText = trimmed.replace(/^#+\s*/, "")
         elements.push(
-          <h4 key={index} style={{
+          <h4 key={`${keyPrefix}-${index}`} style={{
             fontFamily: "'Libre Caslon Text', Georgia, serif",
             color: "#1A3557",
             fontSize: 16,
@@ -94,13 +131,22 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
 
       // Paragraph
       elements.push(
-        <p key={index} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
+        <p key={`${keyPrefix}-${index}`} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
            dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
       )
     })
 
     flushList("trailing")
     return elements
+  }
+
+  const renderChatContent = (text: string) => {
+    // Intercept ```mermaid / ```plotly fenced blocks; prose flows through renderProse.
+    return splitFencedBlocks(text).map((block, i) => {
+      if (block.type === "mermaid") return <MermaidBlock key={`b-${i}`} code={block.content} />
+      if (block.type === "plotly") return <PlotlyBlock key={`b-${i}`} spec={block.content} />
+      return <div key={`b-${i}`}>{renderProse(block.content, `b-${i}`)}</div>
+    })
   }
 
   const hasContext = !!selectionText
@@ -136,6 +182,18 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             {msg.role === "assistant" ? renderChatContent(msg.content) : msg.content}
           </div>
         ))}
+        {webSearching && !streamingChat && (
+          <div style={{
+            alignSelf: "flex-start",
+            color: "#4A7FB5",
+            fontSize: 13,
+            fontStyle: "italic",
+            fontFamily: "system-ui, sans-serif",
+            padding: "4px 6px",
+          }}>
+            🌐 Searching the web…
+          </div>
+        )}
         {streamingChat && (
           <div style={{
             alignSelf: "flex-start",

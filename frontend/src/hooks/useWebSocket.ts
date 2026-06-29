@@ -64,6 +64,9 @@ export function useWebSocket(sessionId: string | null) {
         case "CHAT_TOKEN":
           appendChatToken((msg.data as { token: string }).token)
           break
+        case "CHAT_TOOL":
+          window.dispatchEvent(new CustomEvent("chat-tool", { detail: msg.data }))
+          break
         case "CHAT_DONE":
           commitChatResponse()
           break
@@ -97,6 +100,12 @@ export function useWebSocket(sessionId: string | null) {
           break
         case "WIKI_DONE":
           window.dispatchEvent(new CustomEvent("wiki-done", {}))
+          break
+        case "WIKI_VISUAL_AVAILABLE":
+          window.dispatchEvent(new CustomEvent("wiki-visual-available", { detail: msg.data }))
+          break
+        case "WIKI_FURTHER_READING":
+          window.dispatchEvent(new CustomEvent("wiki-further-reading", { detail: msg.data }))
           break
         case "WIKI_VISUAL_START":
           window.dispatchEvent(new CustomEvent("wiki-visual-start", { detail: msg.data }))

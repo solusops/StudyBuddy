@@ -1,5 +1,7 @@
-import { Handle, Position, type NodeProps } from "@xyflow/react"
+import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
 import type { NodeData } from "../../types"
+
+type ConceptNodeType = Node<NodeData, "concept">
 
 // Status colours — all nodes are open/accessible
 const STATUS_COLOR: Record<string, { bg: string; border: string; text: string }> = {
@@ -11,7 +13,7 @@ const STATUS_COLOR: Record<string, { bg: string; border: string; text: string }>
 }
 
 // Complexity → size scaling (1-5 maps to visual dimensions)
-function getComplexityStyle(complexity: number, depth: number) {
+function getComplexityStyle(complexity: number) {
   const c = Math.max(1, Math.min(5, complexity))
 
   // Sizing: larger nodes for more complex topics
@@ -34,13 +36,13 @@ const ROOT_COLORS = {
   text: "#FFFFFF",
 }
 
-export function ConceptNode({ id, data, selected }: NodeProps<NodeData>) {
+export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) {
   const avg = Math.round(
     (data.scores.memory + data.scores.comprehension + data.scores.structure + data.scores.application) / 4
   )
   const isRoot = data.depth === 0
   const complexity = data.complexity ?? 3
-  const { minWidth, maxWidth, padV, padH, opacity } = getComplexityStyle(complexity, data.depth)
+  const { minWidth, maxWidth, padV, padH, opacity } = getComplexityStyle(complexity)
 
   // Color selection: root gets accent, others get status-based
   const baseColors = isRoot ? ROOT_COLORS : (STATUS_COLOR[data.status] ?? STATUS_COLOR.ACTIVE)

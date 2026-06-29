@@ -2,13 +2,21 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
 import { VisualSandbox } from "./VisualSandbox"
+import type { AnimationType, HTML5VisualPayload } from "../../types"
+
+interface VisualOffer {
+  modality: "STATIC_PLOT" | "INTERACTIVE_SIMULATION"
+  recommended_tool: string
+  label: string
+}
 
 interface WikiPage {
   term: string
   content: string
   streaming: boolean
-  visual?: { html_code: string; animation_type: string } | null
+  visual?: HTML5VisualPayload | null
   visualLoading?: boolean
+  visualOffer?: VisualOffer | null
 }
 
 interface Props {
@@ -28,7 +36,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     (term: string, surrounding: string, parentContext: string = "") => {
       if (!term.trim() || term === lastFiredRef.current) return
       lastFiredRef.current = term
-      const page: WikiPage = { term, content: "", streaming: true, visual: null, visualLoading: false }
+      const page: WikiPage = { term, content: "", streaming: true, visual: null, visualLoading: false, visualOffer: null }
       setStack((prev) => {
         const truncated = prev.slice(0, currentIdx + 1)
         return [...truncated, page]
@@ -74,36 +82,36 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         return next
       })
     }
+    const onVisualAvailable = (e: Event) => {
+      const { term, modality, recommended_tool, label } = (e as CustomEvent).detail
+      setStack((prev) =>
+        prev.map((p) =>
+          p.term === term ? { ...p, visualOffer: { modality, recommended_tool, label } } : p
+        )
+      )
+    }
     const onVisualStart = (e: Event) => {
       const { term } = (e as CustomEvent).detail
-      setStack((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (last && last.term === term) {
-          next[next.length - 1] = { ...last, visualLoading: true }
-        }
-        return next
-      })
+      setStack((prev) =>
+        prev.map((p) => (p.term === term ? { ...p, visualLoading: true } : p))
+      )
     }
     const onVisualPayload = (e: Event) => {
       const { term, visual } = (e as CustomEvent).detail
-      setStack((prev) => {
-        const next = [...prev]
-        const last = next[next.length - 1]
-        if (last && last.term === term) {
-          next[next.length - 1] = { ...last, visualLoading: false, visual }
-        }
-        return next
-      })
+      setStack((prev) =>
+        prev.map((p) => (p.term === term ? { ...p, visualLoading: false, visual } : p))
+      )
     }
 
     window.addEventListener("wiki-token", onToken)
     window.addEventListener("wiki-done", onDone)
+    window.addEventListener("wiki-visual-available", onVisualAvailable)
     window.addEventListener("wiki-visual-start", onVisualStart)
     window.addEventListener("wiki-visual-payload", onVisualPayload)
     return () => {
       window.removeEventListener("wiki-token", onToken)
       window.removeEventListener("wiki-done", onDone)
+      window.removeEventListener("wiki-visual-available", onVisualAvailable)
       window.removeEventListener("wiki-visual-start", onVisualStart)
       window.removeEventListener("wiki-visual-payload", onVisualPayload)
     }
@@ -124,6 +132,21 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   }, [])
 
   const currentPage = stack[currentIdx]
+
+  // Generate the offered visual on demand, grounded in this card's content.
+  const requestVisual = (page: WikiPage) => {
+    if (!page.visualOffer) return
+    setStack((prev) =>
+      prev.map((p) => (p.term === page.term ? { ...p, visualLoading: true } : p))
+    )
+    sendEvent("WIKI_VISUAL_GENERATE", {
+      selection_text: page.term,
+      familiarity,
+      modality: page.visualOffer.modality,
+      recommended_tool: page.visualOffer.recommended_tool,
+      card_content: page.content,
+    })
+  }
 
   // Drill-down: user selects text inside the wiki output
   const handleDrillDown = () => {
@@ -238,7 +261,6 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
               <button
                 onClick={() => setCurrentIdx(i)}
                 style={{
-                  background: "transparent",
                   border: "none",
                   padding: "2px 6px",
                   borderRadius: 4,
@@ -275,6 +297,35 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
               )}
             </div>
             
+            {/* On-demand visual: show a button once the card is done; generate only on click. */}
+            {!currentPage.streaming && currentPage.visualOffer && !currentPage.visual && !currentPage.visualLoading && (
+              <div style={{ marginTop: 20 }}>
+                <button
+                  onClick={() => requestVisual(currentPage)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 10,
+                    background: "#EEF3F8",
+                    border: "1.5px solid #4A7FB5",
+                    borderRadius: 10,
+                    padding: "10px 16px",
+                    cursor: "pointer",
+                    color: "#1A3557",
+                    fontSize: 14,
+                    fontWeight: 600,
+                    fontFamily: "system-ui, sans-serif",
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+                    <circle cx="12" cy="12" r="11" fill="#1A3557" />
+                    <path d="M10 8.5v7l5.5-3.5L10 8.5z" fill="#FFFFFF" />
+                  </svg>
+                  Click to view {currentPage.visualOffer.label}
+                </button>
+              </div>
+            )}
+
             {(currentPage.visual || currentPage.visualLoading) && (
               <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
                 <h4 style={{
@@ -284,7 +335,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                   fontWeight: 700,
                   margin: "0 0 12px 0"
                 }}>
-                  Interactive Simulation
+                  {currentPage.visualOffer?.label ?? "Visualization"}
                 </h4>
                 {currentPage.visualLoading ? (
                   <div style={{
@@ -298,13 +349,13 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                     fontSize: 13,
                     fontFamily: "system-ui, sans-serif"
                   }}>
-                    Generating simulation...
+                    Generating visualization…
                   </div>
                 ) : (
                   <VisualSandbox
                     visual={currentPage.visual || null}
                     nodeId={currentPage.term}
-                    animationType={currentPage.visual?.animation_type ?? "canvas"}
+                    animationType={(currentPage.visual?.animation_type as AnimationType) ?? "canvas"}
                     height={330}
                   />
                 )}

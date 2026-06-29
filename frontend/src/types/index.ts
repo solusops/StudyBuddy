@@ -10,6 +10,9 @@ export interface NodeScores {
 }
 
 export interface NodeData {
+  // Index signature lets NodeData satisfy @xyflow/react's `Record<string, unknown>`
+  // node-data constraint (React Flow v12).
+  [key: string]: unknown
   id: string
   label: string
   description: string

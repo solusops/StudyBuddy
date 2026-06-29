@@ -2,13 +2,13 @@ import { useEffect } from "react"
 import { Background, Controls, ReactFlow, useEdgesState, useNodesState } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import dagre from "@dagrejs/dagre"
-import type { Edge, Node } from "@xyflow/react"
+import type { Edge, Node, NodeTypes } from "@xyflow/react"
 import { ConceptNode } from "./ConceptNode"
 import { useGraphStore } from "../../store/graphStore"
 import { useSessionStore } from "../../store/sessionStore"
 import type { NodeData } from "../../types"
 
-const nodeTypes = { concept: ConceptNode }
+const nodeTypes: NodeTypes = { concept: ConceptNode }
 
 /** Compute per-node width/height based on complexity + depth */
 function getNodeDimensions(data: NodeData): { w: number; h: number } {
@@ -68,8 +68,8 @@ interface Props {
 export function KnowledgeGraph({ onNodeClick }: Props) {
   const { nodes: storeNodes, edges: storeEdges } = useGraphStore()
   const { setActiveNode } = useSessionStore()
-  const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node<NodeData>>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
   // Recompute dagre layout whenever the store graph changes
   useEffect(() => {

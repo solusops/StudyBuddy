@@ -7,6 +7,7 @@ Singletons (agents, services, db) are module-level so they survive across
 requests within one process lifetime.
 """
 import asyncio
+import json
 from typing import Any, Dict
 
 from app.agents.brain_agent import BrainAgent
@@ -25,6 +26,7 @@ from app.services.journal_service import JournalService
 from app.services.student_memory import StudentMemoryService
 from app.services.transcription_service import TranscriptionService
 from app.services.summary_writer import build_summary_markdown
+from app.services.scholar_service import fetch_top_papers
 from app.websockets.connection_manager import ConnectionManager
 
 # All singletons are lazy — nothing loads at import time so uvicorn binds
@@ -40,6 +42,26 @@ _tutor: TutorAgent | None = None
 _router: ModalityRouter | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
+
+# Tool the chat model may call to fetch live web context (executed via WikiAgent.search_tavily).
+_WEB_SEARCH_TOOL = {
+    "type": "function",
+    "function": {
+        "name": "web_search",
+        "description": (
+            "Search the web for current or external information that is NOT in the student's "
+            "uploaded material. Use when the question needs recent facts, external definitions, "
+            "or context beyond the source documents."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "The web search query."},
+            },
+            "required": ["query"],
+        },
+    },
+}
 
 
 def _get_db() -> ChromaDBClient:
@@ -157,6 +179,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         query = data.get("content", "")
         selection_text = data.get("selection_text", "")
         surrounding_context = data.get("surrounding_context", "")
+        knowledge_mode = data.get("knowledge_mode", "content_only")
         chunks = await _get_chunks(session_id, query or selection_text or "context", n=5)
         chunk_ctx = "\n".join(f"[{c.get('source','?')}]: {c['text']}" for c in chunks)
         selection_prefix = ""
@@ -165,18 +188,96 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             if surrounding_context:
                 selection_prefix += f"Surrounding context from the document:\n{surrounding_context[:4000]}\n"
             selection_prefix += "\n"
-        system_msg = (
-            f"{selection_prefix}"
-            f"Answer using ONLY this source material. Cite inline. Never fabricate.\n\n{chunk_ctx}"
+
+        _CHAT_FORMATTING = (
+            "Formatting:\n"
+            "- Write math in LaTeX: inline $...$ and display $$...$$.\n"
+            "- For structural concepts you MAY add a ```mermaid fenced diagram.\n"
+            "- For concrete numeric data you MAY add a ```plotly fenced JSON spec "
+            "{\"data\":[...],\"layout\":{...}} (real numbers only — never invent data).\n\n"
         )
-        messages = [
-            {"role": "system", "content": system_msg},
-            {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
-        ]
+
+        loop = asyncio.get_event_loop()
         full_response = ""
-        async for token in _get_tutor()._client.stream_complete(messages):
-            full_response += token
-            await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
+
+        if knowledge_mode == "net_support":
+            # Hybrid tutor: source-anchored, but free to use web + expert knowledge.
+            system_msg = (
+                "You are Study Buddy, an expert research tutor helping a student understand a paper "
+                "they uploaded. Be genuinely helpful and substantive — explain, define, give intuition, "
+                "analogies, and worked reasoning. Tailor the depth to the "
+                f"{familiarity} level.\n\n"
+                f"{selection_prefix}"
+                "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. You may ALSO "
+                "use your own expert knowledge, and call the web_search tool for facts, recent "
+                "information, or external definitions that are not in the material.\n\n"
+                "Attribution rules:\n"
+                "- A fact from the student's material → cite inline like [Source: <label>].\n"
+                "- A fact from the web → cite the title/URL it came from.\n"
+                "- Explaining from general expertise → just explain it clearly; no citation needed.\n"
+                "- NEVER invent a citation or attribute a claim to the source if it is not there.\n\n"
+                f"{_CHAT_FORMATTING}"
+                f"SOURCE MATERIAL:\n{chunk_ctx}"
+            )
+            messages = [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
+            ]
+            # Let the model decide whether it needs the web (tool-calling, "auto when helpful").
+            decision = await loop.run_in_executor(
+                None,
+                lambda: _get_tutor()._client.complete_with_tools(messages, [_WEB_SEARCH_TOOL]),
+            )
+            tool_calls = getattr(decision, "tool_calls", None)
+            if tool_calls:
+                await _cm.send(session_id, "CHAT_TOOL", {"tool": "web_search", "status": "running"})
+                messages.append({
+                    "role": "assistant",
+                    "content": decision.content or "",
+                    "tool_calls": [
+                        {"id": tc.id, "type": "function",
+                         "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
+                        for tc in tool_calls
+                    ],
+                })
+                for tc in tool_calls:
+                    try:
+                        args = json.loads(tc.function.arguments or "{}")
+                    except json.JSONDecodeError:
+                        args = {}
+                    results = await _wiki.search_tavily(args.get("query", query or selection_text))
+                    web_text = "\n\n".join(
+                        f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}" for r in results
+                    ) or "No web results found."
+                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": web_text})
+                async for token in _get_tutor()._client.stream_complete(messages):
+                    full_response += token
+                    await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
+            else:
+                # No tool needed — the decision call already produced the full answer; replay as tokens.
+                full_response = decision.content or ""
+                for word in full_response.split(" "):
+                    await _cm.send(session_id, "CHAT_TOKEN", {"token": word + " "})
+        else:
+            # content_only mode: strictly grounded in the uploaded material, no web, no outside facts.
+            system_msg = (
+                "You are Study Buddy, helping a student understand a paper they uploaded, at the "
+                f"{familiarity} level.\n\n"
+                f"{selection_prefix}"
+                "Answer using ONLY the SOURCE MATERIAL below. Cite inline like [Source: <label>]. "
+                "If the material does not contain the answer, say so plainly and point to the nearest "
+                "relevant part — never fabricate facts or pull from outside knowledge.\n\n"
+                f"{_CHAT_FORMATTING}"
+                f"SOURCE MATERIAL:\n{chunk_ctx}"
+            )
+            messages = [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
+            ]
+            async for token in _get_tutor()._client.stream_complete(messages):
+                full_response += token
+                await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
+
         _journal.append(
             JournalEntry(
                 session_id=session_id,
@@ -447,59 +548,78 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _cache.put(cache_key, full)
             await _cm.send(session_id, "WIKI_DONE", {})
 
-        # ---- Modality Router: decide and generate visual ----
+        # ---- Further Reading (OpenAlex) — only in net_support mode ----
+        if knowledge_mode == "net_support":
+            try:
+                papers = await fetch_top_papers(selection_text, n=3)
+                if papers:
+                    await _cm.send(session_id, "WIKI_FURTHER_READING", {
+                        "term": selection_text,
+                        "papers": papers,
+                    })
+            except Exception as e:
+                print("Error fetching further reading:", e)
+
+        # ---- Modality Router: decide whether a visual is worth OFFERING ----
+        # The visual itself is generated lazily (on button click) via WIKI_VISUAL_GENERATE,
+        # grounded in this card's content. Here we only classify and offer the button.
+        try:
+            loop = asyncio.get_event_loop()
+            decision = await loop.run_in_executor(
+                None,
+                _get_router().classify,
+                selection_text,
+                full,
+                chunks,
+                familiarity,
+            )
+            if decision.modality != "NONE":
+                label = "Data Plot" if decision.modality == "STATIC_PLOT" else "Interactive Simulation"
+                await _cm.send(session_id, "WIKI_VISUAL_AVAILABLE", {
+                    "term": selection_text,
+                    "modality": decision.modality,
+                    "recommended_tool": decision.recommended_tool,
+                    "label": label,
+                })
+        except Exception as e:
+            print("Error classifying wiki visual:", e)
+
+    # ---- WIKI_VISUAL_GENERATE (Infinite Wiki — generate the offered visual on demand) ----
+    elif event_type == "WIKI_VISUAL_GENERATE":
+        selection_text = data.get("selection_text", "")
+        familiarity = data.get("familiarity", "high_school")
+        modality = data.get("modality", "INTERACTIVE_SIMULATION")
+        recommended_tool = data.get("recommended_tool", "Canvas")
+        card_content = data.get("card_content", "")
+        anchor_id = f"wiki_{hash(selection_text) & 0xFFFFFF}"
+        chunks = await _get_chunks(session_id, selection_text, n=5)
+        # Ground the visual in BOTH the wiki card's content and the source chunks.
+        ctx_chunks = ([{"source": "wiki summary", "text": card_content}] + chunks) if card_content else chunks
         visual_cache_key = _cache.make_key(
-            "WIKI_VISUAL", familiarity, anchor_id, [c["text"] for c in chunks], selection_text
+            "WIKI_VISUAL", familiarity, anchor_id, [c["text"] for c in chunks], f"{selection_text}|{modality}"
         )
+        await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
         cached_visual = _cache.get(visual_cache_key)
         if cached_visual:
-            await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
-            await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
-                "term": selection_text,
-                "visual": cached_visual,
-            })
+            await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {"term": selection_text, "visual": cached_visual})
         else:
             try:
                 loop = asyncio.get_event_loop()
-                decision = await loop.run_in_executor(
-                    None,
-                    _get_router().classify,
-                    selection_text,
-                    full,
-                    chunks,
-                    familiarity,
-                )
-                if decision.modality == "NONE":
-                    pass  # text-only card; no visual
-                else:
-                    await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
-                    if decision.modality == "STATIC_PLOT":
-                        visual = await loop.run_in_executor(
-                            None,
-                            _get_tutor().generate_plot,
-                            selection_text,
-                            chunks,
-                            familiarity,
-                        )
-                    else:  # INTERACTIVE_SIMULATION
-                        tool = decision.recommended_tool
-                        anim = "three.js" if tool == "Three.js" else "canvas"
-                        visual = await loop.run_in_executor(
-                            None,
-                            _get_tutor().generate_visual,
-                            selection_text,
-                            anim,
-                            familiarity,
-                            chunks,
-                        )
-                    payload = visual.model_dump()
-                    _cache.put(visual_cache_key, payload)
-                    await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
-                        "term": selection_text,
-                        "visual": payload,
-                    })
+                if modality == "STATIC_PLOT":
+                    visual = await loop.run_in_executor(
+                        None, _get_tutor().generate_plot, selection_text, ctx_chunks, familiarity
+                    )
+                else:  # INTERACTIVE_SIMULATION
+                    anim = "three.js" if recommended_tool == "Three.js" else "canvas"
+                    visual = await loop.run_in_executor(
+                        None, _get_tutor().generate_visual, selection_text, anim, familiarity, ctx_chunks
+                    )
+                payload = visual.model_dump()
+                _cache.put(visual_cache_key, payload)
+                await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {"term": selection_text, "visual": payload})
             except Exception as e:
                 print("Error generating wiki visual:", e)
+                await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {"term": selection_text, "visual": None})
 
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":

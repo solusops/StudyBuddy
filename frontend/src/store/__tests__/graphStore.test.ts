@@ -8,6 +8,7 @@ const makeNode = (id: string, overrides: Partial<NodeData> = {}): NodeData => ({
   description: "",
   status: "ACTIVE",
   depth: 1,
+  complexity: 3,
   scores: { memory: 0, comprehension: 0, structure: 0, application: 0 },
   parent_id: null,
   children_ids: [],

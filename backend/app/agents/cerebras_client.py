@@ -130,6 +130,34 @@ class CerebrasClient:
         except Exception as exc:
             self._handle_sdk_exc(exc)
 
+    def complete_with_tools(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: List[Dict[str, Any]],
+        tool_choice: str = "auto",
+        model: str | None = None,
+    ):
+        """Non-streaming completion that may return tool calls.
+
+        Returns the raw SDK message object (has `.content` and `.tool_calls`).
+        The caller inspects `.tool_calls`, executes them, appends the results,
+        then streams the final answer via stream_complete().
+        """
+        self._check_rate_limit()
+        try:
+            resp = self._client.chat.completions.create(
+                model=model or MODEL_ID,
+                messages=messages,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+            self._health = {"status": "ok"}
+            return resp.choices[0].message
+        except CerebrasError:
+            raise
+        except Exception as exc:
+            self._handle_sdk_exc(exc)
+
     async def stream_complete(self, messages: List[Dict[str, Any]], model: str | None = None) -> AsyncIterator[str]:
         self._check_rate_limit()
         try:
