@@ -5,7 +5,9 @@
   <img src="https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron" />
 </p>
 
-# 📚 Study Buddy
+# Study Buddy
+
+![Study Buddy](assets/smallsnap.gif)
 
 An **agentic AI study companion** that teaches exclusively from your uploaded material. Drop a textbook chapter, lecture notes, or past papers -> the system builds a structured curriculum, generates grounded explanations, interactive figures, flashcards, quizzes, and Feynman-method drills. Every answer is sourced and cited; nothing is invented from model weights.
 
@@ -13,36 +15,36 @@ An **agentic AI study companion** that teaches exclusively from your uploaded ma
 
 ---
 
-## ✨ Features
+## Features
 
 ### 📖 Intelligent PDF Reader
 - **Discontinuous text selection** -> hold Shift to accumulate multiple passages across pages; custom yellow highlight overlays persist until cleared with Escape
 - **Margin gutter notes** -> switch to Annotate mode, select text, and write draggable sticky notes that pin to the page margin. Click to edit, clear to delete
 - **Interactive figure regions** -> toggle Regions mode to auto-detect figures, tables, plots, and diagrams. Click any detected region to send it to Infinite Wiki or Chat, or pin it as a note
 
-### 🔬 Infinite Wiki
+### Infinite Wiki
 - **Contextual drill-down cards** -> select any text in the PDF and a streaming, grounded definition card appears. Highlight any term inside the card to drill deeper -> unlimited depth
 - **Structured 3-part layout** -> every card streams a difficulty-adapted one-sentence summary, 3 core formulas/facts, and a 2-question active-recall quiz
 - **Self-repairing HTML5 visualisations** -> scientific concepts auto-generate interactive Canvas simulations (orbital mechanics, wave interference, etc.). If the generated code errors at runtime, the sandbox catches it and self-heals via a repair endpoint
 - **Web-augmented research** -> in Net Support mode, the wiki agent falls back to Tavily web search when the concept isn't covered in your material, with `[Web: Title](url)` citations
 
-### 💬 Grounded Chat
+### Grounded Chat
 - **RAG-powered Q&A** -> every answer cites its source chunk from your uploaded document
 - **Rich markdown rendering** -> responses stream with headings, bullet lists, bold text, and web citation links
 - **Context chip** -> the currently selected text is shown as a persistent chip above the input, grounding your questions
 
-### 🧠 Knowledge Graph
+### Knowledge Graph
 - **Auto-generated curriculum tree** -> the AI extracts a topic hierarchy from your material and renders it as an interactive node graph
 - **Click-to-learn** -> click any concept node to stream a full lesson. The tutor never refuses to teach a concept, even if it's only tangentially mentioned in the text
 - **Session-scoped RAG** -> document chunks are isolated per session; uploading a new PDF doesn't bleed into old sessions
 
-### 🎯 Study Tools
+### Study Tools
 - **Flashcards** -> generated from your uploaded question papers
 - **Quiz** -> timed self-assessment with graded answers
 - **Feynman Method** -> explain the concept aloud to a curious Study Buddy persona (voice or text). The persona adapts its age and behaviour to your difficulty level (Age 5 for ELI5, Age 30 for Expert)
 - **Speech-to-text** -> backend Canary neural transcription when available, with automatic Web Speech API fallback
 
-### ⚙️ Adaptive Difficulty
+### Adaptive Difficulty
 Four familiarity levels that reshape every interaction:
 
 | Level | Label | Behaviour |
@@ -52,7 +54,7 @@ Four familiarity levels that reshape every interaction:
 | 🎓 Graduate | Age 22 | Domain competence assumed, rigorous derivations |
 | 🧪 Expert | Age 30 | Pure synthesis, proofs, literature-level discourse |
 
-### 🔒 Privacy
+### Privacy
 - All student data stays **local** at `~/.studybuddy/` -> nothing goes to the cloud
 - ChromaDB vector store, session memory, annotations, and summaries are all file-based
 - The only outbound calls are to the Cerebras API (inference) and optionally Tavily (web search)
@@ -69,7 +71,7 @@ Four familiarity levels that reshape every interaction:
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # 1. Clone
@@ -111,7 +113,7 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 
 ---
 
-## 📋 How to Use
+## How to Use
 
 1. **Upload content** -> drop a PDF, DOCX, or TXT (textbook chapters, lecture notes, problem sets)
 2. **Upload questions** *(optional)* -> past exam papers or Q&A sheets for flashcards and quizzes
@@ -261,7 +263,7 @@ npx vitest run
 
 ---
 
-## ⚠️ Key Constraints
+## Key Constraints
 
 - **Grounded-only generation** -> Gemma 4 organises and rephrases your uploaded content. It never generates facts from its own weights (except in Net Support mode, where web sources are cited)
 - **Source citations** -> every AI answer cites its source: `[Source: filename, chunk N]`
@@ -271,6 +273,6 @@ npx vitest run
 
 ---
 
-## 📄 License
+## License
 
 Apache 2.0

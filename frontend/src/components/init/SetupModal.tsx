@@ -9,6 +9,12 @@ const FAMILIARITY_OPTIONS: { value: FamiliarityLevel; label: string; desc: strin
   { value: "expert",      label: "Expert",       desc: "Pure synthesis, proofs" },
 ]
 
+const KEY_FIELDS: { env: string; label: string; hint: string; required: boolean }[] = [
+  { env: "CEREBRAS_API_KEY", label: "Cerebras", hint: "csk-…", required: true },
+  { env: "TAVILY_API_KEY",   label: "Tavily",   hint: "tvly-… (enables Net Support)", required: false },
+  { env: "YOUTUBE_API_KEY",  label: "YouTube",  hint: "AIza… (enables Deep Dive)", required: false },
+]
+
 interface Props {
   onSessionReady: (session: AppSession) => void
 }
@@ -23,6 +29,13 @@ export function SetupModal({ onSessionReady }: Props) {
   const [phase, setPhase] = useState<"idle" | "starting" | "error">("idle")
   const [error, setError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // ── API Keys state ──────────────────────────────────────────────────
+  const [keysOpen, setKeysOpen] = useState(false)
+  const [keyValues, setKeyValues] = useState<Record<string, string>>({})
+  const [keyStatus, setKeyStatus] = useState<Record<string, boolean>>({})
+  const [keySaving, setKeySaving] = useState(false)
+  const [keySaved, setKeySaved] = useState(false)
 
   // Poll until backend is reachable — disables the button during cold start
   useEffect(() => {
@@ -39,6 +52,15 @@ export function SetupModal({ onSessionReady }: Props) {
     poll()
     return () => { cancelled = true }
   }, [])
+
+  // Once backend is ready, fetch which keys are already configured
+  useEffect(() => {
+    if (!backendReady) return
+    fetch("/api/keys")
+      .then((r) => r.json())
+      .then((data) => setKeyStatus(data))
+      .catch(() => {})
+  }, [backendReady])
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
@@ -59,6 +81,31 @@ export function SetupModal({ onSessionReady }: Props) {
     setDragging(false)
     addFiles(e.dataTransfer.files)
   }, [])
+
+  const saveKeys = async () => {
+    const toSave = Object.fromEntries(
+      Object.entries(keyValues).filter(([, v]) => v.trim())
+    )
+    if (Object.keys(toSave).length === 0) return
+    setKeySaving(true)
+    try {
+      await fetch("/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(toSave),
+      })
+      // Refresh status
+      const r = await fetch("/api/keys")
+      setKeyStatus(await r.json())
+      setKeyValues({})
+      setKeySaved(true)
+      setTimeout(() => setKeySaved(false), 2500)
+    } catch {
+      setError("Failed to save API keys")
+    } finally {
+      setKeySaving(false)
+    }
+  }
 
   const start = async () => {
     if (files.length === 0) { setError("Drop at least one PDF, DOCX or TXT file."); return }
@@ -300,6 +347,107 @@ export function SetupModal({ onSessionReady }: Props) {
               : "Start Studying →"}
         </button>
       </div>
+
+      {/* ── API Keys — bottom center toggle ──────────────────────────── */}
+      <div style={{
+        position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
+        display: "flex", flexDirection: "column", alignItems: "center",
+        width: "100%", maxWidth: 520,
+        zIndex: 20,
+      }}>
+        {/* Collapsible panel */}
+        {keysOpen && (
+          <div style={{
+            width: "100%",
+            background: "#FFFFFF",
+            border: "1px solid #E8E0D5",
+            borderRadius: "14px 14px 0 0",
+            boxShadow: "0 -4px 24px rgba(26,53,87,0.10)",
+            padding: "20px 24px 16px",
+            display: "flex", flexDirection: "column", gap: 14,
+          }}>
+            <p style={{ margin: 0, fontSize: 13, color: "#6B7280", lineHeight: 1.5 }}>
+              Keys are saved to <code style={{ background: "#F3F0EB", padding: "1px 5px", borderRadius: 4, fontSize: 12 }}>backend/.env</code> and
+              loaded instantly. They never leave your machine.
+            </p>
+
+            {KEY_FIELDS.map((kf) => (
+              <div key={kf.env}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: keyStatus[kf.env] ? "#22C55E" : "#D1D5DB",
+                    flexShrink: 0,
+                  }} />
+                  <label style={{ fontSize: 13, fontWeight: 600, color: "#1A1A2E" }}>
+                    {kf.label}
+                    {kf.required && <span style={{ color: "#EF4444", marginLeft: 2 }}>*</span>}
+                  </label>
+                  {keyStatus[kf.env] && (
+                    <span style={{ fontSize: 11, color: "#22C55E", marginLeft: "auto" }}>configured</span>
+                  )}
+                </div>
+                <input
+                  type="password"
+                  placeholder={keyStatus[kf.env] ? "••••••• (already set — leave blank to keep)" : kf.hint}
+                  value={keyValues[kf.env] || ""}
+                  onChange={(e) => setKeyValues((prev) => ({ ...prev, [kf.env]: e.target.value }))}
+                  style={{
+                    ...inputStyle,
+                    fontSize: 13,
+                    padding: "8px 12px",
+                    fontFamily: "monospace",
+                  }}
+                />
+              </div>
+            ))}
+
+            <button
+              onClick={saveKeys}
+              disabled={keySaving}
+              style={{
+                background: keySaved ? "#22C55E" : "#1A3557",
+                color: "#fff",
+                border: "none",
+                borderRadius: 8,
+                padding: "9px 0",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: keySaving ? "wait" : "pointer",
+                transition: "background 0.25s",
+              }}
+            >
+              {keySaved ? "✓ Saved" : keySaving ? "Saving…" : "Save Keys"}
+            </button>
+          </div>
+        )}
+
+        {/* Toggle button */}
+        <button
+          onClick={() => setKeysOpen((o) => !o)}
+          style={{
+            background: keysOpen ? "#1A3557" : "#FFFFFF",
+            color: keysOpen ? "#FAF7F2" : "#1A3557",
+            border: keysOpen ? "none" : "1px solid #E8E0D5",
+            borderRadius: keysOpen ? "0 0 10px 10px" : "10px 10px 0 0",
+            padding: "8px 28px",
+            fontSize: 13,
+            fontWeight: 600,
+            cursor: "pointer",
+            letterSpacing: "0.06em",
+            boxShadow: keysOpen ? "none" : "0 -2px 8px rgba(26,53,87,0.06)",
+            transition: "all 0.2s",
+            display: "flex", alignItems: "center", gap: 8,
+          }}
+        >
+          <span style={{ fontSize: 14 }}>🔑</span>
+          API KEYS
+          <span style={{
+            fontSize: 10, transform: keysOpen ? "rotate(180deg)" : "rotate(0deg)",
+            transition: "transform 0.2s", display: "inline-block",
+          }}>▲</span>
+        </button>
+      </div>
     </div>
   )
 }
@@ -323,3 +471,4 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
   outline: "none",
 }
+
