@@ -287,18 +287,35 @@ def serve_library_file(filename: str):
     return FileResponse(path, media_type=media_types.get(ext, "application/octet-stream"))
 
 
+class _RefineNodeInfo(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    depth: int = 1
+    parent_id: Optional[str] = None
+
+
+class _RefineEdgeInfo(BaseModel):
+    source: str
+    target: str
+    relationship: str = "prerequisite"
+
+
 class RefineTreeRequest(BaseModel):
     session_id: str
     user_feedback: str
     familiarity: str = "high_school"
+    current_nodes: Optional[List[_RefineNodeInfo]] = None
+    current_edges: Optional[List[_RefineEdgeInfo]] = None
 
 
 @router.post("/refine-tree")
 async def refine_tree(req: RefineTreeRequest):
-    """Regenerate the curriculum tree based on student feedback.
+    """Refine the curriculum tree based on student feedback.
 
-    Queries existing RAG chunks and re-derives the tree with the student's
-    guidance injected as context. The tree stays grounded in the uploaded content.
+    When current_nodes/current_edges are provided, sends the existing graph
+    to the LLM for context-aware refinement. Falls back to full regeneration
+    if the current graph is not supplied.
     """
     db = get_db()
     chunk_count = db.collection_count(LIBRARY_COLLECTION)
@@ -314,14 +331,29 @@ async def refine_tree(req: RefineTreeRequest):
     )
     chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
 
-    guidance_note = f"Student feedback on the previous tree: {req.user_feedback}"
-    nodes, edges = await loop.run_in_executor(
-        None,
-        _get_brain().extract_curriculum,
-        chunks,
-        req.familiarity,
-        guidance_note,
-    )
+    brain = _get_brain()
+
+    if req.current_nodes and len(req.current_nodes) > 0:
+        # Context-aware refinement — send existing tree structure to LLM
+        nodes, edges = await loop.run_in_executor(
+            None,
+            brain.refine_curriculum,
+            chunks,
+            req.familiarity,
+            req.user_feedback,
+            [n.model_dump() for n in req.current_nodes],
+            [e.model_dump() for e in req.current_edges or []],
+        )
+    else:
+        # Fallback: no existing graph context, regenerate from scratch
+        guidance_note = f"Student feedback on the previous tree: {req.user_feedback}"
+        nodes, edges = await loop.run_in_executor(
+            None,
+            brain.extract_curriculum,
+            chunks,
+            req.familiarity,
+            guidance_note,
+        )
 
     get_graph_manager().set_graph(req.session_id, nodes)
     return {

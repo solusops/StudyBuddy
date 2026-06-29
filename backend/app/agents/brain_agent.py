@@ -175,6 +175,88 @@ class BrainAgent:
         ]
         return nodes, edges
 
+    def refine_curriculum(
+        self,
+        chunks: List[Dict[str, Any]],
+        familiarity: str,
+        user_feedback: str,
+        current_nodes: List[Dict[str, Any]],
+        current_edges: List[Dict[str, Any]],
+    ) -> Tuple[List[NodeData], List[Dict]]:
+        """Refine the existing curriculum tree based on student feedback.
+
+        Instead of generating a brand-new tree, this sends the current graph
+        structure to the LLM alongside user feedback so the model can make
+        targeted adjustments (add, remove, rename, restructure nodes).
+        """
+        sample = "\n\n".join(
+            f"[{c.get('source', '?')}]: {c['text'][:300]}" for c in chunks[:20]
+        )
+        familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+
+        # Format existing tree as context
+        nodes_desc = "\n".join(
+            f"- {n['id']}: \"{n['label']}\" (depth={n.get('depth', 1)}, parent={n.get('parent_id', 'none')}) — {n.get('description', '')}"
+            for n in current_nodes
+        )
+        edges_desc = "\n".join(
+            f"- {e['source']} → {e['target']} ({e.get('relationship', 'related')})"
+            for e in current_edges
+        )
+        current_tree = (
+            f"CURRENT NODES:\n{nodes_desc}\n\n"
+            f"CURRENT EDGES:\n{edges_desc}"
+        )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a curriculum organiser. {familiarity_note}\n"
+                    "You are REFINING an existing knowledge graph based on student feedback. "
+                    "Do NOT regenerate from scratch. Instead:\n"
+                    "- Keep nodes that are still relevant\n"
+                    "- Add new nodes if the student wants more coverage\n"
+                    "- Remove nodes the student says are unnecessary\n"
+                    "- Rename or restructure nodes as requested\n"
+                    "- Update edges to reflect the new structure\n"
+                    "All changes must stay grounded in the source material — do NOT invent topics "
+                    "not evidenced in the text."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"STUDENT FEEDBACK: {user_feedback}\n\n"
+                    f"{current_tree}\n\n"
+                    f"SOURCE MATERIAL EXCERPTS:\n{sample}\n\n"
+                    "Apply the student's feedback to produce an updated set of nodes and edges. "
+                    "Nodes: id (n1, n2...), label, brief description, depth (1=macro 2=mid 3=micro), optional parent_id.\n"
+                    "Edges: source, target, relationship (prerequisite | related | builds-on).\n"
+                    "Reuse existing node IDs where the concept is unchanged."
+                ),
+            },
+        ]
+        blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        node_ids = {sn.id for sn in blueprint.nodes}
+        nodes = [
+            NodeData(
+                id=sn.id,
+                label=sn.label,
+                description=sn.description,
+                depth=sn.depth,
+                parent_id=sn.parent_id,
+                status="ACTIVE",
+            )
+            for sn in blueprint.nodes
+        ]
+        edges = [
+            {"source": e.source, "target": e.target, "relationship": e.relationship}
+            for e in blueprint.edges
+            if e.source in node_ids and e.target in node_ids
+        ]
+        return nodes, edges
+
     def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:
         """Given a page of text, return a list of key concept phrases to highlight."""
         messages = [

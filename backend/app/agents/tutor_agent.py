@@ -84,15 +84,34 @@ class TutorAgent:
             f"[Source: {c['source']}, chunk {c.get('chunk_index', i)}]\n{c['text']}"
             for i, c in enumerate(chunks)
         )
+        # Familiarity-aware math formatting instruction
+        if familiarity in ("graduate", "expert"):
+            math_note = (
+                "You may use LaTeX math notation with $...$ for inline math and $$...$$ for display math. "
+                "Use proper LaTeX commands (e.g. \\frac{a}{b}, \\sqrt{x}, \\hat{m}_t)."
+            )
+        else:
+            math_note = (
+                "Describe all mathematical concepts in plain words and simple notation. "
+                "Do NOT use LaTeX $ delimiters or complex formulas. "
+                "For example, say 'a divided by b' instead of $\\frac{a}{b}$."
+            )
+
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are a Cognitive Translator. Use ONLY the provided source material. "
-                    "Write a flowing lesson with two clearly separated sections:\n"
-                    "**Concept** — an intuitive intro tailored to the student's level.\n"
-                    "**From the Source** — cited facts using inline [Source: X, chunk N] citations. "
-                    "Never hallucinate. If something isn't covered, say so."
+                    "Write a single, flowing lesson — do NOT split into separate sections like "
+                    "'Concept' or 'From the Source'. Weave the intuitive explanation and factual "
+                    "details together naturally into one coherent narrative.\n\n"
+                    "FORMATTING RULES:\n"
+                    f"- {math_note}\n"
+                    "- Use **bold** for key terms.\n"
+                    "- Use bullet points (lines starting with '* ') for lists.\n"
+                    "- Do NOT include [Source: X, chunk N] citations in your output — "
+                    "the student should not see internal source references.\n"
+                    "- Never hallucinate. If something isn't covered in the sources, say so."
                 ),
             },
             {

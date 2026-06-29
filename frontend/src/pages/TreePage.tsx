@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useState, Fragment } from "react"
+import { useCallback, useEffect, useState } from "react"
+import katex from "katex"
+import "katex/dist/katex.min.css"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
@@ -18,9 +20,6 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [editedLabel, setEditedLabel] = useState("")
-  const [editedDesc, setEditedDesc] = useState("")
-  const [editedStatus, setEditedStatus] = useState<NodeData["status"]>("ACTIVE")
   const [refinementText, setRefinementText] = useState("")
   const [isRefining, setIsRefining] = useState(false)
   const [refineError, setRefineError] = useState("")
@@ -65,14 +64,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // When node is selected, pre-fill the description edit box
-  useEffect(() => {
-    if (selectedNode) {
-      setEditedLabel(selectedNode.data.label)
-      setEditedDesc(selectedNode.data.description)
-      setEditedStatus(selectedNode.data.status)
-    }
-  }, [selectedId])
+
 
   const handleNodeClick = useCallback(
     (id: string, label: string) => {
@@ -92,24 +84,15 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     [sendEvent, session?.familiarity, lessonCache, setLesson]
   )
 
-  // Apply local description edit to the graph store
-  const applyNodeEdit = () => {
-    if (!selectedId) return
-    const { nodes: storeNodes, edges } = useGraphStore.getState()
-    const updated = storeNodes.map((n) =>
-      n.id === selectedId
-        ? { ...n, data: { ...n.data, label: editedLabel, description: editedDesc, status: editedStatus } }
-        : n
-    )
-    setGraph(updated, edges)
-  }
 
-  // Regenerate tree with student guidance
+
+  // Refine tree with student guidance — sends current graph as context
   const refineTree = async () => {
     if (!refinementText.trim() || !session) return
     setRefineError("")
     setIsRefining(true)
     try {
+      const { nodes: currentNodes, edges: currentEdges } = useGraphStore.getState()
       const resp = await fetch("/library/refine-tree", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -117,6 +100,18 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           session_id: session.sessionId,
           user_feedback: refinementText,
           familiarity: session.familiarity,
+          current_nodes: currentNodes.map((n) => ({
+            id: n.data.id,
+            label: n.data.label,
+            description: n.data.description,
+            depth: n.data.depth,
+            parent_id: n.data.parent_id,
+          })),
+          current_edges: currentEdges.map((e) => ({
+            source: e.source,
+            target: e.target,
+            relationship: (e.data as Record<string, string> | undefined)?.relationship ?? "prerequisite",
+          })),
         }),
       })
       if (!resp.ok) {
@@ -136,20 +131,51 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
   const lessonText = lessonStreaming ? streamingLesson : (lesson?.grounded_truth ?? "")
 
-  // Render markdown-ish lesson text: **bold**, paragraph breaks
+  // Render lesson text with KaTeX math, bold, bullets, and citation stripping
   const renderLesson = (text: string) => {
-    return text.split(/\n\n+/).map((para, pi) => {
-      const parts = para.split(/(\*\*[^*]+\*\*)/g)
+    // Strip [Source: X, chunk N] citations — internal metadata, not student-facing
+    const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
+
+    return cleaned.split(/\n\n+/).map((para, pi) => {
+      const trimmed = para.trim()
+      if (!trimmed) return null
+
+      // Handle bullet list lines
+      if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+        const items = trimmed.split(/\n/).filter((l) => l.trim())
+        return (
+          <ul key={pi} style={{ margin: "0 0 12px", paddingLeft: 20, lineHeight: 1.75 }}>
+            {items.map((item, li) => (
+              <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item.replace(/^[*-]\s*/, "")) }} />
+            ))}
+          </ul>
+        )
+      }
+
       return (
-        <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.75 }}>
-          {parts.map((part, i) =>
-            part.startsWith("**") && part.endsWith("**")
-              ? <strong key={i}>{part.slice(2, -2)}</strong>
-              : <Fragment key={i}>{part}</Fragment>
-          )}
-        </p>
+        <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.75 }}
+           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
       )
     })
+  }
+
+  // Render inline content: $$display math$$, $inline math$, **bold**
+  const renderInline = (text: string): string => {
+    // Process display math $$...$$ first
+    let result = text.replace(/\$\$([^$]+)\$\$/g, (_match, tex) => {
+      try {
+        return katex.renderToString(tex.trim(), { displayMode: true, throwOnError: false })
+      } catch { return tex }
+    })
+    // Process inline math $...$
+    result = result.replace(/\$([^$]+)\$/g, (_match, tex) => {
+      try {
+        return katex.renderToString(tex.trim(), { displayMode: false, throwOnError: false })
+      } catch { return tex }
+    })
+    // Process **bold**
+    result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    return result
   }
 
   const commitSession = async () => {
@@ -299,14 +325,6 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700, color: "#1A3557", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
                   {selectedNode.data.label}
                 </h3>
-                <span style={{
-                  display: "inline-block", marginTop: 4, fontSize: 13, fontWeight: 500,
-                  color: selectedNode.data.status === "MASTERED" ? "#2D6A4F" : selectedNode.data.status === "ACTIVE" ? "#1A3557" : "#9CA3AF",
-                  background: selectedNode.data.status === "MASTERED" ? "#E6F4ED" : selectedNode.data.status === "ACTIVE" ? "#EEF3F8" : "#F3F0ED",
-                  borderRadius: 4, padding: "2px 8px",
-                }}>
-                  {selectedNode.data.status}
-                </span>
               </div>
               <button
                 onClick={() => setSelectedId(null)}
@@ -318,100 +336,6 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
             {/* Scrollable content */}
             <div style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* Editable label */}
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Label
-                </label>
-                <input
-                  value={editedLabel}
-                  onChange={(e) => setEditedLabel(e.target.value)}
-                  style={{
-                    width: "100%",
-                    background: "#FAF7F2",
-                    border: "1px solid #E8E0D5",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    fontSize: 15,
-                    color: "#1A1A2E",
-                    boxSizing: "border-box",
-                    fontFamily: "'Libre Caslon Text', Georgia, serif",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              {/* Status picker */}
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Status
-                </label>
-                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                  {(["ACTIVE", "MASTERED", "STRUGGLING", "DEGRADED", "LOCKED"] as NodeData["status"][]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => setEditedStatus(s)}
-                      style={{
-                        padding: "4px 10px",
-                        borderRadius: 6,
-                        border: editedStatus === s ? "2px solid #1A3557" : "1.5px solid #E8E0D5",
-                        background: editedStatus === s ? "#EEF3F8" : "transparent",
-                        color: editedStatus === s ? "#1A3557" : "#6B7280",
-                        fontSize: 13,
-                        fontWeight: editedStatus === s ? 600 : 400,
-                        cursor: "pointer",
-                      }}
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Editable description */}
-              <div>
-                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Description
-                </label>
-                <textarea
-                  value={editedDesc}
-                  onChange={(e) => setEditedDesc(e.target.value)}
-                  rows={3}
-                  style={{
-                    width: "100%",
-                    background: "#FAF7F2",
-                    border: "1px solid #E8E0D5",
-                    borderRadius: 8,
-                    padding: "8px 10px",
-                    fontSize: 15,
-                    color: "#1A1A2E",
-                    resize: "vertical",
-                    boxSizing: "border-box",
-                    fontFamily: "'Libre Caslon Text', Georgia, serif",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              {/* Apply button — shows when any field changed */}
-              {(editedLabel !== selectedNode.data.label || editedDesc !== selectedNode.data.description || editedStatus !== selectedNode.data.status) && (
-                <button
-                  onClick={applyNodeEdit}
-                  style={{
-                    background: "#1A3557",
-                    color: "#FAF7F2",
-                    border: "none",
-                    borderRadius: 6,
-                    padding: "8px 14px",
-                    fontSize: 14,
-                    cursor: "pointer",
-                    fontWeight: 600,
-                  }}
-                >
-                  Apply changes
-                </button>
-              )}
-
               {/* Lesson content */}
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
@@ -433,7 +357,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 )}
               </div>
 
-              {/* Study tools shortcut */}
+              {/* Study tools shortcut — dynamic text based on progress */}
               <button
                 onClick={onBack}
                 style={{
@@ -448,7 +372,9 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                   fontFamily: "'Libre Caslon Text', Georgia, serif",
                 }}
               >
-                Open study tools →
+                {(selectedNode.data.scores.memory > 0 || selectedNode.data.scores.comprehension > 0 || selectedNode.data.scores.structure > 0 || selectedNode.data.scores.application > 0)
+                  ? "Continue Studying →"
+                  : "Start Studying →"}
               </button>
             </div>
           </div>
@@ -507,7 +433,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
               alignSelf: "flex-end",
             }}
           >
-            {isRefining ? "Regenerating…" : "Regenerate"}
+            {isRefining ? "Refining…" : "Refine"}
           </button>
         </div>
         {refineError && <p style={{ color: "#EF4444", fontSize: 14, margin: 0 }}>{refineError}</p>}
