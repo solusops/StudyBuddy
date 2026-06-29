@@ -13,6 +13,7 @@ from app.agents.brain_agent import BrainAgent
 from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
+from app.agents.modality_router import ModalityRouter
 from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.rag.chromadb_client import ChromaDBClient
@@ -36,6 +37,7 @@ _memory = StudentMemoryService()
 _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
 _tutor: TutorAgent | None = None
+_router: ModalityRouter | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
 
@@ -59,6 +61,13 @@ def _get_tutor() -> TutorAgent:
     if _tutor is None:
         _tutor = TutorAgent()
     return _tutor
+
+
+def _get_router() -> ModalityRouter:
+    global _router
+    if _router is None:
+        _router = ModalityRouter()
+    return _router
 
 
 def get_connection_manager() -> ConnectionManager:
@@ -91,20 +100,6 @@ def _safe_get_node(session_id: str, node_id: str) -> NodeData:
     except KeyError:
         return NodeData(id=node_id, label=node_id, status="ACTIVE")
 
-
-def _should_visualize(term: str, content: str) -> bool:
-    keywords = [
-        "orbit", "gravity", "body", "wave", "motion", "pendulum", "force", "vector", "trajectory", 
-        "projectile", "collision", "particle", "atom", "molecule", "energy", "equation", "function", 
-        "graph", "chart", "matrix", "tree", "sort", "algorithm", "binary", "optics", "light", "lens", 
-        "circuit", "resistor", "voltage", "current", "magnetic", "electric", "field", "cell", "mitosis", 
-        "heart", "brain", "muscle", "skeleton", "flow", "fluid", "pressure", "thermodynamics", "entropy", 
-        "chemical", "reaction", "equilibrium", "enzyme", "dna", "rna", "protein", "synthesis", "photosynthesis", 
-        "neuron", "synapse", "signal", "frequency", "amplitude", "fourier"
-    ]
-    term_lower = term.lower()
-    content_lower = content.lower()
-    return any(k in term_lower or k in content_lower for k in keywords)
 
 
 async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -> None:
@@ -452,23 +447,57 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _cache.put(cache_key, full)
             await _cm.send(session_id, "WIKI_DONE", {})
 
-        # ---- Generate visual if appropriate ----
-        if _should_visualize(selection_text, full):
+        # ---- Modality Router: decide and generate visual ----
+        visual_cache_key = _cache.make_key(
+            "WIKI_VISUAL", familiarity, anchor_id, [c["text"] for c in chunks], selection_text
+        )
+        cached_visual = _cache.get(visual_cache_key)
+        if cached_visual:
             await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
+            await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
+                "term": selection_text,
+                "visual": cached_visual,
+            })
+        else:
             try:
-                import asyncio
                 loop = asyncio.get_event_loop()
-                visual = await loop.run_in_executor(
+                decision = await loop.run_in_executor(
                     None,
-                    _get_tutor().generate_visual,
+                    _get_router().classify,
                     selection_text,
-                    "canvas",
-                    familiarity
+                    full,
+                    chunks,
+                    familiarity,
                 )
-                await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
-                    "term": selection_text,
-                    "visual": visual.model_dump()
-                })
+                if decision.modality == "NONE":
+                    pass  # text-only card; no visual
+                else:
+                    await _cm.send(session_id, "WIKI_VISUAL_START", {"term": selection_text})
+                    if decision.modality == "STATIC_PLOT":
+                        visual = await loop.run_in_executor(
+                            None,
+                            _get_tutor().generate_plot,
+                            selection_text,
+                            chunks,
+                            familiarity,
+                        )
+                    else:  # INTERACTIVE_SIMULATION
+                        tool = decision.recommended_tool
+                        anim = "three.js" if tool == "Three.js" else "canvas"
+                        visual = await loop.run_in_executor(
+                            None,
+                            _get_tutor().generate_visual,
+                            selection_text,
+                            anim,
+                            familiarity,
+                            chunks,
+                        )
+                    payload = visual.model_dump()
+                    _cache.put(visual_cache_key, payload)
+                    await _cm.send(session_id, "WIKI_VISUAL_PAYLOAD", {
+                        "term": selection_text,
+                        "visual": payload,
+                    })
             except Exception as e:
                 print("Error generating wiki visual:", e)
 

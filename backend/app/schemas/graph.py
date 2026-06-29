@@ -41,8 +41,23 @@ class NodePatch(BaseModel):
 
 class HTML5VisualPayload(BaseModel):
     html_code: str = Field(description="Self-contained HTML5/CSS/JS code with inline styles.")
-    animation_type: Literal["three.js", "canvas", "katex", "plot", "quote"]
+    animation_type: Literal["three.js", "canvas", "katex", "plot", "quote", "plotly"]
     explanation: str = Field("", description="A 2-3 sentence explanation describing exactly what the visualization demonstrates, how to use the interactive elements/sliders, and how it connects to the study material.")
+
+
+class PlotTrace(BaseModel):
+    name: str
+    chart_type: Literal["bar", "scatter", "line"]
+    x: List[str]
+    y: List[float]
+
+
+class GroundedPlotSpec(BaseModel):
+    title: str
+    x_label: str
+    y_label: str
+    traces: List[PlotTrace]
+    source_note: str
 
 
 class ExternalAction(BaseModel):

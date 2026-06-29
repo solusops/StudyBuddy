@@ -1,6 +1,6 @@
 export type NodeStatus = "LOCKED" | "ACTIVE" | "MASTERED" | "STRUGGLING" | "DEGRADED"
 export type FamiliarityLevel = "eli5" | "high_school" | "graduate" | "expert"
-export type AnimationType = "three.js" | "canvas" | "katex" | "plot" | "quote"
+export type AnimationType = "three.js" | "canvas" | "katex" | "plot" | "quote" | "plotly"
 
 export interface NodeScores {
   memory: number

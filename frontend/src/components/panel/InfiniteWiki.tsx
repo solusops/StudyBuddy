@@ -301,10 +301,10 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                     Generating simulation...
                   </div>
                 ) : (
-                  <VisualSandbox 
-                    visual={currentPage.visual || null} 
-                    nodeId={currentPage.term} 
-                    animationType="canvas" 
+                  <VisualSandbox
+                    visual={currentPage.visual || null}
+                    nodeId={currentPage.term}
+                    animationType={currentPage.visual?.animation_type ?? "canvas"}
                     height={330}
                   />
                 )}

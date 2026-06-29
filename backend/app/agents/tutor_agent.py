@@ -10,7 +10,9 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from app.agents.cerebras_client import CerebrasClient
-from app.schemas.graph import HTML5VisualPayload, NodeData
+from app.schemas.graph import GroundedPlotSpec, HTML5VisualPayload, NodeData
+
+_PLOTLY_CDN = "https://cdn.plot.ly/plotly-2.35.2.min.js"
 
 _VISUAL_INSTRUCTIONS: Dict[str, str] = {
     "three.js": (
@@ -230,8 +232,18 @@ class TutorAgent:
         concept: str,
         animation_type: str,
         familiarity: str,
+        chunks: Optional[List[Dict[str, Any]]] = None,
     ) -> HTML5VisualPayload:
         instruction = _VISUAL_INSTRUCTIONS.get(animation_type, "Use plain HTML/CSS.")
+        grounding_block = ""
+        if chunks:
+            chunk_text = "\n\n".join(
+                f"[{c.get('source', '?')}]: {c['text']}" for c in chunks
+            )[:3000]
+            grounding_block = (
+                f"\n\nSOURCE MATERIAL (ground every quantity, relationship, and label "
+                f"in this text only — do not invent data):\n{chunk_text}"
+            )
         messages = [
             {
                 "role": "system",
@@ -242,6 +254,7 @@ class TutorAgent:
                     "Inline all CSS. Dark background #0f0f0f. "
                     "Provide a clear, contextual explanation in the 'explanation' field of the schema for the student, "
                     "explaining what is shown, what the interactive controls/sliders do, and how it helps them understand this concept."
+                    f"{grounding_block}"
                 ),
             },
             {
@@ -280,3 +293,80 @@ class TutorAgent:
             },
         ]
         return self._client.structured_complete(messages, HTML5VisualPayload)
+
+    def generate_plot(
+        self,
+        concept: str,
+        chunks: List[Dict[str, Any]],
+        familiarity: str,
+    ) -> HTML5VisualPayload:
+        """Extract real data from RAG chunks and build a grounded Plotly chart.
+
+        The model fills a strict GroundedPlotSpec; Python then assembles the HTML
+        deterministically — no model-written JavaScript, no hallucinated numbers.
+        """
+        chunk_text = "\n\n".join(
+            f"[{c.get('source', '?')}]: {c['text']}" for c in chunks
+        )[:3000]
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a data extraction assistant. "
+                    "Read the SOURCE MATERIAL and extract any numeric data, tables, "
+                    "datasets, or explicit mathematical functions into plot traces. "
+                    "Use ONLY numbers and labels found verbatim in the source. "
+                    "Do NOT fabricate or estimate values. "
+                    "If the source has multiple series or categories, create one trace per series. "
+                    "Set source_note to a citation like '[Source: <label>, chunk N]'."
+                    f"\n\nSOURCE MATERIAL:\n{chunk_text}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Extract the data for '{concept}' at {familiarity} level "
+                    "into a GroundedPlotSpec. Use only the numbers present in the source."
+                ),
+            },
+        ]
+        spec: GroundedPlotSpec = self._client.structured_complete(messages, GroundedPlotSpec)
+
+        # Build self-contained HTML deterministically from the validated spec.
+        traces_js = []
+        for trace in spec.traces:
+            x_js = "[" + ", ".join(f'"{v}"' for v in trace.x) + "]"
+            y_js = "[" + ", ".join(str(v) for v in trace.y) + "]"
+            traces_js.append(
+                f"{{name: {_js_str(trace.name)}, type: {_js_str(trace.chart_type)}, "
+                f"x: {x_js}, y: {y_js}, marker: {{color: '#4A7FB5'}}}}"
+            )
+        traces_array = "[" + ", ".join(traces_js) + "]"
+        layout_js = (
+            f"{{title: {{text: {_js_str(spec.title)}, font: {{color: '#e2e8f0'}}}}, "
+            f"xaxis: {{title: {_js_str(spec.x_label)}, color: '#94a3b8'}}, "
+            f"yaxis: {{title: {_js_str(spec.y_label)}, color: '#94a3b8'}}, "
+            f"paper_bgcolor: '#0f0f0f', plot_bgcolor: '#1e293b', "
+            f"font: {{color: '#e2e8f0'}}}}"
+        )
+        html_code = (
+            f"<!DOCTYPE html><html><head>"
+            f'<script src="{_PLOTLY_CDN}"></script>'
+            f"<style>body{{margin:0;background:#0f0f0f}}#plot{{width:100%;height:100vh}}</style>"
+            f"</head><body>"
+            f'<div id="plot"></div>'
+            f"<script>Plotly.newPlot('plot', {traces_array}, {layout_js}, "
+            f"{{responsive: true, displayModeBar: false}});</script>"
+            f"</body></html>"
+        )
+        return HTML5VisualPayload(
+            html_code=html_code,
+            animation_type="plotly",
+            explanation=f"{spec.source_note} — {spec.title}: {spec.y_label} vs {spec.x_label}.",
+        )
+
+
+def _js_str(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
