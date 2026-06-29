@@ -44,7 +44,7 @@ interface Props {
 
 export function StudyPage({ sessionId, topic, familiarity, knowledgeMode, initialNodes }: Props) {
   const { setGraph } = useGraphStore()
-  const { setSession, setActiveNode, resetNodeData, activeNodeId } = useSessionStore()
+  const { setSession, setActiveNode, resetNodeData, activeNodeId, knowledgeMode: activeKnowledgeMode } = useSessionStore()
   const { sendEvent } = useWebSocket(sessionId)
   const [panelOpen, setPanelOpen] = useState(false)
   const [ending, setEnding] = useState(false)
@@ -59,7 +59,12 @@ export function StudyPage({ sessionId, topic, familiarity, knowledgeMode, initia
     resetNodeData()
     setActiveNode(id, label)
     setPanelOpen(true)
-    sendEvent("LEARN_NODE", { node_id: id, node_label: label, familiarity })
+    sendEvent("LEARN_NODE", {
+      node_id: id,
+      node_label: label,
+      familiarity,
+      knowledge_mode: activeKnowledgeMode,
+    })
   }
 
   const handleEndSession = async () => {

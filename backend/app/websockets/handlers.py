@@ -112,7 +112,13 @@ async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str |
     db = _get_db()
     loop = asyncio.get_event_loop()
     embedding = await loop.run_in_executor(None, db.embedder.embed, [query])
-    where = {"type": chunk_type} if chunk_type else None
+    
+    # Scope query to exactly this session_id so content from other sessions doesn't bleed.
+    filters = [{"session_id": session_id}]
+    if chunk_type:
+        filters.append({"type": chunk_type})
+    where = {"$and": filters} if len(filters) > 1 else filters[0]
+    
     return db.query(LIBRARY_COLLECTION, embedding[0], n_results=n, where=where)
 
 
@@ -135,7 +141,22 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         chunks = await _get_chunks(session_id, query, n=5)
         selection_text = data.get("selection_text", "")
         anchor_id = data.get("anchor_id") or node_id
-        cache_key = _cache.make_key("LEARN_NODE", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
+        knowledge_mode = data.get("knowledge_mode", "content_only")
+
+        # Fetch Tavily web results if Net Support is enabled
+        web_context = ""
+        if knowledge_mode == "net_support":
+            tavily_results = await _wiki.search_tavily(data.get("node_label", node.label))
+            if tavily_results:
+                web_context = "\n\n".join(
+                    f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}"
+                    for r in tavily_results
+                )
+
+        cache_key = _cache.make_key(
+            "LEARN_NODE", familiarity, anchor_id, [c["text"] for c in chunks],
+            f"{selection_text}|{knowledge_mode}|{web_context[:100]}"
+        )
         cached_lesson = _cache.get(cache_key)
         _journal.append(
             JournalEntry(
@@ -152,7 +173,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
         else:
             full_lesson = ""
-            async for token in _get_tutor().stream_lesson(node, chunks, familiarity):
+            async for token in _get_tutor().stream_lesson(
+                node, chunks, familiarity, knowledge_mode=knowledge_mode, web_context=web_context
+            ):
                 full_lesson += token
                 await _cm.send(session_id, "LESSON_TOKEN", {"token": token})
             _cache.put(cache_key, full_lesson)

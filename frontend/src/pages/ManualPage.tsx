@@ -181,6 +181,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       setActiveConcept(concept)
       // Find matching node or use a synthetic ID
       const { nodes } = useGraphStore.getState()
+      const { familiarity, knowledgeMode } = useSessionStore.getState()
       const match = nodes.find((n) =>
         n.data.label.toLowerCase().includes(concept.toLowerCase()) ||
         concept.toLowerCase().includes(n.data.label.toLowerCase())
@@ -189,7 +190,12 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       setActiveNode(nodeId, concept)
       resetNodeData()
       // Request lesson for this concept
-      sendEvent("LEARN_NODE", { node_id: nodeId, node_label: concept, familiarity: "high_school" })
+      sendEvent("LEARN_NODE", {
+        node_id: nodeId,
+        node_label: concept,
+        familiarity: familiarity ?? "high_school",
+        knowledge_mode: knowledgeMode ?? "content_only",
+      })
     },
     [sendEvent, setActiveNode, resetNodeData]
   )

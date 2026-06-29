@@ -81,6 +81,7 @@ class TutorAgent:
         chunks: List[Dict[str, Any]],
         familiarity: str,
         knowledge_mode: str = "content_only",
+        web_context: str = "",
     ):
         """Async generator that yields lesson text tokens for streaming to the client."""
         chunk_text = "\n\n".join(
@@ -102,22 +103,29 @@ class TutorAgent:
 
         if knowledge_mode == "net_support":
             grounding = (
-                "Ground your explanation in the provided source material, but you may also draw on "
-                "your own expert knowledge to fully explain the topic, give intuition and analogies, "
-                "and fill gaps the source doesn't cover. Do not fabricate claims about the source."
+                "Ground your explanation in the provided source material and the web source material. "
+                "Draw on your expert knowledge to fully explain the topic, give intuition and analogies, "
+                "and fill any gaps the source doesn't cover. Do NOT refuse to teach the requested topic under "
+                "any circumstances. If the topic is not discussed in the source material, use the web source "
+                "and your own knowledge to teach it fully. Do not fabricate source claims."
             )
         else:
             grounding = (
-                "Base the lesson on the provided source material. Teach the topic clearly and relate "
-                "it to the material; if a specific detail isn't in the source, explain it briefly in "
-                "general terms but stay focused on what the material covers. Never invent source claims."
+                "Base the lesson on the provided source material when possible. Teach the topic clearly and "
+                "relate it to the theme of the material. "
+                "IMPORTANT: If the requested topic is not mentioned or discussed in the source material, "
+                "do NOT refuse to teach it and do NOT just talk about other topics from the source (e.g. do not just "
+                "talk about Adam). Instead, explain the requested topic clearly using your own general knowledge, "
+                "and explain how it relates generally to the themes of the source material. Never invent false claims "
+                "about what the source says."
             )
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are a Cognitive Translator and tutor. Your job is to TEACH the requested "
-                    f"topic — not to report whether it appears in the text. {grounding}\n\n"
+                    f"topic — do NOT refuse, and do NOT state that the topic is not mentioned in the text. "
+                    f"Teach it anyway. {grounding}\n\n"
                     "Write a single, flowing lesson — do NOT split into separate sections like "
                     "'Concept' or 'From the Source'. Weave the intuitive explanation and factual "
                     "details together naturally into one coherent narrative.\n\n"
@@ -125,8 +133,8 @@ class TutorAgent:
                     f"- {math_note}\n"
                     "- Use **bold** for key terms.\n"
                     "- Use bullet points (lines starting with '* ') for lists.\n"
-                    "- Do NOT include [Source: X, chunk N] citations in your output — "
-                    "the student should not see internal source references."
+                    "- Do NOT include [Source: X, chunk N] citations or Web source URLs in your output — "
+                    "the student should not see internal source or web reference links."
                 ),
             },
             {
@@ -137,6 +145,9 @@ class TutorAgent:
                 ),
             },
         ]
+        if web_context:
+            messages[-1]["content"] += f"\n\nWEB SOURCE MATERIAL:\n{web_context}"
+
         async for token in self._client.stream_complete(messages):
             yield token
 

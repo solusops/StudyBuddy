@@ -17,7 +17,7 @@ interface Props {
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
-  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson } = useSessionStore()
+  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [refinementText, setRefinementText] = useState("")
@@ -78,10 +78,11 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           node_id: id,
           node_label: label,
           familiarity: session?.familiarity ?? "high_school",
+          knowledge_mode: knowledgeMode,
         })
       }
     },
-    [sendEvent, session?.familiarity, lessonCache, setLesson]
+    [sendEvent, session?.familiarity, lessonCache, setLesson, knowledgeMode]
   )
 
 
