@@ -100,17 +100,16 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             <p style={{
               flex: 1,
               margin: 0,
-              fontSize: 13,
+              fontSize: 14.5,
               color: "#4A7FB5",
-              fontStyle: "italic",
               lineHeight: 1.4,
               fontFamily: "'Libre Caslon Text', Georgia, serif",
               overflow: "hidden",
               display: "-webkit-box",
-              WebkitLineClamp: 2,
+              WebkitLineClamp: 3,
               WebkitBoxOrient: "vertical",
             }}>
-              "{selectionText.length > 180 ? selectionText.slice(0, 180) + "…" : selectionText}"
+              "{selectionText.length > 280 ? selectionText.slice(0, 280) + "…" : selectionText}"
             </p>
             <button
               onClick={clearSelection}

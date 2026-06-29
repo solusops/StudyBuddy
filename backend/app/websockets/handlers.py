@@ -157,7 +157,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         if selection_text:
             selection_prefix = f"Student selected passage:\n\"{selection_text}\"\n"
             if surrounding_context:
-                selection_prefix += f"Surrounding text:\n{surrounding_context[:400]}\n"
+                selection_prefix += f"Surrounding context from the document:\n{surrounding_context[:4000]}\n"
             selection_prefix += "\n"
         system_msg = (
             f"{selection_prefix}"

@@ -1,5 +1,6 @@
 import { useEffect } from "react"
 import { useInteractionStore, type CursorMode } from "../../store/interactionStore"
+import { useContextStore } from "../../store/contextStore"
 
 export function FloatingToolbar() {
   const { cursorMode, setCursorMode, clearGroup } = useInteractionStore()
@@ -10,7 +11,10 @@ export function FloatingToolbar() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === "v" || e.key === "V") setCursorMode("DEFAULT")
       if (e.key === "n" || e.key === "N") setCursorMode("NOTE_APPEND")
-      if (e.key === "Escape") clearGroup()
+      if (e.key === "Escape") {
+        clearGroup()
+        useContextStore.getState().clearSelection()
+      }
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)

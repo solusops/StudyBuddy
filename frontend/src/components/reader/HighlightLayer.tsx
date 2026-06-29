@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useInteractionStore, type CommittedAnnotation, type SelectionSnippet } from "../../store/interactionStore"
+import { useContextStore } from "../../store/contextStore"
 
 interface PageSize {
   width: number
@@ -16,8 +17,9 @@ function snippetsForPage(snippets: SelectionSnippet[], page: number) {
 }
 
 export function HighlightLayer({ pageNumber, pageRef }: Props) {
-  const { activeSelectionGroup, committedAnnotations, activeAnnotationId, setActiveAnnotation } =
+  const { activeSelectionGroup, committedAnnotations, activeAnnotationId, setActiveAnnotation, cursorMode } =
     useInteractionStore()
+  const { selectionSnippets } = useContextStore()
   const [size, setSize] = useState<PageSize>({ width: 0, height: 0 })
 
   useEffect(() => {
@@ -33,7 +35,9 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
 
   if (!size.width) return null
 
-  const liveBoxes = snippetsForPage(activeSelectionGroup, pageNumber)
+  const liveBoxes = cursorMode === "NOTE_APPEND"
+    ? snippetsForPage(activeSelectionGroup, pageNumber)
+    : snippetsForPage(selectionSnippets, pageNumber)
 
   return (
     <div

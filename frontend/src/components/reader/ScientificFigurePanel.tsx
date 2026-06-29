@@ -44,13 +44,12 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
     // Don't interfere with InfiniteWiki's own drill-down handler
     if (activeTab === "Infinite Wiki") return
     if (!sel || sel.isCollapsed) {
-      clearSelection()
       return
     }
     const text = sel.toString().trim()
-    if (text.length < 3) { clearSelection(); return }
+    if (text.length < 3) return
     setSelection([], text, "")
-  }, [activeTab, setSelection, clearSelection])
+  }, [activeTab, setSelection])
 
   const saveNote = async () => {
     if (!activeAnnotation) return

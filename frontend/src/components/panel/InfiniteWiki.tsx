@@ -16,7 +16,7 @@ interface Props {
 export function InfiniteWiki({ isActive, sendEvent }: Props) {
   const [stack, setStack] = useState<WikiPage[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
-  const { selectionText, surroundingContext, selectionSnippets } = useContextStore()
+  const { selectionText, surroundingContext } = useContextStore()
   const { familiarity } = useSessionStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFiredRef = useRef("")
@@ -26,17 +26,10 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       if (!term.trim() || term === lastFiredRef.current) return
       lastFiredRef.current = term
       const page: WikiPage = { term, content: "", streaming: true }
-      // Truncate forward history then append the new page.
-      // New page index = length of the truncated array (0-based).
-      // When stack is empty: truncated = [], new page at index 0.
-      // When stack has items: truncated = stack[0..currentIdx], new page at currentIdx+1.
       setStack((prev) => {
         const truncated = prev.slice(0, currentIdx + 1)
         return [...truncated, page]
       })
-      // Index of the new page = min(currentIdx + 1, stack.length)
-      // handles the empty-stack case: min(0+1, 0) = 0
-      // If the stack was empty the new page lands at index 0; otherwise at currentIdx+1
       setCurrentIdx(stack.length === 0 ? 0 : currentIdx + 1)
       sendEvent("CONTEXT_CARD_REQUEST", {
         selection_text: term,
@@ -86,8 +79,6 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   }, [])
 
   const currentPage = stack[currentIdx]
-  const canGoBack = currentIdx > 0
-  const canGoForward = currentIdx < stack.length - 1
 
   // Drill-down: user selects text inside the wiki output
   const handleDrillDown = () => {
@@ -97,6 +88,59 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     if (!term || term.length < 3) return
     fireCard(term, currentPage?.content ?? "", currentPage?.content?.slice(0, 300) ?? "")
     sel.removeAllRanges()
+  }
+
+  // Parse and render streamed markdown
+  const renderWikiContent = (text: string) => {
+    // Strip [Source: X, chunk N] citations
+    const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
+
+    return cleaned.split(/\n\n+/).map((para, pi) => {
+      const trimmed = para.trim()
+      if (!trimmed) return null
+
+      // Headings (## or ###)
+      if (trimmed.startsWith("#")) {
+        const headerText = trimmed.replace(/^#+\s*/, "")
+        return (
+          <h3 key={pi} style={{
+            fontFamily: "'Libre Caslon Text', Georgia, serif",
+            color: "#1A3557",
+            fontSize: 16,
+            fontWeight: 700,
+            margin: "18px 0 8px 0",
+            borderBottom: "1px solid #E8E0D5",
+            paddingBottom: 4
+          }}>
+            {headerText}
+          </h3>
+        )
+      }
+
+      // Bullet lists
+      if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+        const items = trimmed.split(/\n/).filter((l) => l.trim())
+        return (
+          <ul key={pi} style={{ margin: "0 0 12px", paddingLeft: 20, lineHeight: 1.6 }}>
+            {items.map((item, li) => (
+              <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item.replace(/^[*-]\s*/, "")) }} />
+            ))}
+          </ul>
+        )
+      }
+
+      // Default paragraph
+      return (
+        <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.6, color: "#1A1A2E" }}
+           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
+      )
+    })
+  }
+
+  const renderInline = (text: string): string => {
+    // Bold: **text**
+    let result = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    return result
   }
 
   if (!isActive) return null
@@ -141,25 +185,15 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
             <p style={{ fontSize: 12, marginTop: 8 }}>The Infinite Wiki will explain and let you drill into any term.</p>
           </div>
         ) : (
-          <div>
-            <pre
-              style={{
-                fontFamily: "'Libre Caslon Text', Georgia, serif",
-                fontSize: 14,
-                lineHeight: 1.7,
-                color: "#1A1A2E",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-word",
-                margin: 0,
-              }}
-            >
-              {currentPage.content}
+          <div style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", fontSize: 14.5 }}>
+            <div>
+              {renderWikiContent(currentPage.content)}
               {currentPage.streaming && (
-                <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite" }} />
+                <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
               )}
-            </pre>
+            </div>
             {!currentPage.streaming && currentPage.content && (
-              <p style={{ marginTop: 16, fontSize: 12, color: "#9CA3AF", fontStyle: "italic" }}>
+              <p style={{ marginTop: 18, fontSize: 12, color: "#9CA3AF", fontStyle: "italic", fontFamily: "system-ui, sans-serif" }}>
                 Highlight any word above to drill deeper ↓
               </p>
             )}

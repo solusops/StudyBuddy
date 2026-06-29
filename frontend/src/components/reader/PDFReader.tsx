@@ -39,7 +39,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   const containerRef = useRef<HTMLDivElement>(null)
   const pageTexts = useRef<Map<number, string>>(new Map())
   const { cursorMode, pushSnippet, setAnnotations } = useInteractionStore()
-  const { setSelection, clearSelection } = useContextStore()
+  const { setSelection } = useContextStore()
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(new Map())
 
@@ -114,15 +114,12 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
 
   const handlePointerUp = useCallback((pageNumber: number, e: React.PointerEvent) => {
     const sel = window.getSelection()
-    // Empty/collapsed selection in Read mode → clear any ghost context
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
-      if (cursorMode === "DEFAULT") clearSelection()
       return
     }
     const range = sel.getRangeAt(0)
     const text = range.toString().trim()
     if (!text) {
-      if (cursorMode === "DEFAULT") clearSelection()
       return
     }
     const pageEl = pageRefs.current.get(pageNumber)
@@ -143,10 +140,18 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
       const surrounding = idx >= 0
         ? pageText.slice(Math.max(0, idx - 200), idx + text.length + 200)
         : pageText.slice(0, 400)
-      setSelection([snippet], text, surrounding)
-      // Keep selection visible so user can see what's captured
+
+      const store = useContextStore.getState()
+      const isFirst = !store.selectionText
+      const nextSnippets = isFirst ? [snippet] : [...store.selectionSnippets, snippet]
+      const nextText = isFirst ? text : `${store.selectionText} … ${text}`
+      const nextSurrounding = isFirst ? surrounding : `${store.surroundingContext}\n---\n${surrounding}`
+
+      setSelection(nextSnippets, nextText, nextSurrounding)
+      // Clear native range so only custom highlight layers remain
+      sel.removeAllRanges()
     }
-  }, [cursorMode, pushSnippet, setSelection, clearSelection])
+  }, [cursorMode, pushSnippet, setSelection])
 
   // Delegate concept clicks from text layer
   useEffect(() => {
