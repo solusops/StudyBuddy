@@ -3,6 +3,7 @@ import { PDFReader } from "../components/reader/PDFReader"
 import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
+import { useInteractionStore } from "../store/interactionStore"
 import { saveMarkdownFile, sanitizeFilename } from "../lib/fileSystem"
 import type { AppSession } from "../App"
 import type { NodeData } from "../types"
@@ -18,6 +19,7 @@ interface Props {
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph } = useGraphStore()
   const { setSession, resetNodeData, activeNodeId, activeNodeLabel, setActiveNode } = useSessionStore()
+  const { documentId, setDocumentId } = useInteractionStore()
 
   // -- Session bootstrap ------------------------------------------------
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -47,6 +49,9 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     setSessionId(s.sessionId)
     setTopic(s.topic)
     setSession(s.sessionId, s.topic, s.familiarity, s.knowledgeMode)
+    if (s.documentId) {
+      setDocumentId(s.documentId)
+    }
     applyNodes(s.nodes)
     setContentFiles(s.contentFiles)
     setIsIndexing(true)
@@ -76,16 +81,24 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       setSessionId(session_id)
       setSession(session_id, "Study Session", "high_school")
 
+      if (status.document_id) {
+        setDocumentId(status.document_id)
+      }
+
       // Generate tree
       const startResp = await fetch("/library/start-session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id, familiarity: "high_school" }),
       })
-      const { nodes } = await startResp.json()
+      const { nodes, document_id } = await startResp.json()
       applyNodes(nodes)
       setContentFiles(status.content_files)
       setTopic(status.content_files[0]?.replace(/\.[^.]+$/, "") || "Study Session")
+
+      if (document_id) {
+        setDocumentId(document_id)
+      }
 
       if (status.content_files.length > 0) {
         await loadFirstPDF(status.content_files[0])
@@ -399,8 +412,8 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             concepts={concepts}
             onPageTextReady={handlePageTextReady}
             onConceptClick={handleConceptClick}
-            documentId={session?.documentId}
-            sessionId={session?.sessionId}
+            documentId={documentId || undefined}
+            sessionId={sessionId || undefined}
           />
         ) : (
           <div

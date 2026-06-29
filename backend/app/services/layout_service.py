@@ -16,7 +16,7 @@ import base64
 from typing import Any, Dict, List, Optional, Tuple
 
 # Skip regions smaller than this fraction of the page (noise / tiny glyph runs).
-_MIN_AREA_FRAC = 0.015
+_MIN_AREA_FRAC = 0.003
 # Cap regions per page to bound downstream vision calls.
 _MAX_REGIONS = 8
 _CROP_ZOOM = 2.0
@@ -83,7 +83,11 @@ def segment_page(
             pass
         # Vector-drawing clusters (line plots, schematic diagrams).
         try:
-            for rect in page.cluster_drawings():
+            try:
+                rects = page.cluster_drawings(x_tolerance=20.0, y_tolerance=20.0)
+            except TypeError:
+                rects = page.cluster_drawings()
+            for rect in rects:
                 candidates.append((fitz.Rect(rect), "diagram"))
         except Exception:
             pass

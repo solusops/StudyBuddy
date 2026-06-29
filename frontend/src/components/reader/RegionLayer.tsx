@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import React, { useEffect, useState, useRef } from "react"
 import { useContextStore } from "../../store/contextStore"
 import { useInteractionStore } from "../../store/interactionStore"
 
@@ -41,14 +41,18 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
   const [selected, setSelected] = useState<string | null>(null)
 
+  const fetchStartedRef = React.useRef(false)
+
   // Reset when page or document changes so we re-fetch for the new page.
   useEffect(() => {
     setRegions(null)
     setStatus("idle")
+    fetchStartedRef.current = false
   }, [documentId, pageIndex])
 
   useEffect(() => {
-    if (!regionsOn || !documentId || regions || status === "loading") return
+    if (!regionsOn || !documentId || fetchStartedRef.current) return
+    fetchStartedRef.current = true
     let cancelled = false
 
     const run = async () => {
@@ -84,7 +88,8 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
     }
     run()
     return () => { cancelled = true }
-  }, [regionsOn, documentId, pageIndex, fileUrl, regions, status])
+  }, [regionsOn, documentId, pageIndex, fileUrl])
+
 
   if (!regionsOn || !documentId) return null
 

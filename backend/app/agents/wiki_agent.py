@@ -18,8 +18,7 @@ Adopt a complexity level appropriate for a {level} student.
 Structure your response exactly as:
 ## {term}
 
-**{level_label} Summary:**
-(One-sentence summary of the concept/passage using language suited for a {level} level student)
+**{level_label} Summary:** (One-sentence summary of the concept/passage using language suited for a {level} level student)
 
 **Core Formulas & Facts:**
 * (core fact/formula 1 from the source chunks)
@@ -44,8 +43,7 @@ If both contain useful info, synthesize them, keeping citations clear.
 Structure your response exactly as:
 ## {term}
 
-**{level_label} Summary:**
-(One-sentence summary of the concept/passage using language suited for a {level} level student)
+**{level_label} Summary:** (One-sentence summary of the concept/passage using language suited for a {level} level student)
 
 **Core Formulas & Facts:**
 * (core fact/formula 1 from the source chunks or web results)

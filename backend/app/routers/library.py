@@ -118,13 +118,25 @@ def status():
     content_folder = get_content_folder()
     questions_folder = get_questions_folder()
     db = get_db()
+    files = _list_files(content_folder or "")
+    
+    document_id = None
+    if files:
+        try:
+            import hashlib
+            with open(files[0], "rb") as f:
+                document_id = hashlib.sha256(f.read()).hexdigest()
+        except Exception:
+            pass
+
     return {
         "configured": is_configured(),
         "content_folder": content_folder,
         "questions_folder": questions_folder,
-        "content_files": [os.path.basename(p) for p in _list_files(content_folder or "")],
+        "content_files": [os.path.basename(p) for p in files],
         "questions_files": [os.path.basename(p) for p in _list_files(questions_folder or "")],
         "indexed_chunks": db.collection_count(LIBRARY_COLLECTION),
+        "document_id": document_id,
     }
 
 
@@ -162,6 +174,22 @@ async def start_session(req: StartSessionRequest):
     if not files:
         raise HTTPException(400, "No supported files found in content folder.")
 
+    # Cache the first file for layout/regions segmentation under its document_id hash
+    document_id = ""
+    if files:
+        try:
+            with open(files[0], "rb") as f:
+                first_content = f.read()
+            document_id = hashlib.sha256(first_content).hexdigest()
+            pdf_dir = os.path.expanduser("~/.studybuddy/pdfs")
+            os.makedirs(pdf_dir, exist_ok=True)
+            pdf_cache_dest = os.path.join(pdf_dir, f"{document_id}.pdf")
+            if not os.path.exists(pdf_cache_dest):
+                with open(pdf_cache_dest, "wb") as fh:
+                    fh.write(first_content)
+        except Exception:
+            pass
+
     # Extract structure from each file (headings / first pages — fast, no embedding)
     loop = asyncio.get_event_loop()
     overviews = []
@@ -189,6 +217,7 @@ async def start_session(req: StartSessionRequest):
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
         "edges": edges,
+        "document_id": document_id,
     }
 
 
@@ -252,6 +281,14 @@ async def upload_and_start(
         dest = os.path.join(uploads_dir, filename)
         with open(dest, "wb") as fh:
             fh.write(content)
+
+    # Cache the first file for layout/regions segmentation under its document_id hash
+    if file_store:
+        pdf_dir = os.path.expanduser("~/.studybuddy/pdfs")
+        os.makedirs(pdf_dir, exist_ok=True)
+        pdf_cache_dest = os.path.join(pdf_dir, f"{hashlib.sha256(file_store[0][0]).hexdigest()}.pdf")
+        with open(pdf_cache_dest, "wb") as fh:
+            fh.write(file_store[0][0])
     # Register uploads dir as the content folder so /library/status sees the files
     save_settings({"content_folder": uploads_dir})
 

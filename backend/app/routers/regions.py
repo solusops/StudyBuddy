@@ -69,36 +69,67 @@ def _save_region_cache(document_id: str, cache: dict) -> None:
 
 @router.post("/segment")
 async def segment(req: SegmentRequest):
+    print(f"[REGIONS] Incoming segment request: doc_id={req.document_id}, page={req.page_number}, has_b64={bool(req.pdf_base64)}")
     # Serve from cache if this page was already segmented.
     cache = _load_region_cache(req.document_id)
     page_key = str(req.page_number)
     if page_key in cache:
+        print(f"[REGIONS] Serving {len(cache[page_key])} regions from cache for page {req.page_number}")
         return {"regions": cache[page_key], "cached": True}
-
     # Resolve the PDF bytes: cached on disk, or freshly uploaded in this request.
     pdf_path = _pdf_path(req.document_id)
     if req.pdf_base64:
+        print(f"[REGIONS] Writing uploaded PDF base64 bytes to: {pdf_path}")
         with open(pdf_path, "wb") as f:
             f.write(base64.b64decode(req.pdf_base64))
     if not os.path.exists(pdf_path):
-        # Frontend must resend with pdf_base64.
-        raise HTTPException(status_code=409, detail="pdf_not_cached")
+        print(f"[REGIONS] PDF path {pdf_path} not found. Attempting backend-side resolution...")
+        import hashlib
+        import shutil
+        from app.services.settings_service import get_content_folder
+        resolved = False
+        content_folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
+        if os.path.exists(content_folder):
+            for filename in os.listdir(content_folder):
+                if filename.lower().endswith(".pdf"):
+                    path = os.path.join(content_folder, filename)
+                    try:
+                        with open(path, "rb") as f:
+                            h = hashlib.sha256(f.read()).hexdigest()
+                        if h == req.document_id:
+                            print(f"[REGIONS] Found matching file: {filename} ({h}). Copying to cache...")
+                            shutil.copy(path, pdf_path)
+                            resolved = True
+                            break
+                    except Exception as e:
+                        print(f"[REGIONS] Error checking {filename}: {e}")
+        if not resolved:
+            print(f"[REGIONS] PDF path does not exist on disk: {pdf_path}. Returning 409.")
+            raise HTTPException(status_code=409, detail="pdf_not_cached")
 
     loop = asyncio.get_event_loop()
 
     # Scanned page with no text layer → no reliable geometry; signal vision-only fallback.
     has_text = await loop.run_in_executor(None, page_has_text, None, pdf_path, req.page_number)
+    print(f"[REGIONS] Page text check: has_text={has_text}")
 
-    regions, _ = await loop.run_in_executor(
-        None, lambda: segment_page(file_path=pdf_path, page_number=req.page_number)
-    )
+    try:
+        regions, (pw, ph) = await loop.run_in_executor(
+            None, lambda: segment_page(file_path=pdf_path, page_number=req.page_number)
+        )
+        print(f"[REGIONS] PyMuPDF segment_page extracted {len(regions)} regions (dimensions: {pw}x{ph})")
+    except Exception as e:
+        print(f"[REGIONS] Error running segment_page: {e}")
+        regions, pw, ph = [], 0, 0
 
     # Describe each region crop concurrently (Cerebras throughput is not the bottleneck).
     async def describe(region: dict) -> dict:
         try:
+            print(f"[REGIONS] Describing region {region['id']} (type: {region['type']})")
             desc = await loop.run_in_executor(
                 None, _get_senses().describe_region, region["crop_base64"], region["type"]
             )
+            print(f"[REGIONS] Successfully described region {region['id']}: type={desc.type}, caption={desc.caption[:40]}")
             return {
                 **region,
                 "type": desc.type,
@@ -106,12 +137,13 @@ async def segment(req: SegmentRequest):
                 "extracted_content": desc.extracted_content,
             }
         except Exception as e:
-            print("describe_region error:", e)
+            print(f"[REGIONS] describe_region error for {region['id']}: {e}")
             return {**region, "caption": "", "extracted_content": ""}
 
     described = await asyncio.gather(*(describe(r) for r in regions)) if regions else []
     described = list(described)
 
+    print(f"[REGIONS] Returning {len(described)} regions to frontend.")
     cache[page_key] = described
     _save_region_cache(req.document_id, cache)
     return {"regions": described, "cached": False, "has_text_layer": has_text}
