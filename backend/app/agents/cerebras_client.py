@@ -14,7 +14,7 @@ import os
 import time
 from typing import Any, AsyncIterator, Dict, List, Optional, Type
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from app.agents.cerebras_errors import CerebrasError, CerebrasErrorKind, classify_error
 
@@ -121,8 +121,8 @@ class CerebrasClient:
             return output_model.model_validate_json(raw)
         except CerebrasError:
             raise
-        except json.JSONDecodeError:
-            # One retry on parse failure
+        except (json.JSONDecodeError, ValidationError):
+            # One retry on parse failure or truncated JSON (EOF validation error)
             resp = self._client.chat.completions.create(
                 model=model or MODEL_ID, messages=messages, response_format=response_format
             )

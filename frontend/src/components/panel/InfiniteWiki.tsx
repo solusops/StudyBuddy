@@ -26,8 +26,18 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       if (!term.trim() || term === lastFiredRef.current) return
       lastFiredRef.current = term
       const page: WikiPage = { term, content: "", streaming: true }
-      setStack((prev) => [...prev.slice(0, currentIdx + 1), page])
-      setCurrentIdx((prev) => prev + 1)
+      // Truncate forward history then append the new page.
+      // New page index = length of the truncated array (0-based).
+      // When stack is empty: truncated = [], new page at index 0.
+      // When stack has items: truncated = stack[0..currentIdx], new page at currentIdx+1.
+      setStack((prev) => {
+        const truncated = prev.slice(0, currentIdx + 1)
+        return [...truncated, page]
+      })
+      // Index of the new page = min(currentIdx + 1, stack.length)
+      // handles the empty-stack case: min(0+1, 0) = 0
+      // If the stack was empty the new page lands at index 0; otherwise at currentIdx+1
+      setCurrentIdx(stack.length === 0 ? 0 : currentIdx + 1)
       sendEvent("CONTEXT_CARD_REQUEST", {
         selection_text: term,
         surrounding_context: surrounding,
@@ -35,7 +45,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         parent_context: parentContext,
       })
     },
-    [currentIdx, familiarity, sendEvent]
+    [currentIdx, familiarity, sendEvent, stack.length]
   )
 
   // Auto-fire when tab is active and selection changes

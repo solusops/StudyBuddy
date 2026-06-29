@@ -18,7 +18,9 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [editedLabel, setEditedLabel] = useState("")
   const [editedDesc, setEditedDesc] = useState("")
+  const [editedStatus, setEditedStatus] = useState<NodeData["status"]>("ACTIVE")
   const [refinementText, setRefinementText] = useState("")
   const [isRefining, setIsRefining] = useState(false)
   const [refineError, setRefineError] = useState("")
@@ -66,7 +68,9 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   // When node is selected, pre-fill the description edit box
   useEffect(() => {
     if (selectedNode) {
+      setEditedLabel(selectedNode.data.label)
       setEditedDesc(selectedNode.data.description)
+      setEditedStatus(selectedNode.data.status)
     }
   }, [selectedId])
 
@@ -89,12 +93,12 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   )
 
   // Apply local description edit to the graph store
-  const applyDescEdit = () => {
+  const applyNodeEdit = () => {
     if (!selectedId) return
     const { nodes: storeNodes, edges } = useGraphStore.getState()
     const updated = storeNodes.map((n) =>
       n.id === selectedId
-        ? { ...n, data: { ...n.data, description: editedDesc } }
+        ? { ...n, data: { ...n.data, label: editedLabel, description: editedDesc, status: editedStatus } }
         : n
     )
     setGraph(updated, edges)
@@ -314,10 +318,60 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
             {/* Scrollable content */}
             <div style={{ flex: 1, overflow: "auto", padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Editable label */}
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Label
+                </label>
+                <input
+                  value={editedLabel}
+                  onChange={(e) => setEditedLabel(e.target.value)}
+                  style={{
+                    width: "100%",
+                    background: "#FAF7F2",
+                    border: "1px solid #E8E0D5",
+                    borderRadius: 8,
+                    padding: "8px 10px",
+                    fontSize: 15,
+                    color: "#1A1A2E",
+                    boxSizing: "border-box",
+                    fontFamily: "'Libre Caslon Text', Georgia, serif",
+                    outline: "none",
+                  }}
+                />
+              </div>
+
+              {/* Status picker */}
+              <div>
+                <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Status
+                </label>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {(["ACTIVE", "MASTERED", "STRUGGLING", "DEGRADED", "LOCKED"] as NodeData["status"][]).map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => setEditedStatus(s)}
+                      style={{
+                        padding: "4px 10px",
+                        borderRadius: 6,
+                        border: editedStatus === s ? "2px solid #1A3557" : "1.5px solid #E8E0D5",
+                        background: editedStatus === s ? "#EEF3F8" : "transparent",
+                        color: editedStatus === s ? "#1A3557" : "#6B7280",
+                        fontSize: 13,
+                        fontWeight: editedStatus === s ? 600 : 400,
+                        cursor: "pointer",
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Editable description */}
               <div>
                 <label style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#6B7280", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                  Node description
+                  Description
                 </label>
                 <textarea
                   value={editedDesc}
@@ -337,25 +391,26 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                     outline: "none",
                   }}
                 />
-                {editedDesc !== selectedNode.data.description && (
-                  <button
-                    onClick={applyDescEdit}
-                    style={{
-                      marginTop: 6,
-                      background: "#1A3557",
-                      color: "#FAF7F2",
-                      border: "none",
-                      borderRadius: 6,
-                      padding: "6px 14px",
-                      fontSize: 14,
-                      cursor: "pointer",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Apply changes
-                  </button>
-                )}
               </div>
+
+              {/* Apply button — shows when any field changed */}
+              {(editedLabel !== selectedNode.data.label || editedDesc !== selectedNode.data.description || editedStatus !== selectedNode.data.status) && (
+                <button
+                  onClick={applyNodeEdit}
+                  style={{
+                    background: "#1A3557",
+                    color: "#FAF7F2",
+                    border: "none",
+                    borderRadius: 6,
+                    padding: "8px 14px",
+                    fontSize: 14,
+                    cursor: "pointer",
+                    fontWeight: 600,
+                  }}
+                >
+                  Apply changes
+                </button>
+              )}
 
               {/* Lesson content */}
               <div>

@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from "react-pdf"
 import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useInteractionStore, type SelectionSnippet } from "../../store/interactionStore"
+import { useContextStore } from "../../store/contextStore"
 import { HighlightLayer } from "./HighlightLayer"
 import { MarginGutter } from "./MarginGutter"
 
@@ -38,6 +39,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   const containerRef = useRef<HTMLDivElement>(null)
   const pageTexts = useRef<Map<number, string>>(new Map())
   const { cursorMode, pushSnippet, setAnnotations } = useInteractionStore()
+  const { setSelection, clearSelection } = useContextStore()
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(new Map())
 
@@ -111,12 +113,18 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   }
 
   const handlePointerUp = useCallback((pageNumber: number, e: React.PointerEvent) => {
-    if (cursorMode !== "NOTE_APPEND") return
     const sel = window.getSelection()
-    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return
+    // Empty/collapsed selection in Read mode → clear any ghost context
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
+      if (cursorMode === "DEFAULT") clearSelection()
+      return
+    }
     const range = sel.getRangeAt(0)
     const text = range.toString().trim()
-    if (!text) return
+    if (!text) {
+      if (cursorMode === "DEFAULT") clearSelection()
+      return
+    }
     const pageEl = pageRefs.current.get(pageNumber)
     if (!pageEl) return
     const rects = Array.from(range.getClientRects())
@@ -124,9 +132,21 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
       .filter((r) => r.width > 2)
       .map((r) => ({ page: pageNumber, ...toNorm(r, pageEl) }))
     const snippet: SelectionSnippet = { page_number: pageNumber, text, boxes }
-    pushSnippet(snippet)
-    sel.removeAllRanges()
-  }, [cursorMode, pushSnippet])
+
+    if (cursorMode === "NOTE_APPEND") {
+      pushSnippet(snippet)
+      sel.removeAllRanges()
+    } else {
+      // Read (DEFAULT) mode — push to Context Broker for Chat/Infinite Wiki
+      const pageText = pageTexts.current.get(pageNumber) ?? ""
+      const idx = pageText.indexOf(text.slice(0, 40))
+      const surrounding = idx >= 0
+        ? pageText.slice(Math.max(0, idx - 200), idx + text.length + 200)
+        : pageText.slice(0, 400)
+      setSelection([snippet], text, surrounding)
+      // Keep selection visible so user can see what's captured
+    }
+  }, [cursorMode, pushSnippet, setSelection, clearSelection])
 
   // Delegate concept clicks from text layer
   useEffect(() => {

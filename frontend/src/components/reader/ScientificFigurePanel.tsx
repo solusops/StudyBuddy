@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
 import { TabBar } from "../panel/TabBar"
 import { InfiniteWiki } from "../panel/InfiniteWiki"
@@ -23,6 +23,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
   const { familiarity } = useSessionStore()
   const { nodes } = useGraphStore()
   const { activeAnnotationId, committedAnnotations, updateAnnotationNote } = useInteractionStore()
+  const { setSelection, clearSelection } = useContextStore()
   const activeAnnotation = activeAnnotationId
     ? committedAnnotations.find((a) => a.annotation_id === activeAnnotationId) ?? null
     : null
@@ -35,6 +36,21 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
   useEffect(() => {
     setNoteText(activeAnnotation?.note_text ?? "")
   }, [activeAnnotationId])
+
+  // Capture text selections inside the panel and push to contextStore
+  // so Infinite Wiki can auto-fire on them
+  const handlePanelMouseUp = useCallback(() => {
+    const sel = window.getSelection()
+    // Don't interfere with InfiniteWiki's own drill-down handler
+    if (activeTab === "Infinite Wiki") return
+    if (!sel || sel.isCollapsed) {
+      clearSelection()
+      return
+    }
+    const text = sel.toString().trim()
+    if (text.length < 3) { clearSelection(); return }
+    setSelection([], text, "")
+  }, [activeTab, setSelection, clearSelection])
 
   const saveNote = async () => {
     if (!activeAnnotation) return
@@ -121,8 +137,8 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
       {/* Flat tab bar */}
       <TabBar tabs={TABS} active={activeTab} onChange={setActiveTab} />
 
-      {/* Content */}
-      <div style={{ flex: 1, overflow: "auto" }}>
+      {/* Content — mouseUp captures panel-internal selections for Infinite Wiki */}
+      <div style={{ flex: 1, overflow: "auto" }} onMouseUp={handlePanelMouseUp}>
         {activeTab === "Chat" && (
           activeNodeId ? (
             <ChatTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />

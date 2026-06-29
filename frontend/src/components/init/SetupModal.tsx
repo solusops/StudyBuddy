@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import type { AppSession } from "../../App"
 import type { FamiliarityLevel } from "../../types"
 
@@ -18,9 +18,26 @@ export function SetupModal({ onSessionReady }: Props) {
   const [familiarity, setFamiliarity] = useState<FamiliarityLevel>("high_school")
   const [files, setFiles] = useState<File[]>([])
   const [dragging, setDragging] = useState(false)
+  const [backendReady, setBackendReady] = useState(false)
   const [phase, setPhase] = useState<"idle" | "starting" | "error">("idle")
   const [error, setError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Poll until backend is reachable — disables the button during cold start
+  useEffect(() => {
+    let cancelled = false
+    const poll = async () => {
+      while (!cancelled) {
+        try {
+          const r = await fetch("/api/health", { signal: AbortSignal.timeout(2000) })
+          if (r.ok) { setBackendReady(true); return }
+        } catch { /* not ready yet */ }
+        await new Promise((res) => setTimeout(res, 1000))
+      }
+    }
+    poll()
+    return () => { cancelled = true }
+  }, [])
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
@@ -217,7 +234,7 @@ export function SetupModal({ onSessionReady }: Props) {
 
         <button
           onClick={start}
-          disabled={phase === "starting"}
+          disabled={!backendReady || phase === "starting"}
           style={{
             background: "#1A3557",
             color: "#FAF7F2",
@@ -226,13 +243,18 @@ export function SetupModal({ onSessionReady }: Props) {
             padding: "15px 0",
             fontSize: 17,
             fontWeight: 600,
-            cursor: phase === "starting" ? "not-allowed" : "pointer",
-            opacity: phase === "starting" ? 0.7 : 1,
+            cursor: (!backendReady || phase === "starting") ? "not-allowed" : "pointer",
+            opacity: (!backendReady || phase === "starting") ? 0.6 : 1,
             fontFamily: "'Libre Caslon Text', Georgia, serif",
             letterSpacing: "0.02em",
+            transition: "opacity 0.3s",
           }}
         >
-          {phase === "starting" ? "Building your study tree…" : "Start Studying →"}
+          {phase === "starting"
+            ? "Building your study tree…"
+            : !backendReady
+              ? "Connecting to backend…"
+              : "Start Studying →"}
         </button>
       </div>
     </div>

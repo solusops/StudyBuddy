@@ -25,7 +25,8 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
   } = useInteractionStore()
 
   const [draftNote, setDraftNote] = useState("")
-  const [draftStatus, setDraftStatus] = useState<"idle" | "draft" | "saving">("idle")
+  const [draftStatus, setDraftStatus] = useState<"idle" | "draft" | "saving" | "error">("idle")
+  const [draftError, setDraftError] = useState("")
   const textRef = useRef<HTMLTextAreaElement>(null)
 
   // Collect committed notes whose FIRST box lands on this page
@@ -51,25 +52,46 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
   }, [draftOnThisPage, cursorMode])
 
   const saveAnnotation = async () => {
-    if (!documentId || !sessionId || !activeSelectionGroup.length) return
+    if (!activeSelectionGroup.length) return
+    setDraftError("")
     setDraftStatus("saving")
-    const body = {
-      document_id: documentId,
-      session_id: sessionId,
-      target_snippets: activeSelectionGroup,
-      note_text: draftNote || null,
-    }
-    const resp = await fetch("/annotations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    })
-    if (resp.ok) {
+    try {
+      if (!documentId || !sessionId) {
+        // No session yet — store locally in interactionStore only (no backend persist)
+        addAnnotation({
+          annotation_id: `local-${Date.now()}`,
+          document_id: documentId ?? "local",
+          session_id: sessionId ?? "local",
+          target_snippets: activeSelectionGroup,
+          note_text: draftNote || null,
+          created_at: Date.now() / 1000,
+          updated_at: Date.now() / 1000,
+        })
+        clearGroup()
+        setDraftNote("")
+        setDraftStatus("idle")
+        return
+      }
+      const body = {
+        document_id: documentId,
+        session_id: sessionId,
+        target_snippets: activeSelectionGroup,
+        note_text: draftNote || null,
+      }
+      const resp = await fetch("/annotations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!resp.ok) throw new Error(`${resp.status} ${resp.statusText}`)
       const created = await resp.json()
       addAnnotation(created)
       clearGroup()
       setDraftNote("")
       setDraftStatus("idle")
+    } catch (err) {
+      setDraftError(err instanceof Error ? err.message : "Save failed")
+      setDraftStatus("error")
     }
   }
 
@@ -77,6 +99,7 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
     clearGroup()
     setDraftNote("")
     setDraftStatus("idle")
+    setDraftError("")
   }
 
   if (!pageHeightPx) return null
@@ -167,12 +190,19 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
               boxSizing: "border-box",
             }}
           />
+          {draftError && (
+            <p style={{ margin: "4px 0 0", fontSize: 11, color: "#EF4444" }}>{draftError}</p>
+          )}
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
             <button onClick={cancelDraft} style={{ background: "transparent", border: "1px solid #E8E0D5", borderRadius: 4, padding: "3px 8px", fontSize: 12, cursor: "pointer", color: "#6B7280" }}>
               Cancel
             </button>
-            <button onClick={saveAnnotation} disabled={draftStatus === "saving"} style={{ background: "#1A3557", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 12, cursor: "pointer", color: "#FAF7F2", fontWeight: 600 }}>
-              {draftStatus === "saving" ? "Saving…" : "Save"}
+            <button
+              onClick={draftStatus === "error" ? saveAnnotation : saveAnnotation}
+              disabled={draftStatus === "saving"}
+              style={{ background: draftStatus === "error" ? "#EF4444" : "#1A3557", border: "none", borderRadius: 4, padding: "3px 10px", fontSize: 12, cursor: draftStatus === "saving" ? "not-allowed" : "pointer", color: "#FAF7F2", fontWeight: 600 }}
+            >
+              {draftStatus === "saving" ? "Saving…" : draftStatus === "error" ? "Retry" : "Save"}
             </button>
           </div>
         </div>

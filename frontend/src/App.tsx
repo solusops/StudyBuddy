@@ -78,15 +78,12 @@ export default function App() {
 
   if (view === "tree") {
     return (
-      <>
-        <FloatingToolbar />
-        <TreePage
-          session={session}
-          sendEvent={sendEvent}
-          onBack={() => setView("manual")}
-          onNeedSetup={() => setView("setup")}
-        />
-      </>
+      <TreePage
+        session={session}
+        sendEvent={sendEvent}
+        onBack={() => setView("manual")}
+        onNeedSetup={() => setView("setup")}
+      />
     )
   }
 

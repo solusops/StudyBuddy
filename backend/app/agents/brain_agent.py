@@ -121,9 +121,10 @@ class BrainAgent:
         Returns (nodes, edges). All nodes start as ACTIVE — no locking.
         """
         all_structure = "\n\n---\n\n".join(
-            f"Document: {d['filename']}\n{d['structure_text']}"
+            f"Document: {d['filename']}\n{d['structure_text'][:3000]}"
             for d in document_overviews
         )
+        all_structure = all_structure[:10000]  # hard cap — prevents JSON truncation at 32K MCL
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
         topic_note = f"The student wants to study: {topic_hint}\n\n" if topic_hint else ""
         memory_note = (
@@ -148,9 +149,9 @@ class BrainAgent:
                 "content": (
                     f"Document structure:\n{all_structure}\n\n"
                     "Extract concept nodes and interconnections.\n"
-                    "Nodes: id (n1, n2...), label, brief description, depth (1=chapter 2=section 3=topic), optional parent_id.\n"
+                    "Nodes: id (n1, n2...), label (≤6 words), description (≤80 chars), depth (1=chapter 2=section 3=topic), optional parent_id.\n"
                     "Edges: source, target, relationship (prerequisite | related | builds-on).\n"
-                    "Add cross-links wherever concepts genuinely depend on or relate to each other."
+                    "Keep descriptions short. Aim for 8-15 nodes total."
                 ),
             },
         ]
