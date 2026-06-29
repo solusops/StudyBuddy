@@ -31,9 +31,11 @@ interface Props {
 
 export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
   const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage, knowledgeMode } = useSessionStore()
-  const { selectionText, surroundingContext, clearSelection } = useContextStore()
+  const { selectionText, surroundingContext, selectionImageBase64, clearSelection } = useContextStore()
   const bottomRef = useRef<HTMLDivElement>(null)
   const [webSearching, setWebSearching] = useState(false)
+
+  const hasContext = !!selectionText || !!selectionImageBase64
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -53,8 +55,8 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
 
   const send = () => {
     const content = chatDraft.trim()
-    if (!content && !selectionText) return
-    const userMessage = content || `Explain: "${selectionText.slice(0, 120)}"`
+    if (!content && !selectionText && !selectionImageBase64) return
+    const userMessage = content || `Explain: "${selectionText ? selectionText.slice(0, 120) : "this image"}"`
     addChatMessage({ role: "student", content: userMessage })
     setChatDraft("")
     sendEvent("CHAT_TURN", {
@@ -64,6 +66,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
       knowledge_mode: knowledgeMode,
       selection_text: selectionText || undefined,
       surrounding_context: surroundingContext || undefined,
+      selection_image_base64: selectionImageBase64 || undefined,
     })
   }
 
@@ -194,8 +197,6 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
     })
   }
 
-  const hasContext = !!selectionText
-
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 0 }}>
 
@@ -269,20 +270,30 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             padding: "8px 12px 0",
           }}>
             <span style={{ color: "#9CA3AF", fontSize: 14, marginTop: 1, flexShrink: 0 }}>↳</span>
-            <p style={{
-              flex: 1,
-              margin: 0,
-              fontSize: 14.5,
-              color: "#4A7FB5",
-              lineHeight: 1.4,
-              fontFamily: "'Libre Caslon Text', Georgia, serif",
-              overflow: "hidden",
-              display: "-webkit-box",
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: "vertical",
-            }}>
-              "{selectionText.length > 280 ? selectionText.slice(0, 280) + "…" : selectionText}"
-            </p>
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+              {selectionText && (
+                <p style={{
+                  margin: 0,
+                  fontSize: 14.5,
+                  color: "#4A7FB5",
+                  lineHeight: 1.4,
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                  overflow: "hidden",
+                  display: "-webkit-box",
+                  WebkitLineClamp: 3,
+                  WebkitBoxOrient: "vertical",
+                }}>
+                  "{selectionText.length > 280 ? selectionText.slice(0, 280) + "…" : selectionText}"
+                </p>
+              )}
+              {selectionImageBase64 && (
+                <img 
+                  src={`data:image/png;base64,${selectionImageBase64}`} 
+                  alt="Selection context"
+                  style={{ maxHeight: 60, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #E8E0D5" }} 
+                />
+              )}
+            </div>
             <button
               onClick={clearSelection}
               title="Clear selection"

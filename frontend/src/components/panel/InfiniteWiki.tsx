@@ -44,6 +44,7 @@ interface WikiPage {
   visualLoading?: boolean
   visualOffer?: VisualOffer | null
   papers?: ScholarPaper[]
+  imageBase64?: string
 }
 
 interface Props {
@@ -54,16 +55,16 @@ interface Props {
 export function InfiniteWiki({ isActive, sendEvent }: Props) {
   const [stack, setStack] = useState<WikiPage[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
-  const { selectionText, surroundingContext } = useContextStore()
+  const { selectionText, surroundingContext, selectionImageBase64 } = useContextStore()
   const { familiarity, knowledgeMode } = useSessionStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFiredRef = useRef("")
 
   const fireCard = useCallback(
-    (term: string, surrounding: string, parentContext: string = "") => {
+    (term: string, surrounding: string, parentContext: string = "", imageBase64?: string) => {
       if (!term.trim() || term === lastFiredRef.current) return
       lastFiredRef.current = term
-      const page: WikiPage = { term, content: "", streaming: true, visual: null, visualLoading: false, visualOffer: null }
+      const page: WikiPage = { term, content: "", streaming: true, visual: null, visualLoading: false, visualOffer: null, imageBase64 }
       setStack((prev) => {
         const truncated = prev.slice(0, currentIdx + 1)
         return [...truncated, page]
@@ -72,6 +73,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       sendEvent("CONTEXT_CARD_REQUEST", {
         selection_text: term,
         surrounding_context: surrounding,
+        selection_image_base64: imageBase64,
         familiarity,
         parent_context: parentContext,
         knowledge_mode: knowledgeMode,
@@ -82,13 +84,14 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
 
   // Auto-fire when tab is active and selection changes
   useEffect(() => {
-    if (!isActive || !selectionText) return
+    if (!isActive || (!selectionText && !selectionImageBase64)) return
+    const term = selectionText || "Selected Image"
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      fireCard(selectionText, surroundingContext)
+      fireCard(term, surroundingContext, "", selectionImageBase64)
     }, 400)
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current) }
-  }, [isActive, selectionText, surroundingContext, fireCard])
+  }, [isActive, selectionText, surroundingContext, selectionImageBase64, fireCard])
 
   // Listen for WIKI_TOKEN / WIKI_DONE and WIKI_VISUAL events dispatched from useWebSocket
   useEffect(() => {
@@ -222,17 +225,35 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         flushList(index)
         const headerText = trimmed.replace(/^#+\s*/, "")
         elements.push(
-          <h3 key={index} style={{
-            fontFamily: "'Libre Caslon Text', Georgia, serif",
-            color: "#1A3557",
-            fontSize: 18,
-            fontWeight: 700,
-            margin: "20px 0 10px 0",
-            borderBottom: "2px solid #E8E0D5",
-            paddingBottom: 4
-          }}>
-            {headerText}
-          </h3>
+          <div key={index} style={{ marginBottom: 10 }}>
+            <h3 style={{
+              fontFamily: "'Libre Caslon Text', Georgia, serif",
+              color: "#1A3557",
+              fontSize: 18,
+              fontWeight: 700,
+              margin: "20px 0 10px 0",
+              borderBottom: "2px solid #E8E0D5",
+              paddingBottom: 4
+            }}>
+              {headerText}
+            </h3>
+            {currentPage?.imageBase64 && (
+              <img 
+                src={`data:image/png;base64,${currentPage.imageBase64}`} 
+                alt="Source region"
+                style={{
+                  display: "block",
+                  maxWidth: "100%",
+                  maxHeight: 180,
+                  objectFit: "contain",
+                  borderRadius: 6,
+                  border: "1px solid #E8E0D5",
+                  marginTop: 12,
+                  marginBottom: 16
+                }} 
+              />
+            )}
+          </div>
         )
         return
       }

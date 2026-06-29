@@ -247,9 +247,22 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 f"{_CHAT_FORMATTING}"
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
+            user_content = query or f"Explain: {selection_text[:200] if selection_text else 'this image'}"
+            selection_img = data.get("selection_image_base64")
+            if selection_img:
+                user_msg = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_content},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{selection_img}"}}
+                    ]
+                }
+            else:
+                user_msg = {"role": "user", "content": user_content}
+
             messages = [
                 {"role": "system", "content": system_msg},
-                {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
+                user_msg,
             ]
             # Let the model decide whether it needs the web (tool-calling, "auto when helpful").
             decision = await loop.run_in_executor(
@@ -298,9 +311,22 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 f"{_CHAT_FORMATTING}"
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
+            user_content = query or f"Explain: {selection_text[:200] if selection_text else 'this image'}"
+            selection_img = data.get("selection_image_base64")
+            if selection_img:
+                user_msg = {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_content},
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{selection_img}"}}
+                    ]
+                }
+            else:
+                user_msg = {"role": "user", "content": user_content}
+
             messages = [
                 {"role": "system", "content": system_msg},
-                {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
+                user_msg,
             ]
             async for token in _get_tutor()._client.stream_complete(messages):
                 full_response += token

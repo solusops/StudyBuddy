@@ -62,10 +62,9 @@ def _load_region_cache(document_id: str) -> dict:
     p = _region_cache_path(document_id)
     if os.path.exists(p):
         try:
-            with open(p, encoding="utf-8") as f:
-                return json.load(f)
+            os.remove(p)
         except Exception:
-            return {}
+            pass
     return {}
 
 
@@ -148,7 +147,9 @@ async def segment(req: SegmentRequest):
             return {**region, "caption": "", "extracted_content": ""}
 
     described = await asyncio.gather(*(describe(r) for r in regions)) if regions else []
-    described = list(described)
+    # Filter out equations, text blocks misidentified as 'other', etc. during auto run.
+    # Keep only visual plots/diagrams/figures.
+    described = [d for d in described if d.get("type", "").lower() in ["figure", "plot", "diagram"]]
 
     print(f"[REGIONS] Returning {len(described)} regions to frontend.")
     cache[page_key] = described

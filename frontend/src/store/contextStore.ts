@@ -6,10 +6,11 @@ interface ContextStore {
   selectionSnippets: SelectionSnippet[]
   selectionText: string
   surroundingContext: string
+  selectionImageBase64?: string
   activeNoteText: string
   familiarity: string
 
-  setSelection: (snippets: SelectionSnippet[], text: string, surrounding: string) => void
+  setSelection: (snippets: SelectionSnippet[], text: string, surrounding: string, imageBase64?: string) => void
   clearSelection: () => void
   setActiveNoteText: (note: string) => void
   setFamiliarity: (f: string) => void
@@ -19,13 +20,14 @@ export const useContextStore = create<ContextStore>((set) => ({
   selectionSnippets: [],
   selectionText: "",
   surroundingContext: "",
+  selectionImageBase64: undefined,
   activeNoteText: "",
   familiarity: "high_school",
 
-  setSelection: (snippets, text, surrounding) =>
-    set({ selectionSnippets: snippets, selectionText: text, surroundingContext: surrounding }),
+  setSelection: (snippets, text, surrounding, imageBase64) =>
+    set({ selectionSnippets: snippets, selectionText: text, surroundingContext: surrounding, selectionImageBase64: imageBase64 }),
   clearSelection: () =>
-    set({ selectionSnippets: [], selectionText: "", surroundingContext: "" }),
+    set({ selectionSnippets: [], selectionText: "", surroundingContext: "", selectionImageBase64: undefined }),
   setActiveNoteText: (note) => set({ activeNoteText: note }),
   setFamiliarity: (f) => set({ familiarity: f }),
 }))

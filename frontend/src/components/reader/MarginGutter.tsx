@@ -264,11 +264,20 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                 }}
               />
             ) : (
-              <p style={{ margin: 0, fontSize: 12, color: "#1A3557", lineHeight: 1.45, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
-                {annotation.note_text || (
-                  <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {annotation.image_base64 && (
+                  <img 
+                    src={`data:image/png;base64,${annotation.image_base64}`}
+                    alt="Pinned region"
+                    style={{ maxWidth: "100%", borderRadius: 4, objectFit: "contain", border: "1px solid #E8E0D5" }}
+                  />
                 )}
-              </p>
+                <p style={{ margin: 0, fontSize: 12, color: "#1A3557", lineHeight: 1.45, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                  {annotation.note_text || (
+                    <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
+                  )}
+                </p>
+              </div>
             )}
           </div>
         )

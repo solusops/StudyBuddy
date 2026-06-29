@@ -93,29 +93,7 @@ def segment_page(
 
         candidates: List[Tuple[Any, str]] = []
 
-        # 1. Text blocks (only use for checking overlap, DO NOT add to candidates)
-        # We extract them so we can filter massive diagram boxes that swallow the text.
-        try:
-            blocks = page.get_text("blocks")
-            text_rects = []
-            for b in blocks:
-                rect = fitz.Rect(b[:4])
-                btype = b[6]
-                if btype == 0:
-                    text_rects.append(rect)
-                elif btype == 1:
-                    candidates.append((rect, "figure"))
-        except Exception as e:
-            print(f"[layout_service] blocks error: {e}")
-
-        # 2. Tables (most specific)
-        try:
-            for t in page.find_tables().tables:
-                candidates.append((fitz.Rect(t.bbox), "table"))
-        except Exception:
-            pass
-
-        # 3. Embedded raster images
+        # 1. Embedded raster images (figures/plots)
         try:
             for info in page.get_image_info():
                 bbox = info.get("bbox")
@@ -124,7 +102,7 @@ def segment_page(
         except Exception:
             pass
 
-        # 4. Vector-drawing clusters (line plots, schematic diagrams)
+        # 2. Vector-drawing clusters (line plots, schematic diagrams)
         try:
             try:
                 rects = page.cluster_drawings(x_tolerance=20.0, y_tolerance=20.0)
@@ -155,18 +133,11 @@ def segment_page(
                     if not inter.is_empty and inter.get_area() > 0.6 * rect.get_area():
                         overlap = True
                         break
-                # If diagram heavily overlaps a table/figure, skip it!
-                elif rtype == "diagram" and k_type in ("table", "figure"):
+                # If diagram heavily overlaps a figure, skip it!
+                elif rtype == "diagram" and k_type == "figure":
                     if not inter.is_empty and inter.get_area() > 0.6 * rect.get_area():
                         overlap = True
                         break
-
-            # If it's a diagram, ensure it doesn't swallow huge chunks of text (e.g. background vectors)
-            if not overlap and rtype == "diagram":
-                text_overlap_area = sum((rect & tr).get_area() for tr in text_rects)
-                # If the diagram covers a large amount of text (e.g., more than 50% of its area is text)
-                if text_overlap_area > 0.5 * rect.get_area():
-                    overlap = True
 
             if overlap:
                 continue

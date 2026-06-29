@@ -186,7 +186,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   const sendToTool = (r: Region, tool: "Infinite Wiki" | "Chat") => {
     const text = r.caption || r.type
     const surrounding = r.extracted_content || ""
-    setSelection([buildSnippet(r)], text, surrounding)
+    setSelection([buildSnippet(r)], text, surrounding, r.crop_base64)
     window.dispatchEvent(new CustomEvent("studybuddy-open-tool", { detail: { tool } }))
     setSelected(null)
   }
@@ -264,6 +264,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
         return (
           <div key={r.id}>
             <button
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setSelected(isSel ? null : r.id)}
               title={`${r.type}${r.caption ? ": " + r.caption : ""}`}
               style={{
@@ -290,8 +291,10 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
             </button>
 
             {isSel && (
-              <div style={{
-                position: "absolute",
+              <div 
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                  position: "absolute",
                 left: `${x * 100}%`,
                 top: `calc(${(y + h) * 100}% + 4px)`,
                 pointerEvents: "auto",
