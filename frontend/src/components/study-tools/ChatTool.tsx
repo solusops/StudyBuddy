@@ -290,7 +290,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
                 <img 
                   src={`data:image/png;base64,${selectionImageBase64}`} 
                   alt="Selection context"
-                  style={{ maxHeight: 60, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #E8E0D5" }} 
+                  style={{ maxHeight: 300, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #E8E0D5" }} 
                 />
               )}
             </div>

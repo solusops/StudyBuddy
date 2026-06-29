@@ -205,11 +205,15 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         knowledge_mode = data.get("knowledge_mode", "content_only")
         chunks = await _get_chunks(session_id, query or selection_text or "context", n=5)
         chunk_ctx = "\n".join(f"[{c.get('source','?')}]: {c['text']}" for c in chunks)
+        selection_img = data.get("selection_image_base64")
         selection_prefix = ""
-        if selection_text:
-            selection_prefix = f"Student selected passage:\n\"{selection_text}\"\n"
+        if selection_text or selection_img:
+            selection_prefix = "The student has provided a specific selection (image and/or text) from the document.\n"
+            selection_prefix += "CRITICAL INSTRUCTION: Your primary task is to explain and address THIS specific selection directly. Do NOT just summarize the general SOURCE MATERIAL. Use the SOURCE MATERIAL only to provide supporting context for the selection.\n\n"
+            if selection_text:
+                selection_prefix += f"Student selected text:\n\"{selection_text}\"\n"
             if surrounding_context:
-                selection_prefix += f"Surrounding context from the document:\n{surrounding_context[:4000]}\n"
+                selection_prefix += f"Surrounding context:\n{surrounding_context[:4000]}\n"
             selection_prefix += "\n"
 
         _CHAT_FORMATTING = (
@@ -248,7 +252,6 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
             user_content = query or f"Explain: {selection_text[:200] if selection_text else 'this image'}"
-            selection_img = data.get("selection_image_base64")
             if selection_img:
                 user_msg = {
                     "role": "user",
@@ -312,7 +315,6 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
             user_content = query or f"Explain: {selection_text[:200] if selection_text else 'this image'}"
-            selection_img = data.get("selection_image_base64")
             if selection_img:
                 user_msg = {
                     "role": "user",
