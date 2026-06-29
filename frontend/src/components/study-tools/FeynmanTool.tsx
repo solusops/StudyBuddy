@@ -14,29 +14,110 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
   const [recording, setRecording] = useState(false)
   const mediaRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const recognitionRef = useRef<any>(null)
+
+  useEffect(() => {
+    const onTranscribed = (e: Event) => {
+      const { text } = (e as CustomEvent).detail
+      if (text) {
+        setDraft((prev) => prev ? prev.trim() + " " + text.trim() : text.trim())
+      }
+    }
+    window.addEventListener("feynman-transcribed", onTranscribed)
+    return () => {
+      window.removeEventListener("feynman-transcribed", onTranscribed)
+      if (recognitionRef.current) recognitionRef.current.stop()
+      if (mediaRef.current) mediaRef.current.stop()
+    }
+  }, [])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [feynmanHistory, streamingFeynman])
 
   const startRecording = async () => {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-    const rec = new MediaRecorder(stream)
-    chunksRef.current = []
-    rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
-    rec.onstop = async () => {
-      const blob = new Blob(chunksRef.current, { type: "audio/webm" })
-      const arrayBuf = await blob.arrayBuffer()
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)))
-      sendEvent("FEYNMAN_AUDIO", { audio_base64: base64, node_id: nodeId })
-      stream.getTracks().forEach((t) => t.stop())
+    let backendAvailable = false
+    try {
+      const resp = await fetch("/annotations/stt-status")
+      if (resp.ok) {
+        const status = await resp.json()
+        if (status.available) {
+          backendAvailable = true
+        }
+      }
+    } catch (err) {
+      // Backend status endpoint unreachable or failed
     }
-    rec.start()
-    mediaRef.current = rec
-    setRecording(true)
+
+    const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+    if (!backendAvailable && !SpeechRec) {
+      alert("Voice input is currently unavailable because the backend transcription model is not yet loaded, and this browser does not support native speech recognition.")
+      return
+    }
+
+    if (!backendAvailable && SpeechRec) {
+      // Use browser Web Speech API
+      const rec = new SpeechRec()
+      rec.continuous = true
+      rec.interimResults = false
+      rec.lang = "en-US"
+
+      rec.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0])
+          .map((result: any) => result.transcript)
+          .join("")
+        if (transcript.trim()) {
+          setDraft((prev) => {
+            const combined = prev ? prev.trim() + " " + transcript.trim() : transcript.trim()
+            return combined
+          })
+        }
+      }
+
+      rec.onerror = (e: any) => {
+        console.error("Speech recognition error:", e)
+        stopRecording()
+      }
+
+      rec.onend = () => {
+        setRecording(false)
+        recognitionRef.current = null
+      }
+
+      rec.start()
+      recognitionRef.current = rec
+      setRecording(true)
+    } else {
+      // Use backend MediaRecorder (when STT is available)
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+        const rec = new MediaRecorder(stream)
+        chunksRef.current = []
+        rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+        rec.onstop = async () => {
+          const blob = new Blob(chunksRef.current, { type: "audio/webm" })
+          const arrayBuf = await blob.arrayBuffer()
+          const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)))
+          sendEvent("FEYNMAN_AUDIO", { audio_base64: base64, node_id: nodeId, familiarity })
+          stream.getTracks().forEach((t) => t.stop())
+        }
+        rec.start()
+        mediaRef.current = rec
+        setRecording(true)
+      } catch (err) {
+        console.error("Failed to access media devices:", err)
+      }
+    }
   }
+
   const stopRecording = () => {
-    mediaRef.current?.stop()
+    if (recognitionRef.current) {
+      recognitionRef.current.stop()
+    } else if (mediaRef.current) {
+      mediaRef.current.stop()
+    }
     setRecording(false)
   }
 
@@ -48,10 +129,22 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
     sendEvent("FEYNMAN_TURN", { node_id: nodeId, student_text: text, familiarity })
   }
 
+  const getPersonaName = (fam: string): string => {
+    switch (fam) {
+      case "eli5": return "Study Buddy (Age 5)"
+      case "high_school": return "Study Buddy (Age 15)"
+      case "graduate": return "Study Buddy (Age 22)"
+      case "expert": return "Study Buddy (Age 30)"
+      default: return "Study Buddy (Age 15)"
+    }
+  }
+
+  const personaName = getPersonaName(familiarity)
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 8 }}>
       <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>
-        Explain the concept to Clara (a curious 8-year-old). She'll ask follow-up questions.
+        Explain the concept to {personaName}. They will ask follow-up questions.
       </p>
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
         {feynmanHistory.map((msg, i) => (
@@ -68,13 +161,13 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
               whiteSpace: "pre-wrap",
             }}
           >
-            {msg.role === "clara" && <span style={{ fontWeight: 700, color: "#fbbf24" }}>Clara: </span>}
+            {msg.role === "clara" && <span style={{ fontWeight: 700, color: "#fbbf24" }}>{personaName}: </span>}
             {msg.content}
           </div>
         ))}
         {streamingFeynman && (
           <div style={{ alignSelf: "flex-start", background: "#1e293b", color: "white", padding: "8px 12px", borderRadius: 8, maxWidth: "85%", fontSize: 13 }}>
-            <span style={{ fontWeight: 700, color: "#fbbf24" }}>Clara: </span>
+            <span style={{ fontWeight: 700, color: "#fbbf24" }}>{personaName}: </span>
             {streamingFeynman}
             <span style={{ opacity: 0.5 }}>▌</span>
           </div>

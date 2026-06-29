@@ -73,6 +73,9 @@ export function useWebSocket(sessionId: string | null) {
         case "FEYNMAN_DONE":
           commitFeynmanResponse()
           break
+        case "FEYNMAN_TRANSCRIBED":
+          window.dispatchEvent(new CustomEvent("feynman-transcribed", { detail: { text: (msg.data as { text: string }).text } }))
+          break
         case "SCORE_PATCH":
           applyNodePatch(msg.data as unknown as NodePatch)
           break

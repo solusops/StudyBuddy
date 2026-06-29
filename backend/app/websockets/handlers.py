@@ -246,14 +246,53 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
 
     # ---- FEYNMAN_TURN --------------------------------------------
     elif event_type == "FEYNMAN_TURN":
+        familiarity_level = data.get("familiarity", familiarity)
+        feynman_persona = {
+            "eli5": {
+                "name": "Study Buddy (Age 5)",
+                "system": (
+                    "You are Study Buddy (Age 5), a curious 5-year-old child. When the student explains something, "
+                    "ask very simple, innocent questions. Use basic words. Say things like 'But why?' or 'What does that mean?' "
+                    "Be very encouraging; only interject if the analogy completely breaks. "
+                    "Never reveal answers directly."
+                )
+            },
+            "high_school": {
+                "name": "Study Buddy (Age 15)",
+                "system": (
+                    "You are Study Buddy (Age 15), a high school student learning this for the first time. "
+                    "Ask standard conceptual questions. "
+                    "Interject on clear factual errors (>40% drift from the text). "
+                    "Never reveal answers directly."
+                )
+            },
+            "graduate": {
+                "name": "Study Buddy (Age 22)",
+                "system": (
+                    "You are Study Buddy (Age 22), a college graduate student. "
+                    "Ask analytical and technical questions. "
+                    "Interject on any technical inaccuracy (>15% drift). "
+                    "Never reveal answers directly."
+                )
+            },
+            "expert": {
+                "name": "Study Buddy (Age 30)",
+                "system": (
+                    "You are Study Buddy (Age 30), a junior researcher or peer. "
+                    "Ask deep, critical, and rigorous questions. Challenge logic. "
+                    "Interject on any invalid logical leaps or unsupported claims. "
+                    "Never reveal answers directly."
+                )
+            }
+        }.get(familiarity_level, {
+            "name": "Study Buddy (Age 15)",
+            "system": "You are Study Buddy (Age 15). Ask questions on this level. Never reveal answers directly."
+        })
+
         messages = [
             {
                 "role": "system",
-                "content": (
-                    "You are Clara, a curious 8-year-old. When the student explains something, "
-                    "ask simple follow-up questions. Never use technical jargon. "
-                    "Say things like 'But WHY?' and 'What does that mean?'"
-                ),
+                "content": feynman_persona["system"],
             },
             {"role": "user", "content": data.get("student_text", "")},
         ]
@@ -290,19 +329,50 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             else:
                 await _cm.send(session_id, "FEYNMAN_TRANSCRIBED", {"text": text})
                 familiarity_level = data.get("familiarity", familiarity)
-                familiarity_note = {
-                    "eli5": "Be very encouraging; only interject if the core analogy completely breaks.",
-                    "high_school": "Interject on clear factual errors (>40% drift from paper).",
-                    "graduate": "Interject on any technical inaccuracy (>15% drift).",
-                    "expert": "Interject on any invalid logical leap or unsupported claim.",
-                }.get(familiarity_level, "")
+                feynman_persona = {
+                    "eli5": {
+                        "name": "Study Buddy (Age 5)",
+                        "system": (
+                            "You are Study Buddy (Age 5), a curious 5-year-old child. When the student explains something, "
+                            "ask very simple, innocent questions. Use basic words. Say things like 'But why?' or 'What does that mean?' "
+                            "Be very encouraging; only interject if the analogy completely breaks. "
+                            "Never reveal answers directly."
+                        )
+                    },
+                    "high_school": {
+                        "name": "Study Buddy (Age 15)",
+                        "system": (
+                            "You are Study Buddy (Age 15), a high school student learning this for the first time. "
+                            "Ask standard conceptual questions. "
+                            "Interject on clear factual errors (>40% drift from the text). "
+                            "Never reveal answers directly."
+                        )
+                    },
+                    "graduate": {
+                        "name": "Study Buddy (Age 22)",
+                        "system": (
+                            "You are Study Buddy (Age 22), a college graduate student. "
+                            "Ask analytical and technical questions. "
+                            "Interject on any technical inaccuracy (>15% drift). "
+                            "Never reveal answers directly."
+                        )
+                    },
+                    "expert": {
+                        "name": "Study Buddy (Age 30)",
+                        "system": (
+                            "You are Study Buddy (Age 30), a junior researcher or peer. "
+                            "Ask deep, critical, and rigorous questions. Challenge logic. "
+                            "Interject on any invalid logical leaps or unsupported claims. "
+                            "Never reveal answers directly."
+                        )
+                    }
+                }.get(familiarity_level, {
+                    "name": "Study Buddy (Age 15)",
+                    "system": "You are Study Buddy (Age 15). Ask questions on this level. Never reveal answers directly."
+                })
+
                 messages = [
-                    {"role": "system", "content": (
-                        f"You are Clara, a curious student. {familiarity_note} "
-                        "Ask follow-up questions. Never reveal answers directly. "
-                        "If you detect a factual error vs the document, say "
-                        "'Actually, the paper says...' and cite the source chunk."
-                    )},
+                    {"role": "system", "content": feynman_persona["system"]},
                     {"role": "user", "content": text},
                 ]
                 full = ""

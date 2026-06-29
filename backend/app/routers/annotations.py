@@ -37,3 +37,13 @@ def delete_annotation(annotation_id: str):
     if not ok:
         raise HTTPException(404, f"Annotation {annotation_id} not found")
     return {"status": "deleted"}
+
+
+@router.get("/stt-status")
+def check_stt_status():
+    from app.services.transcription_service import TranscriptionService
+    stt = TranscriptionService.get()
+    return {
+        "available": stt.is_available,
+        "is_loading": stt.is_model_loading()
+    }

@@ -40,6 +40,13 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
     setSelection([], text, "")
   }, [activeBottomTab, setSelection])
 
+  const showScoreBar = node && (
+    node.data.scores.memory > 0 ||
+    node.data.scores.comprehension > 0 ||
+    node.data.scores.structure > 0 ||
+    node.data.scores.application > 0
+  )
+
   return (
     <div style={{
       width: "44%",
@@ -50,8 +57,8 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
       borderLeft: "1px solid #E8E0D5",
       height: "100%",
     }}>
-      {/* Score bar (when a node is selected) */}
-      {node && (
+      {/* Score bar (when a node has progress) */}
+      {showScoreBar && (
         <div style={{ padding: "6px 16px", borderBottom: "1px solid #E8E0D5", background: "#FDFBF8", flexShrink: 0 }}>
           <ScoreBar scores={node.data.scores} />
         </div>
