@@ -47,13 +47,39 @@ def _norm(rect, pw: float, ph: float) -> Dict[str, float]:
     }
 
 
+def crop_page_region(
+    pdf_bytes: Optional[bytes] = None,
+    file_path: Optional[str] = None,
+    page_number: int = 0,
+    bbox_norm: Dict[str, float] = None,
+) -> str:
+    """Extract a base64 PNG crop of the given normalized bounding box."""
+    import pymupdf as fitz
+    
+    doc = _open(pdf_bytes, file_path)
+    try:
+        page = doc[page_number]
+        pw, ph = page.rect.width, page.rect.height
+        
+        # Convert normalized bbox to absolute coordinates
+        x0 = bbox_norm["x"] * pw
+        y0 = bbox_norm["y"] * ph
+        x1 = (bbox_norm["x"] + bbox_norm["w"]) * pw
+        y1 = (bbox_norm["y"] + bbox_norm["h"]) * ph
+        
+        rect = fitz.Rect(x0, y0, x1, y1)
+        pix = page.get_pixmap(clip=rect, matrix=fitz.Matrix(_CROP_ZOOM, _CROP_ZOOM))
+        return base64.b64encode(pix.tobytes("png")).decode("ascii")
+    finally:
+        doc.close()
+
 def segment_page(
     pdf_bytes: Optional[bytes] = None,
     file_path: Optional[str] = None,
     page_number: int = 0,
 ) -> Tuple[List[Dict[str, Any]], Tuple[float, float]]:
     """Return (regions, (page_width, page_height)).
-
+    
     Each region: {id, type, bbox_norm{x,y,w,h}, crop_base64}.
     """
     import pymupdf as fitz
@@ -67,13 +93,29 @@ def segment_page(
 
         candidates: List[Tuple[Any, str]] = []
 
-        # Tables first (most specific).
+        # 1. Text blocks (only use for checking overlap, DO NOT add to candidates)
+        # We extract them so we can filter massive diagram boxes that swallow the text.
+        try:
+            blocks = page.get_text("blocks")
+            text_rects = []
+            for b in blocks:
+                rect = fitz.Rect(b[:4])
+                btype = b[6]
+                if btype == 0:
+                    text_rects.append(rect)
+                elif btype == 1:
+                    candidates.append((rect, "figure"))
+        except Exception as e:
+            print(f"[layout_service] blocks error: {e}")
+
+        # 2. Tables (most specific)
         try:
             for t in page.find_tables().tables:
                 candidates.append((fitz.Rect(t.bbox), "table"))
         except Exception:
             pass
-        # Embedded raster images (photos, scanned figures, some equations).
+
+        # 3. Embedded raster images
         try:
             for info in page.get_image_info():
                 bbox = info.get("bbox")
@@ -81,7 +123,8 @@ def segment_page(
                     candidates.append((fitz.Rect(bbox), "figure"))
         except Exception:
             pass
-        # Vector-drawing clusters (line plots, schematic diagrams).
+
+        # 4. Vector-drawing clusters (line plots, schematic diagrams)
         try:
             try:
                 rects = page.cluster_drawings(x_tolerance=20.0, y_tolerance=20.0)
@@ -93,39 +136,57 @@ def segment_page(
             pass
 
         regions: List[Dict[str, Any]] = []
-        kept: List[Any] = []
+        kept_rects: List[Tuple[Any, str]] = []
 
-        # Largest-first so a figure wins over an overlapping sub-drawing.
+        # Sort all candidates by area (largest first)
         candidates.sort(key=lambda c: c[0].get_area(), reverse=True)
+        
         for rect, rtype in candidates:
             if rect.is_empty or rect.width <= 0 or rect.height <= 0:
                 continue
             if rect.get_area() < _MIN_AREA_FRAC * page_area:
                 continue
-            # Dedupe heavy overlaps with an already-kept (larger) region.
+                
             overlap = False
-            for k in kept:
-                inter = rect & k
-                if not inter.is_empty and inter.get_area() > 0.6 * rect.get_area():
+            for k_rect, k_type in kept_rects:
+                inter = rect & k_rect
+                # If same type, dedupe heavy overlap
+                if rtype == k_type:
+                    if not inter.is_empty and inter.get_area() > 0.6 * rect.get_area():
+                        overlap = True
+                        break
+                # If diagram heavily overlaps a table/figure, skip it!
+                elif rtype == "diagram" and k_type in ("table", "figure"):
+                    if not inter.is_empty and inter.get_area() > 0.6 * rect.get_area():
+                        overlap = True
+                        break
+
+            # If it's a diagram, ensure it doesn't swallow huge chunks of text (e.g. background vectors)
+            if not overlap and rtype == "diagram":
+                text_overlap_area = sum((rect & tr).get_area() for tr in text_rects)
+                # If the diagram covers a large amount of text (e.g., more than 50% of its area is text)
+                if text_overlap_area > 0.5 * rect.get_area():
                     overlap = True
-                    break
+
             if overlap:
                 continue
-            kept.append(rect)
+                
+            kept_rects.append((rect, rtype))
             try:
                 mat = fitz.Matrix(_CROP_ZOOM, _CROP_ZOOM)
                 pix = page.get_pixmap(clip=rect, matrix=mat)
                 crop_b64 = base64.b64encode(pix.tobytes("png")).decode()
             except Exception:
                 continue  # skip regions that fail to crop
+                
             regions.append({
                 "id": f"r{len(regions)}",
                 "type": rtype,
                 "bbox_norm": _norm(rect, pw, ph),
                 "crop_base64": crop_b64,
             })
-            if len(regions) >= _MAX_REGIONS:
-                break
+            
+            # Removed _MAX_REGIONS cap to allow the page to be fully divided into sections
 
         return regions, (pw, ph)
     finally:

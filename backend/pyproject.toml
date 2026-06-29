@@ -21,6 +21,7 @@ dependencies = [
     # "cognee==0.1.39",   # v2 — cross-session memory, re-enable when ready
     # "lancedb>=0.6.13",  # v2 — required by cognee
     "pymupdf>=1.28.0",
+    "pymupdf4llm>=0.0.17",
 ]
 
 [dependency-groups]

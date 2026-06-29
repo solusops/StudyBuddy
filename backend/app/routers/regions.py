@@ -43,6 +43,13 @@ class SegmentRequest(BaseModel):
     pdf_base64: Optional[str] = None  # sent once when the server hasn't cached the PDF yet
 
 
+class SnipRequest(BaseModel):
+    document_id: str
+    page_number: int
+    bbox_norm: dict  # {x, y, w, h}
+    pdf_base64: Optional[str] = None
+
+
 def _pdf_path(document_id: str) -> str:
     return os.path.join(_PDF_DIR, f"{document_id}.pdf")
 
@@ -147,3 +154,42 @@ async def segment(req: SegmentRequest):
     cache[page_key] = described
     _save_region_cache(req.document_id, cache)
     return {"regions": described, "cached": False, "has_text_layer": has_text}
+
+
+@router.post("/snip")
+async def snip(req: SnipRequest):
+    print(f"[REGIONS] Incoming snip request: doc_id={req.document_id}, page={req.page_number}")
+    pdf_path = _pdf_path(req.document_id)
+    if not os.path.exists(pdf_path):
+        if req.pdf_base64:
+            with open(pdf_path, "wb") as f:
+                f.write(base64.b64decode(req.pdf_base64))
+        else:
+            raise HTTPException(status_code=409, detail="pdf_not_cached")
+
+    loop = asyncio.get_event_loop()
+    from app.services.layout_service import crop_page_region
+    
+    try:
+        crop_base64 = await loop.run_in_executor(
+            None, lambda: crop_page_region(file_path=pdf_path, page_number=req.page_number, bbox_norm=req.bbox_norm)
+        )
+    except Exception as e:
+        print(f"[REGIONS] Error running crop_page_region: {e}")
+        raise HTTPException(status_code=500, detail="crop_failed")
+
+    try:
+        desc = await loop.run_in_executor(
+            None, _get_senses().describe_region, crop_base64, "snippet"
+        )
+        return {
+            "id": f"snip_{req.page_number}_{req.bbox_norm['y']:.3f}",
+            "type": desc.type,
+            "bbox_norm": req.bbox_norm,
+            "caption": desc.caption,
+            "extracted_content": desc.extracted_content,
+            "crop_base64": crop_base64,
+        }
+    except Exception as e:
+        print(f"[REGIONS] describe_region error: {e}")
+        raise HTTPException(status_code=500, detail="vision_failed")

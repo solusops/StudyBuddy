@@ -41,6 +41,13 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle")
   const [selected, setSelected] = useState<string | null>(null)
 
+  // Drag-to-select state
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null)
+  const [dragCurrent, setDragCurrent] = useState<{ x: number; y: number } | null>(null)
+  const [tempSnip, setTempSnip] = useState<Region | null>(null)
+
   const fetchStartedRef = React.useRef(false)
 
   // Reset when page or document changes so we re-fetch for the new page.
@@ -90,6 +97,83 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
     return () => { cancelled = true }
   }, [regionsOn, documentId, pageIndex, fileUrl])
 
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!regionsOn || !containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const x = (e.clientX - rect.left) / rect.width
+    const y = (e.clientY - rect.top) / rect.height
+    setDragStart({ x, y })
+    setDragCurrent({ x, y })
+    setIsDragging(true)
+    setSelected(null)
+  }
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || !containerRef.current || !dragStart) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const x = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+    const y = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+    setDragCurrent({ x, y })
+  }
+
+  const handlePointerUp = async () => {
+    if (!isDragging || !dragStart || !dragCurrent) return
+    setIsDragging(false)
+
+    const x0 = Math.min(dragStart.x, dragCurrent.x)
+    const x1 = Math.max(dragStart.x, dragCurrent.x)
+    const y0 = Math.min(dragStart.y, dragCurrent.y)
+    const y1 = Math.max(dragStart.y, dragCurrent.y)
+
+    setDragStart(null)
+    setDragCurrent(null)
+
+    // Ignore tiny accidental clicks
+    if (x1 - x0 < 0.01 || y1 - y0 < 0.01) return
+
+    const bbox_norm = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+    const snipId = `snip_temp_${Date.now()}`
+    
+    // Show a loading temporary region
+    setTempSnip({
+      id: snipId,
+      type: "Snipping...",
+      bbox_norm,
+      caption: "",
+      extracted_content: "",
+      crop_base64: ""
+    })
+    setSelected(snipId)
+
+    try {
+      const post = (pdf_base64?: string) =>
+        fetch("/regions/snip", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ document_id: documentId, page_number: pageIndex, bbox_norm, pdf_base64 }),
+        })
+
+      let resp = await post()
+      if (resp.status === 409) {
+        if (!_pdfB64Cache.has(documentId)) _pdfB64Cache.set(documentId, pdfToBase64(fileUrl))
+        const b64 = await _pdfB64Cache.get(documentId)!
+        resp = await post(b64)
+      }
+      
+      if (resp.ok) {
+        const finalSnip = await resp.json()
+        setRegions((prev) => [...(prev || []), finalSnip])
+        setTempSnip(null)
+        setSelected(finalSnip.id)
+      } else {
+        setTempSnip(null)
+      }
+    } catch (e) {
+      console.error("Snip failed", e)
+      setTempSnip(null)
+    }
+  }
+
 
   if (!regionsOn || !documentId) return null
 
@@ -135,7 +219,21 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   }
 
   return (
-    <div style={{ position: "absolute", inset: 0, pointerEvents: "none", zIndex: 5 }}>
+    <div 
+      ref={containerRef}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      style={{ 
+        position: "absolute", 
+        inset: 0, 
+        pointerEvents: regionsOn ? "auto" : "none", 
+        zIndex: 5,
+        cursor: regionsOn ? "crosshair" : "default",
+        touchAction: regionsOn ? "none" : "auto"
+      }}
+    >
       {status === "loading" && (
         <div style={{
           position: "absolute", top: 8, left: 8, pointerEvents: "none",
@@ -145,7 +243,22 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
           Finding figures & tables…
         </div>
       )}
-      {(regions || []).map((r) => {
+      
+      {/* Dragging Selection Box */}
+      {isDragging && dragStart && dragCurrent && (
+        <div style={{
+          position: "absolute",
+          left: `${Math.min(dragStart.x, dragCurrent.x) * 100}%`,
+          top: `${Math.min(dragStart.y, dragCurrent.y) * 100}%`,
+          width: `${Math.abs(dragCurrent.x - dragStart.x) * 100}%`,
+          height: `${Math.abs(dragCurrent.y - dragStart.y) * 100}%`,
+          border: "2px dashed #4A7FB5",
+          background: "rgba(74,127,181,0.2)",
+          pointerEvents: "none"
+        }} />
+      )}
+
+      {[...(regions || []), ...(tempSnip ? [tempSnip] : [])].map((r) => {
         const { x, y, w, h } = r.bbox_norm
         const isSel = selected === r.id
         return (
@@ -203,11 +316,17 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
                     whiteSpace: "pre-wrap", maxHeight: 90, overflow: "auto",
                   }}>{r.extracted_content}</pre>
                 )}
-                <div style={{ display: "flex", gap: 6 }}>
-                  <button onClick={() => sendToTool(r, "Infinite Wiki")} style={popBtn(true)}>Wiki</button>
-                  <button onClick={() => sendToTool(r, "Chat")} style={popBtn(false)}>Ask in Chat</button>
-                  <button onClick={() => pin(r)} style={popBtn(false)}>Pin</button>
-                </div>
+                {r.type === "Snipping..." ? (
+                  <div style={{ fontSize: 12, color: "#1A1A2E", fontStyle: "italic", textAlign: "center", padding: "10px 0" }}>
+                    Analyzing snippet via Gemma 4...
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => sendToTool(r, "Infinite Wiki")} style={popBtn(true)}>Wiki</button>
+                    <button onClick={() => sendToTool(r, "Chat")} style={popBtn(false)}>Ask in Chat</button>
+                    <button onClick={() => pin(r)} style={popBtn(false)}>Pin</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
