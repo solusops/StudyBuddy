@@ -10,6 +10,14 @@ interface VisualOffer {
   label: string
 }
 
+interface ScholarPaper {
+  title: string
+  authors: string
+  year: number | null
+  cited_by: number
+  url: string
+}
+
 interface WikiPage {
   term: string
   content: string
@@ -17,6 +25,7 @@ interface WikiPage {
   visual?: HTML5VisualPayload | null
   visualLoading?: boolean
   visualOffer?: VisualOffer | null
+  papers?: ScholarPaper[]
 }
 
 interface Props {
@@ -90,6 +99,10 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         )
       )
     }
+    const onFurtherReading = (e: Event) => {
+      const { term, papers } = (e as CustomEvent).detail
+      setStack((prev) => prev.map((p) => (p.term === term ? { ...p, papers } : p)))
+    }
     const onVisualStart = (e: Event) => {
       const { term } = (e as CustomEvent).detail
       setStack((prev) =>
@@ -106,12 +119,14 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     window.addEventListener("wiki-token", onToken)
     window.addEventListener("wiki-done", onDone)
     window.addEventListener("wiki-visual-available", onVisualAvailable)
+    window.addEventListener("wiki-further-reading", onFurtherReading)
     window.addEventListener("wiki-visual-start", onVisualStart)
     window.addEventListener("wiki-visual-payload", onVisualPayload)
     return () => {
       window.removeEventListener("wiki-token", onToken)
       window.removeEventListener("wiki-done", onDone)
       window.removeEventListener("wiki-visual-available", onVisualAvailable)
+      window.removeEventListener("wiki-further-reading", onFurtherReading)
       window.removeEventListener("wiki-visual-start", onVisualStart)
       window.removeEventListener("wiki-visual-payload", onVisualPayload)
     }
@@ -359,6 +374,39 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                     height={330}
                   />
                 )}
+              </div>
+            )}
+
+            {currentPage.papers && currentPage.papers.length > 0 && (
+              <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
+                <h4 style={{
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                  color: "#1A3557",
+                  fontSize: 15,
+                  fontWeight: 700,
+                  margin: "0 0 10px 0"
+                }}>
+                  Further Reading
+                </h4>
+                <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {currentPage.papers.map((p, i) => (
+                    <li key={i} style={{ fontSize: 13, lineHeight: 1.4, color: "#1A1A2E" }}>
+                      <a
+                        href={p.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{ color: "#3b82f6", textDecoration: "underline", fontWeight: 600 }}
+                      >
+                        {p.title}
+                      </a>
+                      <span style={{ color: "#6B7280" }}>
+                        {p.authors ? ` — ${p.authors}` : ""}
+                        {p.year ? ` (${p.year})` : ""}
+                        {typeof p.cited_by === "number" ? ` · ${p.cited_by.toLocaleString()} citations` : ""}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
