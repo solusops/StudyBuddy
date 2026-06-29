@@ -192,7 +192,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         _CHAT_FORMATTING = (
             "Formatting:\n"
             "- Write math in LaTeX: inline $...$ and display $$...$$.\n"
-            "- For structural concepts you MAY add a ```mermaid fenced diagram.\n"
+            "- Use GitHub-style Markdown tables (a header row, then a |---|---| separator row).\n"
+            "- For structural concepts you MAY add a ```mermaid fenced diagram. IMPORTANT: Mermaid "
+            "does NOT render math — use PLAIN-TEXT node labels only, with no $...$ and no backslash "
+            "commands (write 'theta', 'gradient of loss', 'nabla L' — never '$\\nabla \\ell$').\n"
             "- For concrete numeric data you MAY add a ```plotly fenced JSON spec "
             "{\"data\":[...],\"layout\":{...}} (real numbers only — never invent data).\n\n"
         )

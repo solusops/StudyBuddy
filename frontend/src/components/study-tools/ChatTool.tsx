@@ -96,16 +96,59 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
       }
     }
 
-    lines.forEach((line, index) => {
-      const trimmed = line.trim()
-      if (!trimmed) return
+    const isTableSep = (s: string) => /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(s) && s.includes("-")
+    const splitRow = (s: string) =>
+      s.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim())
+
+    let i = 0
+    while (i < lines.length) {
+      const trimmed = lines[i].trim()
+      if (!trimmed) { i++; continue }
+
+      // Markdown table: a `| … |` header row followed by a `| :--- |` separator row.
+      if (trimmed.startsWith("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
+        flushList(i)
+        const header = splitRow(trimmed)
+        const rows: string[][] = []
+        let j = i + 2
+        while (j < lines.length && lines[j].trim().startsWith("|")) {
+          rows.push(splitRow(lines[j]))
+          j++
+        }
+        elements.push(
+          <div key={`${keyPrefix}-tbl-${i}`} style={{ overflowX: "auto", margin: "0 0 12px" }}>
+            <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 13 }}>
+              <thead>
+                <tr>
+                  {header.map((h, hi) => (
+                    <th key={hi} style={{ border: "1px solid #E8E0D5", padding: "6px 10px", background: "#EEF3F8", color: "#1A3557", textAlign: "left", fontWeight: 700 }}
+                        dangerouslySetInnerHTML={{ __html: renderInline(h) }} />
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, ri) => (
+                  <tr key={ri}>
+                    {r.map((c, ci) => (
+                      <td key={ci} style={{ border: "1px solid #E8E0D5", padding: "6px 10px", color: "#1A1A2E", verticalAlign: "top" }}
+                          dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+        i = j
+        continue
+      }
 
       // Headings
       if (trimmed.startsWith("#")) {
-        flushList(index)
+        flushList(i)
         const headerText = trimmed.replace(/^#+\s*/, "")
         elements.push(
-          <h4 key={`${keyPrefix}-${index}`} style={{
+          <h4 key={`${keyPrefix}-${i}`} style={{
             fontFamily: "'Libre Caslon Text', Georgia, serif",
             color: "#1A3557",
             fontSize: 16,
@@ -117,24 +160,26 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             {headerText}
           </h4>
         )
-        return
+        i++
+        continue
       }
 
       // Bullets
       if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-        const bulletContent = trimmed.replace(/^[*-]\s*/, "")
-        listItems.push(bulletContent)
-        return
+        listItems.push(trimmed.replace(/^[*-]\s*/, ""))
+        i++
+        continue
       }
 
-      flushList(index)
+      flushList(i)
 
       // Paragraph
       elements.push(
-        <p key={`${keyPrefix}-${index}`} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
+        <p key={`${keyPrefix}-${i}`} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
            dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
       )
-    })
+      i++
+    }
 
     flushList("trailing")
     return elements
