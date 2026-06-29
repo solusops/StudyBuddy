@@ -45,8 +45,15 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
   useEffect(() => {
     if (!storeNodes.length) return
     const { nodes: laid, edges: laidEdges } = applyDagreLayout(storeNodes, storeEdges)
+    // Style edges by relationship type
+    const styled = laidEdges.map((e) => {
+      const rel = (e.data as Record<string, string> | undefined)?.relationship
+      if (rel === "related") return { ...e, style: { stroke: "#4A7FB5", strokeWidth: 1.5, strokeDasharray: "5 4" }, animated: false }
+      if (rel === "builds-on") return { ...e, style: { stroke: "#2D6A4F", strokeWidth: 2 }, animated: false }
+      return { ...e, style: { stroke: "#D1C9C0", strokeWidth: 1.5 } }  // prerequisite / default
+    })
     setNodes(laid)
-    setEdges(laidEdges)
+    setEdges(styled)
   }, [storeNodes, storeEdges])
 
   return (
@@ -59,14 +66,12 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
         onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => {
           const data = node.data as NodeData
-          if (data.status === "LOCKED") return
           setActiveNode(node.id, data.label)
           onNodeClick(node.id, data.label)
         }}
         fitView
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: "smoothstep", style: { stroke: "#D1C9C0", strokeWidth: 1.5 } }}
       >
         <Background color="#E8E0D5" gap={24} style={{ background: "#FAF7F2" }} />
         <Controls style={{ background: "#FFFFFF", border: "1px solid #E8E0D5", borderRadius: 8 }} />

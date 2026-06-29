@@ -17,7 +17,7 @@ interface Props {
 
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph } = useGraphStore()
-  const { setSession, resetNodeData, activeNodeId, setActiveNode } = useSessionStore()
+  const { setSession, resetNodeData, activeNodeId, activeNodeLabel, setActiveNode } = useSessionStore()
 
   // -- Session bootstrap ------------------------------------------------
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -27,8 +27,8 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const [activePDFPath, setActivePDFPath] = useState<string | null>(null)
   const [activePDFUrl, setActivePDFUrl] = useState<string | null>(null)
 
-  // For the right panel
-  const [activeConcept, setActiveConcept] = useState<string | null>(null)
+  // For the right panel — seed from sessionStore if coming from TreePage node selection
+  const [activeConcept, setActiveConcept] = useState<string | null>(activeNodeLabel || null)
   const [concepts, setConcepts] = useState<string[]>([])
 
   const isElectron = typeof window !== "undefined" && !!window.electronAPI
@@ -124,8 +124,8 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       const url = await window.electronAPI!.getFileUrl(filePath)
       setActivePDFUrl(url)
     } else {
-      // Browser dev mode — can't access filesystem
-      setActivePDFUrl(null)
+      // Browser mode — backend serves uploaded files via /library/file/{name}
+      setActivePDFUrl(`/library/file/${encodeURIComponent(filename)}`)
     }
   }
 
@@ -196,9 +196,11 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
 
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
+  const [commitDone, setCommitDone] = useState(false)
 
   const commitSession = async () => {
-    const { nodes } = useGraphStore.getState()
+    const { nodes, edges } = useGraphStore.getState()
+    const { lessonCache } = useSessionStore.getState()
     await fetch("/session/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -210,15 +212,18 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         content_files: contentFiles,
       }),
     })
-    // Update localStorage with latest node state
-    const saved = localStorage.getItem("studybuddy_session")
-    if (saved) {
-      try {
-        const s = JSON.parse(saved)
-        s.nodes = nodes.map((n) => n.data)
-        localStorage.setItem("studybuddy_session", JSON.stringify(s))
-      } catch { /* ignore */ }
+    const toSave = {
+      sessionId,
+      topic,
+      familiarity: "high_school",
+      nodes: nodes.map((n) => n.data),
+      edges: edges.map((e) => ({ source: e.source, target: e.target, relationship: (e.data as Record<string, string> | undefined)?.relationship ?? "prerequisite" })),
+      contentFiles,
+      lessonCache,
     }
+    localStorage.setItem("studybuddy_session", JSON.stringify(toSave))
+    setCommitDone(true)
+    setTimeout(() => setCommitDone(false), 2500)
   }
 
   const pushSession = async () => {
@@ -325,19 +330,21 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         {/* Commit */}
         <button
           onClick={commitSession}
+          disabled={commitDone}
           title="Save progress to disk"
           style={{
-            background: "transparent",
+            background: commitDone ? "#E6F4ED" : "transparent",
             color: "#2D6A4F",
             border: "1px solid #2D6A4F",
             borderRadius: 8,
             padding: "5px 14px",
             fontSize: 14,
-            cursor: "pointer",
+            cursor: commitDone ? "default" : "pointer",
             fontWeight: 600,
+            transition: "background 0.2s",
           }}
         >
-          Commit
+          {commitDone ? "Saved ✓" : "Commit"}
         </button>
 
         {/* Push */}
@@ -388,22 +395,38 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             onConceptClick={handleConceptClick}
           />
         ) : (
-          <div style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexDirection: "column",
-            gap: 16,
-            color: "#9CA3AF",
-          }}>
-            <div style={{ fontSize: 32 }}>📄</div>
-            <p style={{ margin: 0, fontSize: 16, fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
-              {isElectron ? "Loading document…" : "Run in Electron to view PDFs"}
+          <div
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault()
+              const file = Array.from(e.dataTransfer.files).find((f) => f.name.endsWith(".pdf"))
+              if (file) {
+                const url = URL.createObjectURL(file)
+                setActivePDFUrl(url)
+                setActivePDFPath(file.name)
+              }
+            }}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexDirection: "column",
+              gap: 16,
+              color: "#9CA3AF",
+              border: "2px dashed #E8E0D5",
+              margin: 24,
+              borderRadius: 16,
+              cursor: "default",
+            }}
+          >
+            <div style={{ fontSize: 40, opacity: 0.4 }}>📄</div>
+            <p style={{ margin: 0, fontSize: 16, fontFamily: "'Libre Caslon Text', Georgia, serif", color: "#6B7280", textAlign: "center" }}>
+              {isElectron ? "Loading document…" : "Drop a PDF here to view it"}
             </p>
             {!isElectron && (
-              <p style={{ margin: 0, fontSize: 14, color: "#D1C9C0" }}>
-                In browser dev mode, concept highlighting is still active via the study tools.
+              <p style={{ margin: 0, fontSize: 14, color: "#D1C9C0", textAlign: "center", maxWidth: 320 }}>
+                Or open in Electron for automatic PDF loading from your library.
               </p>
             )}
           </div>

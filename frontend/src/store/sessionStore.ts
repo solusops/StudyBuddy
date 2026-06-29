@@ -36,6 +36,9 @@ interface SessionStore {
   streamingLesson: string
   lessonStreaming: boolean
 
+  // Lesson cache — keyed by nodeId, avoids re-fetching already-loaded lessons
+  lessonCache: Record<string, string>
+
   // Actions
   setSession: (id: string, topic: string, familiarity: FamiliarityLevel) => void
   setActiveNode: (id: string, label: string) => void
@@ -52,6 +55,7 @@ interface SessionStore {
   addChatMessage: (msg: ChatMessage) => void
   addFeynmanMessage: (msg: FeynmanMessage) => void
   setChatDraft: (draft: string) => void
+  setLessonCache: (cache: Record<string, string>) => void
   resetNodeData: () => void
   reset: () => void
 }
@@ -73,6 +77,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   streamingFeynman: "",
   streamingLesson: "",
   lessonStreaming: false,
+  lessonCache: {},
 
   setSession: (id, topic, familiarity) => set({ sessionId: id, topic, familiarity }),
 
@@ -95,6 +100,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
         citations: [],
         visual_suggestion: visualSuggestion,
       },
+      // Cache the completed lesson text keyed by active node so we never re-fetch
+      lessonCache: s.activeNodeId
+        ? { ...s.lessonCache, [s.activeNodeId]: s.streamingLesson }
+        : s.lessonCache,
       streamingLesson: "",
       lessonStreaming: false,
     })),
@@ -131,6 +140,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setChatDraft: (draft) => set({ chatDraft: draft }),
 
+  setLessonCache: (cache) => set({ lessonCache: cache }),
+
   resetNodeData: () =>
     set({
       lesson: null,
@@ -164,5 +175,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingFeynman: "",
       streamingLesson: "",
       lessonStreaming: false,
+      lessonCache: {},
     }),
 }))

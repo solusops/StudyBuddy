@@ -21,10 +21,9 @@ export interface NodeData {
 }
 
 export interface KnowledgeEdge {
-  id: string
   source: string
   target: string
-  edge_type: "prerequisite" | "related" | "contains"
+  relationship: "prerequisite" | "related" | "builds-on"
 }
 
 export interface NodePatch {

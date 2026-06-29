@@ -3,7 +3,7 @@
 IMPORTANT: extract_curriculum reads RAG content to find topics.
 It NEVER invents topics from model weights.
 """
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
@@ -26,9 +26,19 @@ class _SyllabusNode(BaseModel):
     parent_id: Optional[str] = None
 
 
+class _SyllabusEdge(BaseModel):
+    source: str = Field(description="Source node id")
+    target: str = Field(description="Target node id")
+    relationship: str = Field(description="prerequisite | related | builds-on")
+
+
 class _SyllabusBlueprint(BaseModel):
     nodes: List[_SyllabusNode] = Field(
         ..., description="Ordered list of 6-25 concept nodes, macro to micro"
+    )
+    edges: List[_SyllabusEdge] = Field(
+        default_factory=list,
+        description="Explicit connections between nodes capturing how concepts relate",
     )
 
 
@@ -41,11 +51,11 @@ class BrainAgent:
         chunks: List[Dict[str, Any]],
         familiarity: str,
         memory_context: str = "",
-    ) -> List[NodeData]:
-        """Derive topic tree from the student's uploaded content chunks.
+    ) -> Tuple[List[NodeData], List[Dict]]:
+        """Derive topic graph from the student's uploaded content chunks.
 
-        Samples up to 20 chunks to give the model an overview of what was
-        uploaded. The model must only surface topics evidenced in the text.
+        Returns (nodes, edges) — edges capture prerequisite and related-topic
+        relationships between nodes. All nodes start as ACTIVE (no locking).
         """
         sample = "\n\n".join(
             f"[{c.get('source', '?')}]: {c['text'][:300]}" for c in chunks[:20]
@@ -63,31 +73,41 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}{memory_note}\n"
                     "Read the provided content excerpts and identify the main topics they cover. "
                     "DO NOT invent topics not evidenced in the text. "
-                    "Return 6-25 nodes ordered from foundational to advanced."
+                    "Return 6-25 nodes AND a list of edges capturing how the concepts relate to each other. "
+                    "Edges should reflect real conceptual dependencies and relationships, not just a tree — "
+                    "a concept can have multiple prerequisites and be related to several others."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Content excerpts:\n{sample}\n\n"
-                    "Extract concept nodes from this material only. "
-                    "Each node: id (n1, n2...), label, brief description drawn from the text, "
-                    "depth (1=macro, 2=mid, 3=micro), optional parent_id."
+                    "Extract concept nodes and their interconnections from this material only.\n"
+                    "Nodes: id (n1, n2...), label, brief description from the text, depth (1=macro 2=mid 3=micro), optional parent_id.\n"
+                    "Edges: source node id, target node id, relationship (prerequisite | related | builds-on).\n"
+                    "Include cross-links between non-adjacent concepts where a real relationship exists."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        return [
+        node_ids = {sn.id for sn in blueprint.nodes}
+        nodes = [
             NodeData(
                 id=sn.id,
                 label=sn.label,
                 description=sn.description,
                 depth=sn.depth,
                 parent_id=sn.parent_id,
-                status="ACTIVE" if i == 0 else "LOCKED",
+                status="ACTIVE",
             )
-            for i, sn in enumerate(blueprint.nodes)
+            for sn in blueprint.nodes
         ]
+        edges = [
+            {"source": e.source, "target": e.target, "relationship": e.relationship}
+            for e in blueprint.edges
+            if e.source in node_ids and e.target in node_ids
+        ]
+        return nodes, edges
 
     def extract_curriculum_from_documents(
         self,
@@ -95,11 +115,10 @@ class BrainAgent:
         familiarity: str,
         topic_hint: str = "",
         memory_context: str = "",
-    ) -> List[NodeData]:
-        """Instant tree generation from document structure (headings/TOC/first pages).
+    ) -> Tuple[List[NodeData], List[Dict]]:
+        """Instant graph generation from document structure (headings/TOC/first pages).
 
-        Unlike extract_curriculum(), this does NOT require chunking or RAG — it reads
-        document headings and first pages directly. Returns a tree in ~2s.
+        Returns (nodes, edges). All nodes start as ACTIVE — no locking.
         """
         all_structure = "\n\n---\n\n".join(
             f"Document: {d['filename']}\n{d['structure_text']}"
@@ -117,32 +136,43 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}\n"
                     f"{topic_note}{memory_note}"
                     "Read the provided document structure (headings, table of contents, first pages) "
-                    "and derive the curriculum tree. "
+                    "and derive a knowledge graph — not just a tree. "
                     "Use ONLY topics evidenced in the documents. "
-                    "Return 6-25 nodes ordered foundational → advanced, with parent_id links."
+                    "Return 6-25 nodes with parent_id links for hierarchy, "
+                    "AND edges capturing prerequisite/related/builds-on relationships between any nodes "
+                    "where a real conceptual link exists."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Document structure:\n{all_structure}\n\n"
-                    "Extract concept nodes. Each: id (n1, n2...), label, brief description, "
-                    "depth (1=chapter, 2=section, 3=topic), optional parent_id."
+                    "Extract concept nodes and interconnections.\n"
+                    "Nodes: id (n1, n2...), label, brief description, depth (1=chapter 2=section 3=topic), optional parent_id.\n"
+                    "Edges: source, target, relationship (prerequisite | related | builds-on).\n"
+                    "Add cross-links wherever concepts genuinely depend on or relate to each other."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        return [
+        node_ids = {sn.id for sn in blueprint.nodes}
+        nodes = [
             NodeData(
                 id=sn.id,
                 label=sn.label,
                 description=sn.description,
                 depth=sn.depth,
                 parent_id=sn.parent_id,
-                status="ACTIVE" if i == 0 else "LOCKED",
+                status="ACTIVE",
             )
-            for i, sn in enumerate(blueprint.nodes)
+            for sn in blueprint.nodes
         ]
+        edges = [
+            {"source": e.source, "target": e.target, "relationship": e.relationship}
+            for e in blueprint.edges
+            if e.source in node_ids and e.target in node_ids
+        ]
+        return nodes, edges
 
     def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:
         """Given a page of text, return a list of key concept phrases to highlight."""

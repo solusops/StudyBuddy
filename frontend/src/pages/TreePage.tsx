@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useState, Fragment } from "react"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
@@ -15,7 +15,7 @@ interface Props {
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
-  const { streamingLesson, lessonStreaming, lesson } = useSessionStore()
+  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editedDesc, setEditedDesc] = useState("")
@@ -24,31 +24,41 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [refineError, setRefineError] = useState("")
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
+  const [commitDone, setCommitDone] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
 
-  const applyNodes = (rawNodes: NodeData[]) => {
+  const applyGraph = (rawNodes: NodeData[], rawEdges?: Array<{source: string; target: string; relationship: string}>) => {
     const flowNodes: Node<NodeData>[] = rawNodes.map((n, i) => ({
       id: n.id,
       type: "concept",
       position: { x: i * 200, y: 0 },
       data: n,
     }))
-    const edges: Edge[] = rawNodes.flatMap((n) =>
-      (n.children_ids ?? []).map((cid) => ({
-        id: `${n.id}-${cid}`,
-        source: n.id,
-        target: cid,
-        type: "smoothstep",
-      }))
-    )
-    setGraph(flowNodes, edges)
+    // Use explicit AI-generated edges if provided; fall back to children_ids
+    const flowEdges: Edge[] = rawEdges?.length
+      ? rawEdges.map((e) => ({
+          id: `${e.source}-${e.target}`,
+          source: e.source,
+          target: e.target,
+          type: "smoothstep",
+          data: { relationship: e.relationship },
+        }))
+      : rawNodes.flatMap((n) =>
+          (n.children_ids ?? []).map((cid) => ({
+            id: `${n.id}-${cid}`,
+            source: n.id,
+            target: cid,
+            type: "smoothstep",
+          }))
+        )
+    setGraph(flowNodes, flowEdges)
   }
 
   // Seed the graph store from session nodes on first mount
   useEffect(() => {
     if (session?.nodes?.length) {
-      applyNodes(session.nodes)
+      applyGraph(session.nodes, session.edges)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -63,13 +73,19 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const handleNodeClick = useCallback(
     (id: string, label: string) => {
       setSelectedId(id)
-      sendEvent("LEARN_NODE", {
-        node_id: id,
-        node_label: label,
-        familiarity: session?.familiarity ?? "high_school",
-      })
+      const cached = lessonCache[id]
+      if (cached) {
+        // Restore from cache — no WS round-trip, no token cost
+        setLesson({ anchor: "", grounded_truth: cached, citations: [], visual_suggestion: "canvas" })
+      } else {
+        sendEvent("LEARN_NODE", {
+          node_id: id,
+          node_label: label,
+          familiarity: session?.familiarity ?? "high_school",
+        })
+      }
     },
-    [sendEvent, session?.familiarity]
+    [sendEvent, session?.familiarity, lessonCache, setLesson]
   )
 
   // Apply local description edit to the graph store
@@ -103,8 +119,8 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         const e = await resp.json()
         throw new Error(e.detail || "Refinement failed")
       }
-      const { nodes: newNodes } = await resp.json()
-      applyNodes(newNodes)
+      const { nodes: newNodes, edges: newEdges } = await resp.json()
+      applyGraph(newNodes, newEdges)
       setRefinementText("")
       setSelectedId(null)
     } catch (err) {
@@ -116,8 +132,25 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
   const lessonText = lessonStreaming ? streamingLesson : (lesson?.grounded_truth ?? "")
 
+  // Render markdown-ish lesson text: **bold**, paragraph breaks
+  const renderLesson = (text: string) => {
+    return text.split(/\n\n+/).map((para, pi) => {
+      const parts = para.split(/(\*\*[^*]+\*\*)/g)
+      return (
+        <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.75 }}>
+          {parts.map((part, i) =>
+            part.startsWith("**") && part.endsWith("**")
+              ? <strong key={i}>{part.slice(2, -2)}</strong>
+              : <Fragment key={i}>{part}</Fragment>
+          )}
+        </p>
+      )
+    })
+  }
+
   const commitSession = async () => {
-    const { nodes } = useGraphStore.getState()
+    const { nodes, edges } = useGraphStore.getState()
+    const { lessonCache } = useSessionStore.getState()
     await fetch("/session/commit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -129,14 +162,19 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         content_files: session?.contentFiles ?? [],
       }),
     })
-    const saved = localStorage.getItem("studybuddy_session")
-    if (saved) {
-      try {
-        const s = JSON.parse(saved)
-        s.nodes = nodes.map((n) => n.data)
-        localStorage.setItem("studybuddy_session", JSON.stringify(s))
-      } catch { /* ignore */ }
+    // Persist full session state — nodes, edges, lessonCache — to localStorage
+    const toSave = {
+      sessionId: session?.sessionId,
+      topic: session?.topic ?? "Study Session",
+      familiarity: session?.familiarity ?? "high_school",
+      nodes: nodes.map((n) => n.data),
+      edges: edges.map((e) => ({ source: e.source, target: e.target, relationship: (e.data as Record<string, string> | undefined)?.relationship ?? "prerequisite" })),
+      contentFiles: session?.contentFiles ?? [],
+      lessonCache,
     }
+    localStorage.setItem("studybuddy_session", JSON.stringify(toSave))
+    setCommitDone(true)
+    setTimeout(() => setCommitDone(false), 2500)
   }
 
   const pushSession = () => {
@@ -187,10 +225,21 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         {/* Commit */}
         <button
           onClick={commitSession}
+          disabled={commitDone}
           title="Save progress to disk"
-          style={{ background: "transparent", color: "#2D6A4F", border: "1px solid #2D6A4F", borderRadius: 6, padding: "4px 12px", fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+          style={{
+            background: commitDone ? "#E6F4ED" : "transparent",
+            color: commitDone ? "#2D6A4F" : "#2D6A4F",
+            border: "1px solid #2D6A4F",
+            borderRadius: 6,
+            padding: "4px 12px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: commitDone ? "default" : "pointer",
+            transition: "background 0.2s",
+          }}
         >
-          Commit
+          {commitDone ? "Saved ✓" : "Commit"}
         </button>
 
         {/* Push */}
@@ -314,14 +363,14 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                   Lesson
                 </label>
                 {lessonStreaming && (
-                  <div style={{ fontSize: 15, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", whiteSpace: "pre-wrap" }}>
-                    {streamingLesson}
+                  <div style={{ fontSize: 15, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                    {renderLesson(streamingLesson)}
                     <span style={{ display: "inline-block", width: 2, height: "1em", background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
                   </div>
                 )}
                 {!lessonStreaming && lessonText && (
-                  <div style={{ fontSize: 15, lineHeight: 1.75, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", whiteSpace: "pre-wrap" }}>
-                    {lessonText}
+                  <div style={{ fontSize: 15, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                    {renderLesson(lessonText)}
                   </div>
                 )}
                 {!lessonStreaming && !lessonText && (

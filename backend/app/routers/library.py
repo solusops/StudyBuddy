@@ -9,6 +9,7 @@ import os
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.agents.brain_agent import BrainAgent
@@ -172,8 +173,8 @@ async def start_session(req: StartSessionRequest):
         )
         overviews.append({"filename": filename, "structure_text": structure})
 
-    # Generate tree instantly from document structure
-    nodes = await loop.run_in_executor(
+    # Generate graph instantly from document structure
+    nodes, edges = await loop.run_in_executor(
         None,
         _get_brain().extract_curriculum_from_documents,
         overviews,
@@ -186,6 +187,7 @@ async def start_session(req: StartSessionRequest):
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
+        "edges": edges,
     }
 
 
@@ -231,7 +233,7 @@ async def upload_and_start(
         file_store.append((content, filename))
 
     loop = asyncio.get_event_loop()
-    nodes = await loop.run_in_executor(
+    nodes, edges = await loop.run_in_executor(
         None,
         _get_brain().extract_curriculum_from_documents,
         overviews,
@@ -241,6 +243,16 @@ async def upload_and_start(
     )
 
     get_graph_manager().set_graph(session_id, nodes)
+
+    # Persist uploaded files to disk so /library/file/{name} can serve them later
+    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
+    os.makedirs(uploads_dir, exist_ok=True)
+    for content, filename in file_store:
+        dest = os.path.join(uploads_dir, filename)
+        with open(dest, "wb") as fh:
+            fh.write(content)
+    # Register uploads dir as the content folder so /library/status sees the files
+    save_settings({"content_folder": uploads_dir})
 
     # Background: chunk full documents into LIBRARY_COLLECTION for RAG
     db = get_db()
@@ -254,8 +266,21 @@ async def upload_and_start(
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
+        "edges": edges,
         "filenames": [name for _, name in file_store],
     }
+
+
+@router.get("/file/{filename}")
+def serve_library_file(filename: str):
+    """Serve a file from the uploads directory (for browser-mode PDF viewer)."""
+    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
+    path = os.path.join(uploads_dir, filename)
+    if not os.path.isfile(path):
+        raise HTTPException(404, f"File not found: {filename}")
+    ext = os.path.splitext(filename)[1].lower()
+    media_types = {".pdf": "application/pdf", ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document", ".txt": "text/plain"}
+    return FileResponse(path, media_type=media_types.get(ext, "application/octet-stream"))
 
 
 class RefineTreeRequest(BaseModel):
@@ -286,7 +311,7 @@ async def refine_tree(req: RefineTreeRequest):
     chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
 
     guidance_note = f"Student feedback on the previous tree: {req.user_feedback}"
-    nodes = await loop.run_in_executor(
+    nodes, edges = await loop.run_in_executor(
         None,
         _get_brain().extract_curriculum,
         chunks,
@@ -298,4 +323,5 @@ async def refine_tree(req: RefineTreeRequest):
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
+        "edges": edges,
     }

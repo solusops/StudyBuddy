@@ -3,7 +3,8 @@ import { SetupModal } from "./components/init/SetupModal"
 import { ManualPage } from "./pages/ManualPage"
 import { TreePage } from "./pages/TreePage"
 import { useWebSocket } from "./hooks/useWebSocket"
-import type { FamiliarityLevel, NodeData } from "./types"
+import { useSessionStore } from "./store/sessionStore"
+import type { FamiliarityLevel, NodeData, KnowledgeEdge } from "./types"
 
 export type AppView = "setup" | "manual" | "tree"
 
@@ -12,7 +13,9 @@ export interface AppSession {
   topic: string
   familiarity: FamiliarityLevel
   nodes: NodeData[]
+  edges: KnowledgeEdge[]
   contentFiles: string[]
+  lessonCache?: Record<string, string>
 }
 
 export default function App() {
@@ -35,6 +38,10 @@ export default function App() {
             try {
               const s: AppSession = JSON.parse(saved)
               setSession(s)
+              // Restore lesson cache so previously loaded lessons don't need re-fetching
+              if (s.lessonCache && Object.keys(s.lessonCache).length > 0) {
+                useSessionStore.getState().setLessonCache(s.lessonCache)
+              }
               setView("tree")
               return
             } catch { /* corrupt data, fall through */ }

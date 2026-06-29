@@ -12,8 +12,8 @@ export function ScoreBar({ scores }: { scores: NodeScores }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {AXES.map(({ key, label, color }) => (
         <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ width: 100, fontSize: 11, color: "#94a3b8" }}>{label}</div>
-          <div style={{ flex: 1, height: 6, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
+          <div style={{ width: 100, fontSize: 12, color: "#6B7280" }}>{label}</div>
+          <div style={{ flex: 1, height: 6, background: "#E8E0D5", borderRadius: 3, overflow: "hidden" }}>
             <div
               style={{
                 width: `${scores[key]}%`,
@@ -24,7 +24,7 @@ export function ScoreBar({ scores }: { scores: NodeScores }) {
               }}
             />
           </div>
-          <div style={{ width: 28, fontSize: 11, color: "#94a3b8", textAlign: "right" }}>
+          <div style={{ width: 28, fontSize: 12, color: "#6B7280", textAlign: "right" }}>
             {scores[key]}
           </div>
         </div>
