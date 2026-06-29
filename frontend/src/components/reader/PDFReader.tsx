@@ -4,6 +4,7 @@ import "react-pdf/dist/Page/TextLayer.css"
 import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useInteractionStore, type SelectionSnippet } from "../../store/interactionStore"
 import { HighlightLayer } from "./HighlightLayer"
+import { MarginGutter } from "./MarginGutter"
 
 // pdf.js worker — Vite serves this from node_modules
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -36,18 +37,16 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   const [pageWidth, setPageWidth] = useState(600)
   const containerRef = useRef<HTMLDivElement>(null)
   const pageTexts = useRef<Map<number, string>>(new Map())
-  const { cursorMode, pushSnippet, clearGroup, addAnnotation, setAnnotations } = useInteractionStore()
-  const [pendingNote, setPendingNote] = useState("")
-  const [showNoteInput, setShowNoteInput] = useState(false)
-  const [noteAnchorPos, setNoteAnchorPos] = useState<{x: number, y: number} | null>(null)
+  const { cursorMode, pushSnippet, setAnnotations } = useInteractionStore()
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
+  const [pageHeights, setPageHeights] = useState<Map<number, number>>(new Map())
 
   // Resize observer to match PDF to container
   useEffect(() => {
     if (!containerRef.current) return
     const ro = new ResizeObserver((entries) => {
       const w = entries[0].contentRect.width
-      setPageWidth(Math.max(400, w - 32))
+      setPageWidth(Math.max(300, w - 32 - 280))
     })
     ro.observe(containerRef.current)
     return () => ro.disconnect()
@@ -127,35 +126,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
     const snippet: SelectionSnippet = { page_number: pageNumber, text, boxes }
     pushSnippet(snippet)
     sel.removeAllRanges()
-    // Show note input near the last box
-    const lastBox = rects[rects.length - 1]
-    if (lastBox) setNoteAnchorPos({ x: e.clientX, y: lastBox.bottom + 8 })
-    setShowNoteInput(true)
   }, [cursorMode, pushSnippet])
-
-  const commitAnnotation = async () => {
-    const { activeSelectionGroup, documentId: docId } = useInteractionStore.getState()
-    if (!activeSelectionGroup.length || !docId || !sessionId) return
-    const annotation = {
-      document_id: docId,
-      session_id: sessionId,
-      target_snippets: activeSelectionGroup,
-      note_text: pendingNote || null,
-    }
-    const resp = await fetch("/annotations", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(annotation),
-    })
-    if (resp.ok) {
-      const created = await resp.json()
-      addAnnotation(created)
-      clearGroup()
-      setPendingNote("")
-      setShowNoteInput(false)
-      setNoteAnchorPos(null)
-    }
-  }
 
   // Delegate concept clicks from text layer
   useEffect(() => {
@@ -203,88 +174,54 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
           return (
             <div
               key={pgNum}
-              data-page-number={pgNum}
-              ref={(el) => { if (el) pageRefs.current.set(pgNum, el as HTMLDivElement) }}
-              onPointerUp={(e) => handlePointerUp(pgNum, e)}
-              style={{
-                position: "relative",
-                boxShadow: "0 2px 16px rgba(26,53,87,0.12)",
-                borderRadius: 4,
-                overflow: "hidden",
-                background: "#FFFFFF",
-              }}
+              style={{ display: "flex", flexDirection: "row", alignItems: "flex-start", gap: 0 }}
             >
-              <Page
+              <div
+                data-page-number={pgNum}
+                ref={(el) => { if (el) pageRefs.current.set(pgNum, el as HTMLDivElement) }}
+                onPointerUp={(e) => handlePointerUp(pgNum, e)}
+                style={{
+                  position: "relative",
+                  boxShadow: "0 2px 16px rgba(26,53,87,0.12)",
+                  borderRadius: 4,
+                  overflow: "hidden",
+                  background: "#FFFFFF",
+                  flexShrink: 0,
+                }}
+              >
+                <Page
+                  pageNumber={pgNum}
+                  width={pageWidth}
+                  renderTextLayer
+                  renderAnnotationLayer
+                  customTextRenderer={customTextRenderer}
+                  onRenderSuccess={(page) => {
+                    handlePageRenderSuccess({ pageNumber: pgNum })
+                    const el = pageRefs.current.get(pgNum)
+                    if (el) {
+                      setPageHeights((prev) => {
+                        const next = new Map(prev)
+                        next.set(pgNum, el.offsetHeight || page.height)
+                        return next
+                      })
+                    }
+                  }}
+                />
+                <HighlightLayer
+                  pageNumber={pgNum}
+                  pageRef={{ current: pageRefs.current.get(pgNum) ?? null }}
+                />
+              </div>
+              <MarginGutter
                 pageNumber={pgNum}
-                width={pageWidth}
-                renderTextLayer
-                renderAnnotationLayer
-                customTextRenderer={customTextRenderer}
-                onRenderSuccess={() => handlePageRenderSuccess({ pageNumber: pgNum })}
-              />
-              <HighlightLayer
-                pageNumber={pgNum}
-                pageRef={{ current: pageRefs.current.get(pgNum) ?? null }}
+                pageHeightPx={pageHeights.get(pgNum) ?? 0}
+                documentId={documentId}
+                sessionId={sessionId}
               />
             </div>
           )
         })}
       </Document>
-      {/* Floating note commit panel */}
-      {showNoteInput && noteAnchorPos && (
-        <div
-          style={{
-            position: "fixed",
-            left: Math.min(noteAnchorPos.x, window.innerWidth - 320),
-            top: noteAnchorPos.y,
-            zIndex: 1001,
-            background: "#FFFFFF",
-            border: "1px solid #E8E0D5",
-            borderRadius: 10,
-            boxShadow: "0 4px 20px rgba(26,53,87,0.15)",
-            padding: 12,
-            width: 300,
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}
-        >
-          <p style={{ margin: 0, fontSize: 13, color: "#6B7280" }}>
-            Add a note (optional)
-          </p>
-          <textarea
-            autoFocus
-            value={pendingNote}
-            onChange={(e) => setPendingNote(e.target.value)}
-            placeholder="Type your note…"
-            rows={3}
-            style={{
-              width: "100%",
-              border: "1px solid #E8E0D5",
-              borderRadius: 6,
-              padding: "6px 8px",
-              fontSize: 14,
-              resize: "none",
-              boxSizing: "border-box",
-              outline: "none",
-            }}
-          />
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button
-              onClick={() => { clearGroup(); setShowNoteInput(false); setPendingNote("") }}
-              style={{ background: "transparent", border: "1px solid #E8E0D5", borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontSize: 13, color: "#6B7280" }}
-            >
-              Cancel
-            </button>
-            <button
-              onClick={commitAnnotation}
-              style={{ background: "#1A3557", border: "none", borderRadius: 6, padding: "5px 14px", cursor: "pointer", fontSize: 13, color: "#FAF7F2", fontWeight: 600 }}
-            >
-              Save annotation
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

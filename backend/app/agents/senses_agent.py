@@ -1,6 +1,6 @@
 """Multimodal vision agent — analyses cropped PDF regions.
 
-Uses Cerebras vision-capable model (llama-4-scout-17b-16e-instruct).
+Uses Cerebras vision-capable model (gemma-4-31b).
 Images must be base64-encoded PNG data URIs — hosted URLs not supported.
 """
 from __future__ import annotations
@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.agents.cerebras_client import CerebrasClient
 
-VISION_MODEL_ID = "llama-4-scout-17b-16e-instruct"
+VISION_MODEL_ID = "gemma-4-31b"
 
 
 class InsightPayload(BaseModel):

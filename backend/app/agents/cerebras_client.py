@@ -130,11 +130,11 @@ class CerebrasClient:
         except Exception as exc:
             self._handle_sdk_exc(exc)
 
-    async def stream_complete(self, messages: List[Dict[str, Any]]) -> AsyncIterator[str]:
+    async def stream_complete(self, messages: List[Dict[str, Any]], model: str | None = None) -> AsyncIterator[str]:
         self._check_rate_limit()
         try:
             stream = self._client.chat.completions.create(
-                model=MODEL_ID, messages=messages, stream=True
+                model=model or MODEL_ID, messages=messages, stream=True
             )
             for chunk in stream:
                 delta = chunk.choices[0].delta.content

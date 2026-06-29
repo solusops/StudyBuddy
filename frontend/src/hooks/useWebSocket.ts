@@ -89,6 +89,12 @@ export function useWebSocket(sessionId: string | null) {
         case "INFINITY_WIKI_RESULT":
           window.dispatchEvent(new CustomEvent("infinity-wiki-result", { detail: msg.data }))
           break
+        case "WIKI_TOKEN":
+          window.dispatchEvent(new CustomEvent("wiki-token", { detail: { token: msg.data.token } }))
+          break
+        case "WIKI_DONE":
+          window.dispatchEvent(new CustomEvent("wiki-done", {}))
+          break
       }
     }
 

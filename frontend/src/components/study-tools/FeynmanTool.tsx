@@ -11,10 +11,34 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
   const { feynmanHistory, streamingFeynman, addFeynmanMessage } = useSessionStore()
   const [draft, setDraft] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
+  const [recording, setRecording] = useState(false)
+  const mediaRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [feynmanHistory, streamingFeynman])
+
+  const startRecording = async () => {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    const rec = new MediaRecorder(stream)
+    chunksRef.current = []
+    rec.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data) }
+    rec.onstop = async () => {
+      const blob = new Blob(chunksRef.current, { type: "audio/webm" })
+      const arrayBuf = await blob.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)))
+      sendEvent("FEYNMAN_AUDIO", { audio_base64: base64, node_id: nodeId })
+      stream.getTracks().forEach((t) => t.stop())
+    }
+    rec.start()
+    mediaRef.current = rec
+    setRecording(true)
+  }
+  const stopRecording = () => {
+    mediaRef.current?.stop()
+    setRecording(false)
+  }
 
   const send = () => {
     const text = draft.trim()
@@ -68,6 +92,23 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
         />
         <button onClick={send} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 6, padding: "0 16px", cursor: "pointer" }}>
           Send
+        </button>
+        <button
+          type="button"
+          onClick={recording ? stopRecording : startRecording}
+          style={{
+            background: recording ? "#FEE2E2" : "transparent",
+            border: `1px solid ${recording ? "#EF4444" : "#E8E0D5"}`,
+            borderRadius: 8,
+            padding: "8px 12px",
+            cursor: "pointer",
+            color: recording ? "#EF4444" : "#6B7280",
+            fontSize: 18,
+            transition: "all 0.15s",
+          }}
+          title={recording ? "Stop recording" : "Start voice input"}
+        >
+          {recording ? "⏹" : "🎤"}
         </button>
       </div>
     </div>

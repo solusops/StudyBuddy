@@ -13,6 +13,7 @@ from app.agents.brain_agent import BrainAgent
 from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
+from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.rag.chromadb_client import ChromaDBClient
 from app.rag.ingestion import LIBRARY_COLLECTION
@@ -21,6 +22,7 @@ from app.schemas.graph import NodeData
 from app.services.graph_state import GraphStateManager
 from app.services.journal_service import JournalService
 from app.services.student_memory import StudentMemoryService
+from app.services.transcription_service import TranscriptionService
 from app.services.summary_writer import build_summary_markdown
 from app.websockets.connection_manager import ConnectionManager
 
@@ -35,6 +37,7 @@ _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
 _tutor: TutorAgent | None = None
 _cache = OutputCache()
+_wiki = WikiAgent()
 
 
 def _get_db() -> ChromaDBClient:
@@ -146,16 +149,23 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- CHAT_TURN -----------------------------------------------
     elif event_type == "CHAT_TURN":
         query = data.get("content", "")
-        chunks = await _get_chunks(session_id, query, n=3)
-        context = "\n".join(f"[{c['source']}]: {c['text']}" for c in chunks)
+        selection_text = data.get("selection_text", "")
+        surrounding_context = data.get("surrounding_context", "")
+        chunks = await _get_chunks(session_id, query or selection_text or "context", n=5)
+        chunk_ctx = "\n".join(f"[{c.get('source','?')}]: {c['text']}" for c in chunks)
+        selection_prefix = ""
+        if selection_text:
+            selection_prefix = f"Student selected passage:\n\"{selection_text}\"\n"
+            if surrounding_context:
+                selection_prefix += f"Surrounding text:\n{surrounding_context[:400]}\n"
+            selection_prefix += "\n"
+        system_msg = (
+            f"{selection_prefix}"
+            f"Answer using ONLY this source material. Cite inline. Never fabricate.\n\n{chunk_ctx}"
+        )
         messages = [
-            {
-                "role": "system",
-                "content": (
-                    f"Answer using ONLY this context. Cite sources inline.\n\n{context}"
-                ),
-            },
-            {"role": "user", "content": query},
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": query or f"Explain: {selection_text[:200]}"},
         ]
         full_response = ""
         async for token in _get_tutor()._client.stream_complete(messages):
@@ -166,7 +176,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 session_id=session_id,
                 node_id=node_id,
                 event_type=JournalEventType.CHAT_TURN,
-                data={"role": "student", "content": query, "response": full_response},
+                data={"role": "student", "content": query, "selection_text": selection_text, "response": full_response},
             )
         )
         await _cm.send(session_id, "CHAT_DONE", {})
@@ -261,6 +271,49 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         )
         await _cm.send(session_id, "FEYNMAN_DONE", {})
 
+    # ---- FEYNMAN_AUDIO (voice → STT → Feynman turn) ----------------------
+    elif event_type == "FEYNMAN_AUDIO":
+        stt = TranscriptionService.get()
+        audio_b64 = data.get("audio_base64", "")
+        if not audio_b64:
+            await _cm.send(session_id, "FEYNMAN_DONE", {"error": "no audio"})
+        elif not stt.is_available:
+            await _cm.send(session_id, "FEYNMAN_DONE", {
+                "error": "STT model not available (Canary-Qwen not loaded)"
+            })
+        else:
+            import base64
+            audio_bytes = base64.b64decode(audio_b64)
+            text = stt.transcribe(audio_bytes)
+            if not text:
+                await _cm.send(session_id, "FEYNMAN_DONE", {"error": "transcription returned empty"})
+            else:
+                await _cm.send(session_id, "FEYNMAN_TRANSCRIBED", {"text": text})
+                familiarity_level = data.get("familiarity", familiarity)
+                familiarity_note = {
+                    "eli5": "Be very encouraging; only interject if the core analogy completely breaks.",
+                    "high_school": "Interject on clear factual errors (>40% drift from paper).",
+                    "graduate": "Interject on any technical inaccuracy (>15% drift).",
+                    "expert": "Interject on any invalid logical leap or unsupported claim.",
+                }.get(familiarity_level, "")
+                messages = [
+                    {"role": "system", "content": (
+                        f"You are Clara, a curious student. {familiarity_note} "
+                        "Ask follow-up questions. Never reveal answers directly. "
+                        "If you detect a factual error vs the document, say "
+                        "'Actually, the paper says...' and cite the source chunk."
+                    )},
+                    {"role": "user", "content": text},
+                ]
+                full = ""
+                async for token in _get_tutor()._client.stream_complete(messages):
+                    full += token
+                    await _cm.send(session_id, "FEYNMAN_TOKEN", {"token": token})
+                _journal.append(JournalEntry(session_id=session_id, node_id=node_id,
+                    event_type=JournalEventType.FEYNMAN_TURN,
+                    data={"student_text": text, "input_type": "voice", "response": full}))
+                await _cm.send(session_id, "FEYNMAN_DONE", {})
+
     # ---- INFINITY_WIKI_REQUEST -----------------------------------
     elif event_type == "INFINITY_WIKI_REQUEST":
         try:
@@ -291,6 +344,30 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     elif event_type == "CACHE_CLEAR":
         count = _cache.clear()
         await _cm.send(session_id, "CACHE_CLEARED", {"count": count})
+
+    # ---- CONTEXT_CARD_REQUEST (Infinite Wiki) ----------------------------
+    elif event_type == "CONTEXT_CARD_REQUEST":
+        selection_text = data.get("selection_text", "")
+        surrounding_context = data.get("surrounding_context", "")
+        familiarity = data.get("familiarity", "high_school")
+        parent_context = data.get("parent_context", "")
+        anchor_id = f"wiki_{hash(selection_text) & 0xFFFFFF}"
+        chunks = await _get_chunks(session_id, selection_text, n=5)
+        cache_key = _cache.make_key("CONTEXT_CARD", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
+        cached = _cache.get(cache_key)
+        if cached:
+            for word in cached.split(" "):
+                await _cm.send(session_id, "WIKI_TOKEN", {"token": word + " "})
+            await _cm.send(session_id, "WIKI_DONE", {})
+        else:
+            full = ""
+            async for token in _wiki.stream_card(
+                selection_text, surrounding_context, chunks, familiarity, parent_context
+            ):
+                full += token
+                await _cm.send(session_id, "WIKI_TOKEN", {"token": token})
+            _cache.put(cache_key, full)
+            await _cm.send(session_id, "WIKI_DONE", {})
 
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":
