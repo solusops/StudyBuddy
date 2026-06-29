@@ -5,6 +5,8 @@ import { TreePage } from "./pages/TreePage"
 import { useWebSocket } from "./hooks/useWebSocket"
 import { useSessionStore } from "./store/sessionStore"
 import type { FamiliarityLevel, NodeData, KnowledgeEdge } from "./types"
+import { FloatingToolbar } from "./components/overlay/FloatingToolbar"
+import { useInteractionStore } from "./store/interactionStore"
 
 export type AppView = "setup" | "manual" | "tree"
 
@@ -15,6 +17,7 @@ export interface AppSession {
   nodes: NodeData[]
   edges: KnowledgeEdge[]
   contentFiles: string[]
+  documentId?: string
   lessonCache?: Record<string, string>
 }
 
@@ -25,6 +28,7 @@ export default function App() {
 
   // Single WebSocket at App level — persists across view transitions
   const { sendEvent } = useWebSocket(session?.sessionId ?? null)
+  const setDocumentId = useInteractionStore((s) => s.setDocumentId)
 
   // On mount, check if library is already configured and restore any saved session
   useEffect(() => {
@@ -56,6 +60,7 @@ export default function App() {
   const handleSessionReady = (s: AppSession) => {
     setSession(s)
     localStorage.setItem("studybuddy_session", JSON.stringify(s))
+    if (s.documentId) setDocumentId(s.documentId)
     setView("tree")  // show tree first after upload
   }
 
@@ -73,21 +78,27 @@ export default function App() {
 
   if (view === "tree") {
     return (
-      <TreePage
-        session={session}
-        sendEvent={sendEvent}
-        onBack={() => setView("manual")}
-        onNeedSetup={() => setView("setup")}
-      />
+      <>
+        <FloatingToolbar />
+        <TreePage
+          session={session}
+          sendEvent={sendEvent}
+          onBack={() => setView("manual")}
+          onNeedSetup={() => setView("setup")}
+        />
+      </>
     )
   }
 
   return (
-    <ManualPage
-      session={session}
-      sendEvent={sendEvent}
-      onShowTree={() => setView("tree")}
-      onNeedSetup={() => setView("setup")}
-    />
+    <>
+      <FloatingToolbar />
+      <ManualPage
+        session={session}
+        sendEvent={sendEvent}
+        onShowTree={() => setView("tree")}
+        onNeedSetup={() => setView("setup")}
+      />
+    </>
   )
 }

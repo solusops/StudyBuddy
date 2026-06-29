@@ -100,7 +100,7 @@ class CerebrasClient:
     # ------------------------------------------------------------------ #
 
     def structured_complete(
-        self, messages: List[Dict[str, Any]], output_model: Type[BaseModel]
+        self, messages: List[Dict[str, Any]], output_model: Type[BaseModel], model: str | None = None
     ) -> BaseModel:
         self._check_rate_limit()
         schema = self._build_schema(output_model)
@@ -114,7 +114,7 @@ class CerebrasClient:
         }
         try:
             resp = self._client.chat.completions.create(
-                model=MODEL_ID, messages=messages, response_format=response_format
+                model=model or MODEL_ID, messages=messages, response_format=response_format
             )
             raw = resp.choices[0].message.content
             self._health = {"status": "ok"}
@@ -124,7 +124,7 @@ class CerebrasClient:
         except json.JSONDecodeError:
             # One retry on parse failure
             resp = self._client.chat.completions.create(
-                model=MODEL_ID, messages=messages, response_format=response_format
+                model=model or MODEL_ID, messages=messages, response_format=response_format
             )
             return output_model.model_validate_json(resp.choices[0].message.content)
         except Exception as exc:

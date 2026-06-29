@@ -10,6 +10,7 @@ import asyncio
 from typing import Any, Dict
 
 from app.agents.brain_agent import BrainAgent
+from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
 from app.agents.tutor_agent import TutorAgent
@@ -33,6 +34,7 @@ _memory = StudentMemoryService()
 _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
 _tutor: TutorAgent | None = None
+_cache = OutputCache()
 
 
 def _get_db() -> ChromaDBClient:
@@ -100,26 +102,46 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         node = _safe_get_node(session_id, node_id)
         query = _get_brain().build_rag_query(data.get("node_label", node.label), familiarity)
         chunks = await _get_chunks(session_id, query, n=5)
+        selection_text = data.get("selection_text", "")
+        anchor_id = data.get("anchor_id") or node_id
+        cache_key = _cache.make_key("LEARN_NODE", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
+        cached_lesson = _cache.get(cache_key)
         _journal.append(
             JournalEntry(
                 session_id=session_id,
                 node_id=node_id,
                 event_type=JournalEventType.NODE_OPENED,
-                data={"node_label": data.get("node_label")},
+                data={"node_label": data.get("node_label"), "cache_hit": cached_lesson is not None},
             )
         )
-        async for token in _get_tutor().stream_lesson(node, chunks, familiarity):
-            await _cm.send(session_id, "LESSON_TOKEN", {"token": token})
-        await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
+        if cached_lesson:
+            # Replay cached lesson as tokens to preserve streaming UX
+            for word in cached_lesson.split(" "):
+                await _cm.send(session_id, "LESSON_TOKEN", {"token": word + " "})
+            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
+        else:
+            full_lesson = ""
+            async for token in _get_tutor().stream_lesson(node, chunks, familiarity):
+                full_lesson += token
+                await _cm.send(session_id, "LESSON_TOKEN", {"token": token})
+            _cache.put(cache_key, full_lesson)
+            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
 
     # ---- GENERATE_VISUAL ------------------------------------------
     elif event_type == "GENERATE_VISUAL":
-        visual = _get_tutor().generate_visual(
-            data.get("node_label", node_id),
-            data.get("animation_type", "canvas"),
-            familiarity,
-        )
-        await _cm.send(session_id, "VISUAL_PAYLOAD", visual.model_dump())
+        label = data.get("node_label", node_id)
+        anim = data.get("animation_type", "canvas")
+        anchor_id = data.get("anchor_id") or node_id
+        selection_text = data.get("selection_text", "")
+        cache_key = _cache.make_key("GENERATE_VISUAL", familiarity, anchor_id, [label, anim], selection_text)
+        cached = _cache.get(cache_key)
+        if cached:
+            await _cm.send(session_id, "VISUAL_PAYLOAD", cached)
+        else:
+            visual = _get_tutor().generate_visual(label, anim, familiarity)
+            payload = visual.model_dump()
+            _cache.put(cache_key, payload)
+            await _cm.send(session_id, "VISUAL_PAYLOAD", payload)
 
     # ---- CHAT_TURN -----------------------------------------------
     elif event_type == "CHAT_TURN":
@@ -151,24 +173,39 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
 
     # ---- FLASHCARDS_REQUEST --------------------------------------
     elif event_type == "FLASHCARDS_REQUEST":
-        # Prefer question chunks; fall back to content if none found
-        chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
+        label = data.get("node_label", node_id)
+        anchor_id = data.get("anchor_id") or node_id
+        selection_text = data.get("selection_text", "")
+        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
         if not chunks:
-            chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8)
-        result = _get_tutor().generate_flashcards(
-            data.get("node_label", node_id), chunks, familiarity
-        )
-        await _cm.send(session_id, "FLASHCARDS_READY", result.model_dump())
+            chunks = await _get_chunks(session_id, label, n=8)
+        cache_key = _cache.make_key("FLASHCARDS_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
+        cached = _cache.get(cache_key)
+        if cached:
+            await _cm.send(session_id, "FLASHCARDS_READY", cached)
+        else:
+            result = _get_tutor().generate_flashcards(label, chunks, familiarity)
+            payload = result.model_dump()
+            _cache.put(cache_key, payload)
+            await _cm.send(session_id, "FLASHCARDS_READY", payload)
 
     # ---- QUIZ_REQUEST --------------------------------------------
     elif event_type == "QUIZ_REQUEST":
-        chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
+        label = data.get("node_label", node_id)
+        anchor_id = data.get("anchor_id") or node_id
+        selection_text = data.get("selection_text", "")
+        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
         if not chunks:
-            chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8)
-        result = _get_tutor().generate_quiz(
-            data.get("node_label", node_id), chunks, familiarity
-        )
-        await _cm.send(session_id, "QUIZ_READY", result.model_dump())
+            chunks = await _get_chunks(session_id, label, n=8)
+        cache_key = _cache.make_key("QUIZ_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
+        cached = _cache.get(cache_key)
+        if cached:
+            await _cm.send(session_id, "QUIZ_READY", cached)
+        else:
+            result = _get_tutor().generate_quiz(label, chunks, familiarity)
+            payload = result.model_dump()
+            _cache.put(cache_key, payload)
+            await _cm.send(session_id, "QUIZ_READY", payload)
 
     # ---- FLASHCARD_GRADE -----------------------------------------
     elif event_type == "FLASHCARD_GRADE":
@@ -249,6 +286,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _graph_mgr.apply_node_patch(session_id, patch)
             await _cm.send(session_id, "SCORE_PATCH", patch.model_dump())
         await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
+
+    # ---- CACHE_CLEAR (dev) -----------------------------------------------
+    elif event_type == "CACHE_CLEAR":
+        count = _cache.clear()
+        await _cm.send(session_id, "CACHE_CLEARED", {"count": count})
 
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":

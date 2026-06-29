@@ -4,6 +4,7 @@ import { VisualSandbox } from "../panel/VisualSandbox"
 import { StudyToolsTabs } from "../study-tools/StudyToolsTabs"
 import { ScoreBar } from "../panel/ScoreBar"
 import { useGraphStore } from "../../store/graphStore"
+import { useInteractionStore } from "../../store/interactionStore"
 
 type PanelTab = "Figure" | "Study Tools"
 
@@ -16,6 +17,11 @@ interface Props {
 export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }: Props) {
   const { visual, lesson, familiarity, streamingLesson, lessonStreaming } = useSessionStore()
   const { nodes } = useGraphStore()
+  const { activeAnnotationId, committedAnnotations, updateAnnotationNote } = useInteractionStore()
+  const activeAnnotation = activeAnnotationId
+    ? committedAnnotations.find((a) => a.annotation_id === activeAnnotationId) ?? null
+    : null
+  const [noteText, setNoteText] = useState(activeAnnotation?.note_text ?? "")
   // Default to Study Tools when arriving with an active node (from TreePage)
   const [tab, setTab] = useState<PanelTab>(activeNodeId ? "Study Tools" : "Figure")
   const [figureRequested, setFigureRequested] = useState(false)
@@ -28,6 +34,20 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
     setFigureRequested(false)
     setTab("Study Tools")
   }, [activeConcept, activeNodeId])
+
+  useEffect(() => {
+    setNoteText(activeAnnotation?.note_text ?? "")
+  }, [activeAnnotationId])
+
+  const saveNote = async () => {
+    if (!activeAnnotation) return
+    await fetch(`/annotations/${activeAnnotation.annotation_id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note_text: noteText }),
+    })
+    updateAnnotationNote(activeAnnotation.annotation_id, noteText)
+  }
 
   const requestFigure = () => {
     if (!activeNodeId || figureRequested) return
@@ -61,12 +81,21 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
         background: "#FFFFFF",
       }}>
         <div style={{ flex: 1 }}>
-          {activeConcept ? (
+          {activeAnnotation ? (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#4A7FB5", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
+                Annotation
+              </div>
+              <p style={{ margin: 0, fontSize: 13, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif", maxHeight: 48, overflow: "hidden", textOverflow: "ellipsis" }}>
+                {activeAnnotation.target_snippets.map((s) => s.text).join(" … ")}
+              </p>
+            </div>
+          ) : activeConcept ? (
             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600, color: "#1A3557", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
               {activeConcept}
             </h3>
           ) : (
-            <span style={{ color: "#9CA3AF", fontSize: 13 }}>Click a highlighted concept</span>
+            <span style={{ color: "#9CA3AF", fontSize: 13 }}>Click a highlighted concept or annotation</span>
           )}
         </div>
         {/* Tabs */}
@@ -96,6 +125,33 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
       {node && (
         <div style={{ padding: "8px 16px", borderBottom: "1px solid #E8E0D5", background: "#FDFBF8" }}>
           <ScoreBar scores={node.data.scores} />
+        </div>
+      )}
+
+      {/* Annotation note canvas (visible when an annotation is the active anchor) */}
+      {activeAnnotation && (
+        <div style={{ padding: "10px 16px", borderBottom: "1px solid #E8E0D5", background: "#FDFBF8" }}>
+          <label style={{ display: "block", fontSize: 11, fontWeight: 600, color: "#9CA3AF", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>Note</label>
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            onBlur={saveNote}
+            placeholder="Add a note about this selection…"
+            rows={3}
+            style={{
+              width: "100%",
+              border: "1px solid #E8E0D5",
+              borderRadius: 6,
+              padding: "6px 8px",
+              fontSize: 13,
+              resize: "vertical",
+              boxSizing: "border-box",
+              outline: "none",
+              background: "#FAF7F2",
+              fontFamily: "'Libre Caslon Text', Georgia, serif",
+              color: "#1A1A2E",
+            }}
+          />
         </div>
       )}
 

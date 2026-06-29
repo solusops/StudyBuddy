@@ -72,7 +72,7 @@ export function SetupModal({ onSessionReady }: Props) {
         const e = await uploadResp.json()
         throw new Error(e.detail || "Failed to process files")
       }
-      const { nodes, edges, filenames } = await uploadResp.json()
+      const { nodes, edges, filenames, document_id } = await uploadResp.json()
 
       onSessionReady({
         sessionId: session_id,
@@ -81,6 +81,7 @@ export function SetupModal({ onSessionReady }: Props) {
         nodes,
         edges: edges ?? [],
         contentFiles: filenames || files.map((f) => f.name),
+        documentId: document_id,
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))

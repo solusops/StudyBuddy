@@ -5,6 +5,7 @@ Two content paths:
 - Upload-based (browser/Electron): drag-and-drop files, instant tree, background chunking
 """
 import asyncio
+import hashlib
 import os
 from typing import List, Optional
 
@@ -263,11 +264,14 @@ async def upload_and_start(
 
     background_tasks.add_task(_chunk_all)
 
+    # Stable document id = SHA-256 of first uploaded file (same file = same id)
+    document_id = hashlib.sha256(file_store[0][0]).hexdigest() if file_store else ""
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
         "edges": edges,
         "filenames": [name for _, name in file_store],
+        "document_id": document_id,
     }
 
 

@@ -67,6 +67,32 @@ export interface WSMessage {
   data: Record<string, unknown>
 }
 
+// Annotation types (mirroring backend schemas/annotation.py)
+export interface AnnotationBox {
+  page: number
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+export interface AnnotationSnippet {
+  page_number: number
+  text: string
+  boxes: AnnotationBox[]
+}
+
+export interface StudentAnnotation {
+  annotation_id: string
+  document_id: string
+  session_id: string
+  target_snippets: AnnotationSnippet[]
+  note_text: string | null
+  image_base64?: string | null
+  created_at: number
+  updated_at: number
+}
+
 // Electron IPC bridge (injected by preload.js)
 declare global {
   interface Window {

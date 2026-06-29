@@ -393,6 +393,8 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             concepts={concepts}
             onPageTextReady={handlePageTextReady}
             onConceptClick={handleConceptClick}
+            documentId={session?.documentId}
+            sessionId={session?.sessionId}
           />
         ) : (
           <div
