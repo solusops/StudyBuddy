@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
 import { TabBar } from "../panel/TabBar"
 import { InfiniteWiki } from "../panel/InfiniteWiki"
+import { ReportCanvas } from "../panel/ReportCanvas"
 import { ScoreBar } from "../panel/ScoreBar"
 import { useGraphStore } from "../../store/graphStore"
 import { useContextStore } from "../../store/contextStore"
@@ -76,7 +77,7 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
 
       {/* Main Tab bar */}
       <TabBar
-        tabs={["Infinite Wiki", "Chat", "Flashcards", "Quiz", "Feynman"]}
+        tabs={["Infinite Wiki", "Chat", "Report", "Flashcards", "Quiz", "Feynman"]}
         active={activeTab}
         onChange={setActiveTab}
       />
@@ -122,6 +123,9 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
         )}
         {activeTab === "Infinite Wiki" && (
           <InfiniteWiki isActive={activeTab === "Infinite Wiki"} sendEvent={sendEvent} />
+        )}
+        {activeTab === "Report" && (
+          <ReportCanvas isActive={activeTab === "Report"} sendEvent={sendEvent} />
         )}
       </div>
     </div>

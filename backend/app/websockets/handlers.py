@@ -15,6 +15,7 @@ from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
 from app.agents.modality_router import ModalityRouter
+from app.agents.report_agent import ReportAgent
 from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.rag.chromadb_client import ChromaDBClient
@@ -40,6 +41,7 @@ _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
 _tutor: TutorAgent | None = None
 _router: ModalityRouter | None = None
+_report: ReportAgent | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
 
@@ -90,6 +92,13 @@ def _get_router() -> ModalityRouter:
     if _router is None:
         _router = ModalityRouter()
     return _router
+
+
+def _get_report() -> ReportAgent:
+    global _report
+    if _report is None:
+        _report = ReportAgent()
+    return _report
 
 
 def get_connection_manager() -> ConnectionManager:
@@ -298,6 +307,55 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             familiarity,
             data.get("topic", ""),
         )
+
+    # ---- REPORT_REQUEST / REPORT_EDIT (Live-Compiling Report Canvas) ----
+    elif event_type in ("REPORT_REQUEST", "REPORT_EDIT"):
+        section_id = data.get("section_id", "")
+        topic = data.get("selection_text") or data.get("topic", "")
+        context_text = data.get("surrounding_context", "")
+        knowledge_mode = data.get("knowledge_mode", "content_only")
+        edit_instruction = data.get("edit_instruction", "") if event_type == "REPORT_EDIT" else ""
+        chunks = await _get_chunks(session_id, topic or "overview", n=5)
+
+        web_context = ""
+        if knowledge_mode == "net_support":
+            results = await _wiki.search_tavily(topic)
+            if results:
+                web_context = "\n\n".join(
+                    f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}" for r in results
+                )
+
+        full = ""
+        async for token in _get_report().stream_section(
+            topic, context_text, chunks, familiarity,
+            knowledge_mode=knowledge_mode, edit_instruction=edit_instruction, web_context=web_context,
+        ):
+            full += token
+            await _cm.send(session_id, "REPORT_TOKEN", {"section_id": section_id, "token": token})
+        await _cm.send(session_id, "REPORT_DONE", {"section_id": section_id})
+
+        # Background: attach a grounded visual if the section warrants one.
+        try:
+            loop = asyncio.get_event_loop()
+            decision = await loop.run_in_executor(
+                None, _get_router().classify, topic, full, chunks, familiarity
+            )
+            if decision.modality != "NONE":
+                ctx_chunks = [{"source": "report section", "text": full}] + chunks
+                if decision.modality == "STATIC_PLOT":
+                    visual = await loop.run_in_executor(
+                        None, _get_tutor().generate_plot, topic, ctx_chunks, familiarity
+                    )
+                else:
+                    anim = "three.js" if decision.recommended_tool == "Three.js" else "canvas"
+                    visual = await loop.run_in_executor(
+                        None, _get_tutor().generate_visual, topic, anim, familiarity, ctx_chunks
+                    )
+                await _cm.send(session_id, "REPORT_SECTION_VISUAL", {
+                    "section_id": section_id, "visual": visual.model_dump(),
+                })
+        except Exception as e:
+            print("Report section visual error:", e)
 
     # ---- GENERATE_VISUAL ------------------------------------------
     elif event_type == "GENERATE_VISUAL":

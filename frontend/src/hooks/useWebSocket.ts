@@ -129,6 +129,15 @@ export function useWebSocket(sessionId: string | null) {
         case "WIKI_VISUAL_PAYLOAD":
           window.dispatchEvent(new CustomEvent("wiki-visual-payload", { detail: msg.data }))
           break
+        case "REPORT_TOKEN":
+          window.dispatchEvent(new CustomEvent("report-token", { detail: msg.data }))
+          break
+        case "REPORT_DONE":
+          window.dispatchEvent(new CustomEvent("report-done", { detail: msg.data }))
+          break
+        case "REPORT_SECTION_VISUAL":
+          window.dispatchEvent(new CustomEvent("report-section-visual", { detail: msg.data }))
+          break
       }
     }
 
