@@ -421,6 +421,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         surrounding_context = data.get("surrounding_context", "")
         familiarity = data.get("familiarity", "high_school")
         parent_context = data.get("parent_context", "")
+        knowledge_mode = data.get("knowledge_mode", "content_only")
         anchor_id = f"wiki_{hash(selection_text) & 0xFFFFFF}"
         chunks = await _get_chunks(session_id, selection_text, n=5)
         cache_key = _cache.make_key("CONTEXT_CARD", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
@@ -432,7 +433,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         else:
             full = ""
             async for token in _wiki.stream_card(
-                selection_text, surrounding_context, chunks, familiarity, parent_context
+                selection_text, surrounding_context, chunks, familiarity, parent_context, knowledge_mode
             ):
                 full += token
                 await _cm.send(session_id, "WIKI_TOKEN", {"token": token})

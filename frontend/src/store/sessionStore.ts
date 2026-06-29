@@ -16,6 +16,7 @@ interface SessionStore {
   sessionId: string | null
   topic: string
   familiarity: FamiliarityLevel
+  knowledgeMode: "content_only" | "net_support"
 
   // Navigation
   activeNodeId: string | null
@@ -40,7 +41,8 @@ interface SessionStore {
   lessonCache: Record<string, string>
 
   // Actions
-  setSession: (id: string, topic: string, familiarity: FamiliarityLevel) => void
+  setSession: (id: string, topic: string, familiarity: FamiliarityLevel, knowledgeMode?: "content_only" | "net_support") => void
+  setKnowledgeMode: (mode: "content_only" | "net_support") => void
   setActiveNode: (id: string, label: string) => void
   setLesson: (lesson: LessonPayload) => void
   setVisual: (visual: HTML5VisualPayload) => void
@@ -64,6 +66,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   sessionId: null,
   topic: "",
   familiarity: "high_school",
+  knowledgeMode: "content_only",
   activeNodeId: null,
   activeNodeLabel: "",
   lesson: null,
@@ -79,7 +82,15 @@ export const useSessionStore = create<SessionStore>((set) => ({
   lessonStreaming: false,
   lessonCache: {},
 
-  setSession: (id, topic, familiarity) => set({ sessionId: id, topic, familiarity }),
+  setSession: (id, topic, familiarity, knowledgeMode) =>
+    set((state) => ({
+      sessionId: id,
+      topic,
+      familiarity,
+      knowledgeMode: knowledgeMode || state.knowledgeMode,
+    })),
+
+  setKnowledgeMode: (mode) => set({ knowledgeMode: mode }),
 
   setActiveNode: (id, label) =>
     set({ activeNodeId: id, activeNodeLabel: label }),

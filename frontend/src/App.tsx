@@ -14,6 +14,7 @@ export interface AppSession {
   sessionId: string
   topic: string
   familiarity: FamiliarityLevel
+  knowledgeMode?: "content_only" | "net_support"
   nodes: NodeData[]
   edges: KnowledgeEdge[]
   contentFiles: string[]
@@ -47,6 +48,9 @@ export default function App() {
               // Restore lesson cache so previously loaded lessons don't need re-fetching
               if (s.lessonCache && Object.keys(s.lessonCache).length > 0) {
                 useSessionStore.getState().setLessonCache(s.lessonCache)
+              }
+              if (s.knowledgeMode) {
+                useSessionStore.getState().setKnowledgeMode(s.knowledgeMode)
               }
               setView("tree")
               return

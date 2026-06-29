@@ -46,7 +46,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const applySession = async (s: AppSession) => {
     setSessionId(s.sessionId)
     setTopic(s.topic)
-    setSession(s.sessionId, s.topic, s.familiarity)
+    setSession(s.sessionId, s.topic, s.familiarity, s.knowledgeMode)
     applyNodes(s.nodes)
     setContentFiles(s.contentFiles)
     setIsIndexing(true)

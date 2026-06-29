@@ -16,6 +16,7 @@ interface Props {
 export function SetupModal({ onSessionReady }: Props) {
   const [topic, setTopic] = useState("")
   const [familiarity, setFamiliarity] = useState<FamiliarityLevel>("high_school")
+  const [knowledgeMode, setKnowledgeMode] = useState<"content_only" | "net_support">("content_only")
   const [files, setFiles] = useState<File[]>([])
   const [dragging, setDragging] = useState(false)
   const [backendReady, setBackendReady] = useState(false)
@@ -95,6 +96,7 @@ export function SetupModal({ onSessionReady }: Props) {
         sessionId: session_id,
         topic: topic.trim() || "Study Session",
         familiarity,
+        knowledgeMode,
         nodes,
         edges: edges ?? [],
         contentFiles: filenames || files.map((f) => f.name),
@@ -221,6 +223,47 @@ export function SetupModal({ onSessionReady }: Props) {
                 {opt.label}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* Knowledge Mode */}
+        <div>
+          <label style={labelStyle}>Knowledge Mode</label>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button
+              onClick={() => setKnowledgeMode("content_only")}
+              title="Only answer using uploaded materials. Grounded and strict."
+              style={{
+                flex: 1,
+                padding: "9px 4px",
+                borderRadius: 8,
+                border: knowledgeMode === "content_only" ? "2px solid #1A3557" : "2px solid #E8E0D5",
+                background: knowledgeMode === "content_only" ? "#EEF3F8" : "transparent",
+                color: knowledgeMode === "content_only" ? "#1A3557" : "#6B7280",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: knowledgeMode === "content_only" ? 600 : 400,
+              }}
+            >
+              Content Only
+            </button>
+            <button
+              onClick={() => setKnowledgeMode("net_support")}
+              title="Search the web if information is missing from your documents."
+              style={{
+                flex: 1,
+                padding: "9px 4px",
+                borderRadius: 8,
+                border: knowledgeMode === "net_support" ? "2px solid #1A3557" : "2px solid #E8E0D5",
+                background: knowledgeMode === "net_support" ? "#EEF3F8" : "transparent",
+                color: knowledgeMode === "net_support" ? "#1A3557" : "#6B7280",
+                cursor: "pointer",
+                fontSize: 14,
+                fontWeight: knowledgeMode === "net_support" ? 600 : 400,
+              }}
+            >
+              Net Support
+            </button>
           </div>
         </div>
 

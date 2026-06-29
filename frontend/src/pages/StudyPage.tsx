@@ -34,7 +34,15 @@ function buildFlowGraph(nodes: NodeData[]): { nodes: Node<NodeData>[]; edges: Ed
   return { nodes: flowNodes, edges }
 }
 
-export function StudyPage({ sessionId, topic, familiarity, initialNodes }: Props) {
+interface Props {
+  sessionId: string
+  topic: string
+  familiarity: FamiliarityLevel
+  knowledgeMode?: "content_only" | "net_support"
+  initialNodes: NodeData[]
+}
+
+export function StudyPage({ sessionId, topic, familiarity, knowledgeMode, initialNodes }: Props) {
   const { setGraph } = useGraphStore()
   const { setSession, setActiveNode, resetNodeData, lesson, setLesson, activeNodeId } = useSessionStore()
   const { sendEvent } = useWebSocket(sessionId)
@@ -42,7 +50,7 @@ export function StudyPage({ sessionId, topic, familiarity, initialNodes }: Props
   const [ending, setEnding] = useState(false)
 
   useEffect(() => {
-    setSession(sessionId, topic, familiarity)
+    setSession(sessionId, topic, familiarity, knowledgeMode)
     const { nodes, edges } = buildFlowGraph(initialNodes)
     setGraph(nodes, edges)
   }, [])

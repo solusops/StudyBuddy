@@ -17,7 +17,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   const [stack, setStack] = useState<WikiPage[]>([])
   const [currentIdx, setCurrentIdx] = useState(0)
   const { selectionText, surroundingContext } = useContextStore()
-  const { familiarity } = useSessionStore()
+  const { familiarity, knowledgeMode } = useSessionStore()
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastFiredRef = useRef("")
 
@@ -36,6 +36,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         surrounding_context: surrounding,
         familiarity,
         parent_context: parentContext,
+        knowledge_mode: knowledgeMode,
       })
     },
     [currentIdx, familiarity, sendEvent, stack.length]
@@ -78,6 +79,20 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     }
   }, [])
 
+  // Clear wiki stack and reset context when Escape is pressed
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === "Escape") {
+        setStack([])
+        setCurrentIdx(0)
+        lastFiredRef.current = ""
+      }
+    }
+    window.addEventListener("keydown", handleEscape)
+    return () => window.removeEventListener("keydown", handleEscape)
+  }, [])
+
   const currentPage = stack[currentIdx]
 
   // Drill-down: user selects text inside the wiki output
@@ -95,51 +110,88 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     // Strip [Source: X, chunk N] citations
     const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
 
-    return cleaned.split(/\n\n+/).map((para, pi) => {
-      const trimmed = para.trim()
-      if (!trimmed) return null
+    const lines = cleaned.split(/\r?\n/)
+    const elements: React.ReactNode[] = []
+    let listItems: string[] = []
+
+    const flushList = (key: string | number) => {
+      if (listItems.length > 0) {
+        elements.push(
+          <ul key={`list-${key}`} style={{ margin: "0 0 12px", paddingLeft: 20, lineHeight: 1.6, color: "#1A1A2E" }}>
+            {listItems.map((item, li) => (
+              <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item) }} />
+            ))}
+          </ul>
+        )
+        listItems = []
+      }
+    }
+
+    lines.forEach((line, index) => {
+      const trimmed = line.trim()
+      if (!trimmed) return
 
       // Headings (## or ###)
       if (trimmed.startsWith("#")) {
+        flushList(index)
         const headerText = trimmed.replace(/^#+\s*/, "")
-        return (
-          <h3 key={pi} style={{
+        elements.push(
+          <h3 key={index} style={{
             fontFamily: "'Libre Caslon Text', Georgia, serif",
             color: "#1A3557",
-            fontSize: 16,
+            fontSize: 18,
             fontWeight: 700,
-            margin: "18px 0 8px 0",
-            borderBottom: "1px solid #E8E0D5",
+            margin: "20px 0 10px 0",
+            borderBottom: "2px solid #E8E0D5",
             paddingBottom: 4
           }}>
             {headerText}
           </h3>
         )
+        return
       }
 
-      // Bullet lists
+      // Bullet points
       if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
-        const items = trimmed.split(/\n/).filter((l) => l.trim())
-        return (
-          <ul key={pi} style={{ margin: "0 0 12px", paddingLeft: 20, lineHeight: 1.6 }}>
-            {items.map((item, li) => (
-              <li key={li} dangerouslySetInnerHTML={{ __html: renderInline(item.replace(/^[*-]\s*/, "")) }} />
-            ))}
-          </ul>
+        const bulletContent = trimmed.replace(/^[*-]\s*/, "")
+        listItems.push(bulletContent)
+        return
+      }
+
+      // Regular line, flush any buffered list first
+      flushList(index)
+
+      // Check if the line starts with one of the key headers (e.g. **Contextual Definition:**)
+      // or similar bold/regular label
+      const matchLabel = trimmed.match(/^(\*\*[^*]+\*\*|[A-Za-z\s]+:)\s*(.*)$/)
+      if (matchLabel) {
+        const label = matchLabel[1].replace(/\*\*/g, "").trim()
+        const content = matchLabel[2].trim()
+        elements.push(
+          <p key={index} style={{ margin: "0 0 12px", lineHeight: 1.6, color: "#1A1A2E" }}>
+            <span style={{ fontWeight: 700, color: "#1A3557", display: "inline-block", marginRight: 6 }}>
+              {label}
+            </span>
+            <span dangerouslySetInnerHTML={{ __html: renderInline(content) }} />
+          </p>
+        )
+      } else {
+        elements.push(
+          <p key={index} style={{ margin: "0 0 12px", lineHeight: 1.6, color: "#1A1A2E" }}
+             dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
         )
       }
-
-      // Default paragraph
-      return (
-        <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.6, color: "#1A1A2E" }}
-           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
-      )
     })
+
+    flushList("trailing")
+    return elements
   }
 
   const renderInline = (text: string): string => {
     // Bold: **text**
     let result = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    // Links: [text](url)
+    result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
     return result
   }
 
