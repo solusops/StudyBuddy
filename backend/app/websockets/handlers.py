@@ -22,14 +22,37 @@ from app.services.student_memory import StudentMemoryService
 from app.services.summary_writer import build_summary_markdown
 from app.websockets.connection_manager import ConnectionManager
 
-# Module-level singletons — replaceable with DI if needed
+# All singletons are lazy — nothing loads at import time so uvicorn binds
+# to the port immediately. Models and clients initialise on first request.
 _cm = ConnectionManager()
-_brain = BrainAgent()
-_tutor = TutorAgent()
-_db = ChromaDBClient()
 _graph_mgr = GraphStateManager()
 _journal = JournalService()
 _memory = StudentMemoryService()
+
+_db: ChromaDBClient | None = None
+_brain: BrainAgent | None = None
+_tutor: TutorAgent | None = None
+
+
+def _get_db() -> ChromaDBClient:
+    global _db
+    if _db is None:
+        _db = ChromaDBClient()
+    return _db
+
+
+def _get_brain() -> BrainAgent:
+    global _brain
+    if _brain is None:
+        _brain = BrainAgent()
+    return _brain
+
+
+def _get_tutor() -> TutorAgent:
+    global _tutor
+    if _tutor is None:
+        _tutor = TutorAgent()
+    return _tutor
 
 
 def get_connection_manager() -> ConnectionManager:
@@ -37,7 +60,7 @@ def get_connection_manager() -> ConnectionManager:
 
 
 def get_db() -> ChromaDBClient:
-    return _db
+    return _get_db()
 
 
 def get_graph_manager() -> GraphStateManager:
@@ -48,10 +71,12 @@ def get_graph_manager() -> GraphStateManager:
 # Helpers                                                             #
 # ------------------------------------------------------------------ #
 
-def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str | None = None):
-    embedding = _db.embedder.embed([query])
+async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str | None = None):
+    db = _get_db()
+    loop = asyncio.get_event_loop()
+    embedding = await loop.run_in_executor(None, db.embedder.embed, [query])
     where = {"type": chunk_type} if chunk_type else None
-    return _db.query(session_id, embedding[0], n_results=n, where=where)
+    return db.query(session_id, embedding[0], n_results=n, where=where)
 
 
 def _safe_get_node(session_id: str, node_id: str) -> NodeData:
@@ -72,9 +97,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- LEARN_NODE -----------------------------------------------
     if event_type == "LEARN_NODE":
         node = _safe_get_node(session_id, node_id)
-        query = _brain.build_rag_query(data.get("node_label", node.label), familiarity)
-        chunks = _get_chunks(session_id, query, n=5)
-        lesson = _tutor.generate_lesson(node, chunks, familiarity)
+        query = _get_brain().build_rag_query(data.get("node_label", node.label), familiarity)
+        chunks = await _get_chunks(session_id, query, n=5)
         _journal.append(
             JournalEntry(
                 session_id=session_id,
@@ -83,11 +107,13 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 data={"node_label": data.get("node_label")},
             )
         )
-        await _cm.send(session_id, "LESSON_PAYLOAD", lesson.model_dump())
+        async for token in _get_tutor().stream_lesson(node, chunks, familiarity):
+            await _cm.send(session_id, "LESSON_TOKEN", {"token": token})
+        await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
 
     # ---- GENERATE_VISUAL ------------------------------------------
     elif event_type == "GENERATE_VISUAL":
-        visual = _tutor.generate_visual(
+        visual = _get_tutor().generate_visual(
             data.get("node_label", node_id),
             data.get("animation_type", "canvas"),
             familiarity,
@@ -97,7 +123,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- CHAT_TURN -----------------------------------------------
     elif event_type == "CHAT_TURN":
         query = data.get("content", "")
-        chunks = _get_chunks(session_id, query, n=3)
+        chunks = await _get_chunks(session_id, query, n=3)
         context = "\n".join(f"[{c['source']}]: {c['text']}" for c in chunks)
         messages = [
             {
@@ -109,7 +135,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             {"role": "user", "content": query},
         ]
         full_response = ""
-        async for token in _tutor._client.stream_complete(messages):
+        async for token in _get_tutor()._client.stream_complete(messages):
             full_response += token
             await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
         _journal.append(
@@ -125,20 +151,20 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- FLASHCARDS_REQUEST --------------------------------------
     elif event_type == "FLASHCARDS_REQUEST":
         # Prefer question chunks; fall back to content if none found
-        chunks = _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
+        chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
         if not chunks:
-            chunks = _get_chunks(session_id, data.get("node_label", node_id), n=8)
-        result = _tutor.generate_flashcards(
+            chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8)
+        result = _get_tutor().generate_flashcards(
             data.get("node_label", node_id), chunks, familiarity
         )
         await _cm.send(session_id, "FLASHCARDS_READY", result.model_dump())
 
     # ---- QUIZ_REQUEST --------------------------------------------
     elif event_type == "QUIZ_REQUEST":
-        chunks = _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
+        chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8, chunk_type="question")
         if not chunks:
-            chunks = _get_chunks(session_id, data.get("node_label", node_id), n=8)
-        result = _tutor.generate_quiz(
+            chunks = await _get_chunks(session_id, data.get("node_label", node_id), n=8)
+        result = _get_tutor().generate_quiz(
             data.get("node_label", node_id), chunks, familiarity
         )
         await _cm.send(session_id, "QUIZ_READY", result.model_dump())
@@ -184,7 +210,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             {"role": "user", "content": data.get("student_text", "")},
         ]
         full = ""
-        async for token in _tutor._client.stream_complete(messages):
+        async for token in _get_tutor()._client.stream_complete(messages):
             full += token
             await _cm.send(session_id, "FEYNMAN_TOKEN", {"token": token})
         _journal.append(
@@ -199,8 +225,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
 
     # ---- INFINITY_WIKI_REQUEST -----------------------------------
     elif event_type == "INFINITY_WIKI_REQUEST":
-        wiki = InfinityWikiAgent()
-        result = await wiki.deep_dive(data.get("node_label", node_id), familiarity)
+        try:
+            wiki = InfinityWikiAgent()
+            result = await wiki.deep_dive(data.get("node_label", node_id), familiarity)
+        except Exception:
+            result = {"video_url": None, "summary": "Deep Dive unavailable — add a YOUTUBE_API_KEY to backend/.env"}
         _journal.append(
             JournalEntry(
                 session_id=session_id,

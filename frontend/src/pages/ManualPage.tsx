@@ -1,0 +1,342 @@
+import { useCallback, useEffect, useRef, useState } from "react"
+import { PDFReader } from "../components/reader/PDFReader"
+import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
+import { useGraphStore } from "../store/graphStore"
+import { useSessionStore } from "../store/sessionStore"
+import { useWebSocket } from "../hooks/useWebSocket"
+import { saveMarkdownFile, sanitizeFilename } from "../lib/fileSystem"
+import type { AppSession } from "../App"
+import type { NodeData } from "../types"
+import type { Edge, Node } from "@xyflow/react"
+
+interface Props {
+  session: AppSession | null
+  onShowTree: () => void
+  onNeedSetup: () => void
+}
+
+export function ManualPage({ session, onShowTree, onNeedSetup }: Props) {
+  const { setGraph } = useGraphStore()
+  const { setSession, resetNodeData, activeNodeId, setActiveNode } = useSessionStore()
+
+  // -- Session bootstrap ------------------------------------------------
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [topic, setTopic] = useState("Study Buddy")
+  const [isIndexing, setIsIndexing] = useState(false)
+  const [contentFiles, setContentFiles] = useState<string[]>([])
+  const [activePDFPath, setActivePDFPath] = useState<string | null>(null)
+  const [activePDFUrl, setActivePDFUrl] = useState<string | null>(null)
+
+  // For the right panel
+  const [activeConcept, setActiveConcept] = useState<string | null>(null)
+  const [concepts, setConcepts] = useState<string[]>([])
+
+  const isElectron = typeof window !== "undefined" && !!window.electronAPI
+
+  useEffect(() => {
+    if (session) {
+      // Session passed from setup modal
+      applySession(session)
+    } else {
+      // Auto-resume from configured library
+      resumeSession()
+    }
+  }, [])
+
+  const applySession = async (s: AppSession) => {
+    setSessionId(s.sessionId)
+    setTopic(s.topic)
+    setSession(s.sessionId, s.topic, s.familiarity)
+    applyNodes(s.nodes)
+    setContentFiles(s.contentFiles)
+    setIsIndexing(true)
+    if (s.contentFiles.length > 0) {
+      await loadFirstPDF(s.contentFiles[0])
+    }
+    // Check indexing status periodically
+    pollIndexing()
+  }
+
+  const resumeSession = async () => {
+    try {
+      const statusResp = await fetch("/library/status")
+      const status = await statusResp.json()
+      if (!status.configured || !status.content_files.length) {
+        onNeedSetup()
+        return
+      }
+
+      // Create a new session
+      const sessionResp = await fetch("/session/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: "Study Session", familiarity: "high_school" }),
+      })
+      const { session_id } = await sessionResp.json()
+      setSessionId(session_id)
+      setSession(session_id, "Study Session", "high_school")
+
+      // Generate tree
+      const startResp = await fetch("/library/start-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id, familiarity: "high_school" }),
+      })
+      const { nodes } = await startResp.json()
+      applyNodes(nodes)
+      setContentFiles(status.content_files)
+      setTopic(status.content_files[0]?.replace(/\.[^.]+$/, "") || "Study Session")
+
+      if (status.content_files.length > 0) {
+        await loadFirstPDF(status.content_files[0])
+      }
+    } catch {
+      onNeedSetup()
+    }
+  }
+
+  const applyNodes = (nodes: NodeData[]) => {
+    const flowNodes: Node<NodeData>[] = nodes.map((n, i) => ({
+      id: n.id,
+      type: "concept",
+      position: { x: i * 200, y: 0 },
+      data: n,
+    }))
+    const edges: Edge[] = nodes.flatMap((n) =>
+      (n.children_ids ?? []).map((cid) => ({
+        id: `${n.id}-${cid}`,
+        source: n.id,
+        target: cid,
+        type: "smoothstep",
+      }))
+    )
+    setGraph(flowNodes, edges)
+  }
+
+  const loadFirstPDF = async (filename: string) => {
+    const status = await fetch("/library/status").then((r) => r.json())
+    const folder = status.content_folder
+    if (!folder) return
+    const filePath = `${folder}/${filename}`.replace(/\\/g, "/")
+    setActivePDFPath(filePath)
+
+    if (isElectron) {
+      const url = await window.electronAPI!.getFileUrl(filePath)
+      setActivePDFUrl(url)
+    } else {
+      // Browser dev mode — can't access filesystem
+      setActivePDFUrl(null)
+    }
+  }
+
+  const pollIndexing = () => {
+    const interval = setInterval(async () => {
+      const status = await fetch("/library/status").then((r) => r.json())
+      if (status.indexed_chunks > 0) {
+        setIsIndexing(false)
+        clearInterval(interval)
+      }
+    }, 2000)
+    setTimeout(() => clearInterval(interval), 120_000)
+  }
+
+  // -- WebSocket ----------------------------------------------------------
+  const { sendEvent } = useWebSocket(sessionId)
+
+  // Listen for session complete
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      const home = isElectron ? await window.electronAPI!.getHomeDir() : "~"
+      await saveMarkdownFile(
+        `${home}/.studybuddy/summaries/${sanitizeFilename(topic)}_Summary.md`,
+        detail.markdown
+      )
+    }
+    window.addEventListener("session-complete", handler)
+    return () => window.removeEventListener("session-complete", handler)
+  }, [topic, isElectron])
+
+  // -- Concept highlighting -----------------------------------------------
+  const handlePageTextReady = useCallback(
+    async (pageNum: number, text: string) => {
+      if (!text.trim() || concepts.length > 0) return  // already have concepts
+      try {
+        const resp = await fetch("/library/highlight-concepts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ page_text: text, familiarity: "high_school" }),
+        })
+        const { concepts: found } = await resp.json()
+        setConcepts((prev) => {
+          const merged = [...new Set([...prev, ...found])]
+          return merged.slice(0, 30)  // cap for performance
+        })
+      } catch { /* ignore */ }
+    },
+    [concepts.length]
+  )
+
+  const handleConceptClick = useCallback(
+    (concept: string) => {
+      setActiveConcept(concept)
+      // Find matching node or use a synthetic ID
+      const { nodes } = useGraphStore.getState()
+      const match = nodes.find((n) =>
+        n.data.label.toLowerCase().includes(concept.toLowerCase()) ||
+        concept.toLowerCase().includes(n.data.label.toLowerCase())
+      )
+      const nodeId = match?.id ?? `concept-${concept.toLowerCase().replace(/\s+/g, "-")}`
+      setActiveNode(nodeId, concept)
+      resetNodeData()
+      // Request lesson for this concept
+      sendEvent("LEARN_NODE", { node_id: nodeId, node_label: concept, familiarity: "high_school" })
+    },
+    [sendEvent, setActiveNode, resetNodeData]
+  )
+
+  const endSession = () => {
+    sendEvent("END_SESSION", { topic, familiarity: "high_school" })
+  }
+
+  // -- Render -------------------------------------------------------------
+  return (
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: "#FAF7F2" }}>
+      {/* Top bar */}
+      <div style={{
+        height: 48,
+        background: "#FFFFFF",
+        borderBottom: "1px solid #E8E0D5",
+        display: "flex",
+        alignItems: "center",
+        padding: "0 16px",
+        gap: 12,
+        flexShrink: 0,
+      }}>
+        {/* App name */}
+        <span style={{ fontFamily: "Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 15, marginRight: 8 }}>
+          Study Buddy
+        </span>
+
+        {/* Document title */}
+        <span style={{ color: "#1A1A2E", fontSize: 13, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {topic}
+        </span>
+
+        {/* Indexing badge */}
+        {isIndexing && (
+          <span style={{
+            background: "#EEF3F8",
+            color: "#4A7FB5",
+            fontSize: 11,
+            padding: "3px 10px",
+            borderRadius: 20,
+            fontWeight: 500,
+          }}>
+            Indexing documents…
+          </span>
+        )}
+
+        {/* File tabs */}
+        <div style={{ display: "flex", gap: 4 }}>
+          {contentFiles.slice(0, 3).map((f) => (
+            <button
+              key={f}
+              onClick={() => loadFirstPDF(f)}
+              style={{
+                background: activePDFPath?.endsWith(f) ? "#EEF3F8" : "transparent",
+                color: activePDFPath?.endsWith(f) ? "#1A3557" : "#6B7280",
+                border: "1px solid",
+                borderColor: activePDFPath?.endsWith(f) ? "#1A3557" : "#E8E0D5",
+                borderRadius: 6,
+                padding: "4px 10px",
+                fontSize: 11,
+                cursor: "pointer",
+                fontWeight: activePDFPath?.endsWith(f) ? 600 : 400,
+                maxWidth: 120,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {f.replace(/\.[^.]+$/, "")}
+            </button>
+          ))}
+        </div>
+
+        {/* Tree button */}
+        <button
+          onClick={onShowTree}
+          style={{
+            background: "transparent",
+            color: "#1A3557",
+            border: "1.5px solid #1A3557",
+            borderRadius: 8,
+            padding: "5px 14px",
+            fontSize: 12,
+            cursor: "pointer",
+            fontWeight: 600,
+          }}
+        >
+          Tree
+        </button>
+
+        {/* End session */}
+        <button
+          onClick={endSession}
+          style={{
+            background: "transparent",
+            color: "#6B7280",
+            border: "1px solid #E8E0D5",
+            borderRadius: 8,
+            padding: "5px 14px",
+            fontSize: 12,
+            cursor: "pointer",
+          }}
+        >
+          End Session
+        </button>
+      </div>
+
+      {/* Main split view */}
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Left: PDF viewer */}
+        {activePDFUrl ? (
+          <PDFReader
+            fileUrl={activePDFUrl}
+            concepts={concepts}
+            onPageTextReady={handlePageTextReady}
+            onConceptClick={handleConceptClick}
+          />
+        ) : (
+          <div style={{
+            flex: 1,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexDirection: "column",
+            gap: 16,
+            color: "#9CA3AF",
+          }}>
+            <div style={{ fontSize: 32 }}>📄</div>
+            <p style={{ margin: 0, fontSize: 14, fontFamily: "Georgia, serif" }}>
+              {isElectron ? "Loading document…" : "Run in Electron to view PDFs"}
+            </p>
+            {!isElectron && (
+              <p style={{ margin: 0, fontSize: 12, color: "#D1C9C0" }}>
+                In browser dev mode, concept highlighting is still active via the study tools.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* Right: Scientific figure panel */}
+        <ScientificFigurePanel
+          activeConcept={activeConcept}
+          activeNodeId={activeNodeId}
+          sendEvent={sendEvent}
+        />
+      </div>
+    </div>
+  )
+}

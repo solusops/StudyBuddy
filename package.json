@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix frontend\" \"cross-env NODE_ENV=development electron .\"",
+    "dev": "concurrently -n frontend,backend -c cyan,yellow \"npm run dev --prefix frontend\" \"uv run --directory backend uvicorn app.main:app --reload --host 127.0.0.1 --port 8765\"",
+    "dev:electron": "concurrently \"npm run dev --prefix frontend\" \"cross-env NODE_ENV=development electron .\"",
     "build": "npm run build --prefix frontend && electron-forge make"
   },
   "devDependencies": {

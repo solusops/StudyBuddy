@@ -89,6 +89,84 @@ class BrainAgent:
             for i, sn in enumerate(blueprint.nodes)
         ]
 
+    def extract_curriculum_from_documents(
+        self,
+        document_overviews: List[Dict[str, str]],
+        familiarity: str,
+        topic_hint: str = "",
+        memory_context: str = "",
+    ) -> List[NodeData]:
+        """Instant tree generation from document structure (headings/TOC/first pages).
+
+        Unlike extract_curriculum(), this does NOT require chunking or RAG — it reads
+        document headings and first pages directly. Returns a tree in ~2s.
+        """
+        all_structure = "\n\n---\n\n".join(
+            f"Document: {d['filename']}\n{d['structure_text']}"
+            for d in document_overviews
+        )
+        familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        topic_note = f"The student wants to study: {topic_hint}\n\n" if topic_hint else ""
+        memory_note = (
+            f"Prior student knowledge:\n{memory_context}\n\n" if memory_context else ""
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a curriculum organiser. {familiarity_note}\n"
+                    f"{topic_note}{memory_note}"
+                    "Read the provided document structure (headings, table of contents, first pages) "
+                    "and derive the curriculum tree. "
+                    "Use ONLY topics evidenced in the documents. "
+                    "Return 6-25 nodes ordered foundational → advanced, with parent_id links."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Document structure:\n{all_structure}\n\n"
+                    "Extract concept nodes. Each: id (n1, n2...), label, brief description, "
+                    "depth (1=chapter, 2=section, 3=topic), optional parent_id."
+                ),
+            },
+        ]
+        blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        return [
+            NodeData(
+                id=sn.id,
+                label=sn.label,
+                description=sn.description,
+                depth=sn.depth,
+                parent_id=sn.parent_id,
+                status="ACTIVE" if i == 0 else "LOCKED",
+            )
+            for i, sn in enumerate(blueprint.nodes)
+        ]
+
+    def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:
+        """Given a page of text, return a list of key concept phrases to highlight."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a concept identifier. Extract 3-8 key concept phrases from the "
+                    "provided text passage. Return only the exact phrases as they appear in the text — "
+                    "no paraphrase, no addition. Short noun phrases preferred."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Text passage:\n{page_text[:3000]}\n\nList key concept phrases (exact matches from the text).",
+            },
+        ]
+
+        class _ConceptList(BaseModel):
+            concepts: List[str]
+
+        result = self._client.structured_complete(messages, _ConceptList)
+        return result.concepts
+
     def build_rag_query(self, node_label: str, familiarity: str) -> str:
         note = FAMILIARITY_NOTES.get(familiarity, "")
         return f"{node_label} {note} explanation concepts"

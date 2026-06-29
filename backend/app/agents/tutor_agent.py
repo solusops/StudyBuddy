@@ -73,6 +73,39 @@ class TutorAgent:
     # Lesson                                                               #
     # ------------------------------------------------------------------ #
 
+    async def stream_lesson(
+        self,
+        node: NodeData,
+        chunks: List[Dict[str, Any]],
+        familiarity: str,
+    ):
+        """Async generator that yields lesson text tokens for streaming to the client."""
+        chunk_text = "\n\n".join(
+            f"[Source: {c['source']}, chunk {c.get('chunk_index', i)}]\n{c['text']}"
+            for i, c in enumerate(chunks)
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a Cognitive Translator. Use ONLY the provided source material. "
+                    "Write a flowing lesson with two clearly separated sections:\n"
+                    "**Concept** — an intuitive intro tailored to the student's level.\n"
+                    "**From the Source** — cited facts using inline [Source: X, chunk N] citations. "
+                    "Never hallucinate. If something isn't covered, say so."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Teach '{node.label}' at {familiarity} level.\n\n"
+                    f"SOURCE MATERIAL:\n{chunk_text}"
+                ),
+            },
+        ]
+        async for token in self._client.stream_complete(messages):
+            yield token
+
     def generate_lesson(
         self,
         node: NodeData,

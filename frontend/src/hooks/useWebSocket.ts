@@ -5,7 +5,7 @@ import type { Flashcard, MCQ, NodePatch, WSMessage } from "../types"
 
 // In dev, Vite proxies /ws/* to the backend. In Electron prod, use direct localhost.
 const WS_BASE = window.location.protocol === "file:"
-  ? "ws://127.0.0.1:8000"
+  ? "ws://127.0.0.1:8765"
   : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
 
 export function useWebSocket(sessionId: string | null) {
@@ -16,6 +16,8 @@ export function useWebSocket(sessionId: string | null) {
     setVisual,
     setFlashcards,
     setQuizQuestions,
+    appendLessonToken,
+    commitLesson,
     appendChatToken,
     commitChatResponse,
     appendFeynmanToken,
@@ -41,6 +43,12 @@ export function useWebSocket(sessionId: string | null) {
       const msg: WSMessage = JSON.parse(event.data)
 
       switch (msg.type) {
+        case "LESSON_TOKEN":
+          appendLessonToken((msg.data as { token: string }).token)
+          break
+        case "LESSON_DONE":
+          commitLesson((msg.data as { visual_suggestion: string }).visual_suggestion ?? "canvas")
+          break
         case "LESSON_PAYLOAD":
           setLesson(msg.data as unknown as Parameters<typeof setLesson>[0])
           break

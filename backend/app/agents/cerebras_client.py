@@ -60,7 +60,24 @@ class CerebrasClient:
 
     def _build_schema(self, model: Type[BaseModel]) -> Dict[str, Any]:
         raw = model.model_json_schema()
-        raw.pop("$defs", None)
+        defs = raw.pop("$defs", {})
+
+        def _inline(obj: Any) -> Any:
+            """Recursively replace every {"$ref": "#/$defs/Name"} with a copy of
+            the referenced definition. Cerebras strict mode rejects $ref, so the
+            schema must be fully self-contained."""
+            if isinstance(obj, list):
+                return [_inline(v) for v in obj]
+            if not isinstance(obj, dict):
+                return obj
+            ref = obj.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                target = defs.get(ref.split("/")[-1], {})
+                merged = {**target, **{k: v for k, v in obj.items() if k != "$ref"}}
+                return _inline(merged)
+            return {k: _inline(v) for k, v in obj.items()}
+
+        raw = _inline(raw)
         raw["additionalProperties"] = False
 
         def _fix(obj: Any) -> None:
@@ -69,7 +86,11 @@ class CerebrasClient:
             if obj.get("type") == "object":
                 obj.setdefault("additionalProperties", False)
             for v in obj.values():
-                _fix(v)
+                if isinstance(v, list):
+                    for item in v:
+                        _fix(item)
+                else:
+                    _fix(v)
 
         _fix(raw)
         return raw

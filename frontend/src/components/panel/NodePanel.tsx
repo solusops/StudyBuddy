@@ -15,7 +15,7 @@ interface Props {
 
 export function NodePanel({ sendEvent, onClose }: Props) {
   const { nodes } = useGraphStore()
-  const { activeNodeId, activeNodeLabel, lesson, visual, familiarity } = useSessionStore()
+  const { activeNodeId, activeNodeLabel, lesson, visual, familiarity, streamingLesson, lessonStreaming } = useSessionStore()
   const [activeTab, setActiveTab] = useState<PanelTab>("Lesson")
   const [deepDiveResult, setDeepDiveResult] = useState<{ video_url: string | null; summary: string } | null>(null)
   const [deepDiveLoading, setDeepDiveLoading] = useState(false)
@@ -115,22 +115,14 @@ export function NodePanel({ sendEvent, onClose }: Props) {
       <div style={{ flex: 1, padding: "16px 20px", overflow: "auto" }}>
         {activeTab === "Lesson" && (
           <div style={{ color: "white" }}>
-            {lesson ? (
+            {lessonStreaming ? (
+              <p style={{ fontSize: 13, lineHeight: 1.8, color: "#e2e8f0", whiteSpace: "pre-wrap" }}>
+                {streamingLesson}
+                <span style={{ display: "inline-block", width: 2, height: "1em", background: "#3b82f6", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
+              </p>
+            ) : lesson ? (
               <>
-                <h3 style={{ color: "#3b82f6", fontSize: 14, margin: "0 0 8px" }}>Overview</h3>
-                <p style={{ fontSize: 13, lineHeight: 1.6, color: "#e2e8f0" }}>{lesson.anchor}</p>
-                <h3 style={{ color: "#3b82f6", fontSize: 14, margin: "16px 0 8px" }}>Deep Explanation</h3>
-                <p style={{ fontSize: 13, lineHeight: 1.6, color: "#e2e8f0", whiteSpace: "pre-wrap" }}>{lesson.grounded_truth}</p>
-                {lesson.citations.length > 0 && (
-                  <>
-                    <h3 style={{ color: "#64748b", fontSize: 12, margin: "16px 0 6px" }}>Sources</h3>
-                    <ul style={{ margin: 0, padding: "0 0 0 16px" }}>
-                      {lesson.citations.map((c, i) => (
-                        <li key={i} style={{ color: "#64748b", fontSize: 11 }}>{c}</li>
-                      ))}
-                    </ul>
-                  </>
-                )}
+                <p style={{ fontSize: 13, lineHeight: 1.8, color: "#e2e8f0", whiteSpace: "pre-wrap" }}>{lesson.grounded_truth}</p>
                 {/* Deep Dive */}
                 <div style={{ marginTop: 20, borderTop: "1px solid #1e293b", paddingTop: 16 }}>
                   <button onClick={handleDeepDive} disabled={deepDiveLoading} style={{ background: "#0f172a", color: "#f59e0b", border: "1px solid #f59e0b", borderRadius: 6, padding: "6px 14px", cursor: "pointer", fontSize: 12 }}>

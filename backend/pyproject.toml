@@ -11,15 +11,15 @@ dependencies = [
     "cerebras-cloud-sdk>=1.19.0",
     "chromadb>=0.5.3",
     "langchain-text-splitters>=0.2.4",
-    "sentence-transformers>=3.0.1",
     "python-multipart>=0.0.9",
+    "python-dotenv>=1.0.0",
     "httpx>=0.27.0",
     "youtube-transcript-api>=0.6.2",
     "google-api-python-client>=2.137.0",
     "pypdf>=4.3.0",
     "python-docx>=1.1.2",
-    "cognee==0.1.39",
-    "lancedb>=0.6.13",
+    # "cognee==0.1.39",   # v2 — cross-session memory, re-enable when ready
+    # "lancedb>=0.6.13",  # v2 — required by cognee
 ]
 
 [dependency-groups]

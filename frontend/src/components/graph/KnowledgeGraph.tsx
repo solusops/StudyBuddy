@@ -1,19 +1,53 @@
-import { Background, Controls, MiniMap, ReactFlow } from "@xyflow/react"
+import { useEffect } from "react"
+import { Background, Controls, ReactFlow, useEdgesState, useNodesState } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
+import dagre from "@dagrejs/dagre"
+import type { Edge, Node } from "@xyflow/react"
 import { ConceptNode } from "./ConceptNode"
 import { useGraphStore } from "../../store/graphStore"
 import { useSessionStore } from "../../store/sessionStore"
 import type { NodeData } from "../../types"
 
 const nodeTypes = { concept: ConceptNode }
+const NODE_W = 180
+const NODE_H = 64
+
+function applyDagreLayout(
+  nodes: Node<NodeData>[],
+  edges: Edge[]
+): { nodes: Node<NodeData>[]; edges: Edge[] } {
+  const g = new dagre.graphlib.Graph()
+  g.setDefaultEdgeLabel(() => ({}))
+  g.setGraph({ rankdir: "TB", nodesep: 60, ranksep: 80, marginx: 40, marginy: 40 })
+
+  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
+  edges.forEach((e) => g.setEdge(e.source, e.target))
+  dagre.layout(g)
+
+  const laid = nodes.map((n) => {
+    const pos = g.node(n.id)
+    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } }
+  })
+  return { nodes: laid, edges }
+}
 
 interface Props {
   onNodeClick: (id: string, label: string) => void
 }
 
 export function KnowledgeGraph({ onNodeClick }: Props) {
-  const { nodes, edges } = useGraphStore()
+  const { nodes: storeNodes, edges: storeEdges } = useGraphStore()
   const { setActiveNode } = useSessionStore()
+  const [nodes, setNodes, onNodesChange] = useNodesState<NodeData>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+
+  // Recompute dagre layout whenever the store graph changes
+  useEffect(() => {
+    if (!storeNodes.length) return
+    const { nodes: laid, edges: laidEdges } = applyDagreLayout(storeNodes, storeEdges)
+    setNodes(laid)
+    setEdges(laidEdges)
+  }, [storeNodes, storeEdges])
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
@@ -21,6 +55,8 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         onNodeClick={(_, node) => {
           const data = node.data as NodeData
           if (data.status === "LOCKED") return
@@ -28,17 +64,12 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
           onNodeClick(node.id, data.label)
         }}
         fitView
+        fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
+        defaultEdgeOptions={{ type: "smoothstep", style: { stroke: "#D1C9C0", strokeWidth: 1.5 } }}
       >
-        <Background color="#1e293b" gap={24} />
-        <Controls />
-        <MiniMap
-          nodeColor={(n) => {
-            const d = n.data as NodeData
-            return d?.status === "MASTERED" ? "#22c55e" : "#3b82f6"
-          }}
-          style={{ background: "#0f172a" }}
-        />
+        <Background color="#E8E0D5" gap={24} style={{ background: "#FAF7F2" }} />
+        <Controls style={{ background: "#FFFFFF", border: "1px solid #E8E0D5", borderRadius: 8 }} />
       </ReactFlow>
     </div>
   )

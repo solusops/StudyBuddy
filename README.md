@@ -43,19 +43,27 @@ cp backend/.env.example backend/.env
 
 ## Running
 
-### Full app (Electron + React + Python together)
+### Dev mode (Vite + Python, browser)
 
 ```bash
 npm run dev
 ```
 
-Electron opens a window. Python FastAPI starts automatically on `http://127.0.0.1:8000`. Vite dev server runs on `http://localhost:5173`.
+Starts both Vite (`http://localhost:5173`) and uvicorn (`http://127.0.0.1:8765`) concurrently. Open the browser URL.
+
+### Electron shell (full desktop app)
+
+```bash
+npm run dev:electron
+```
+
+Launches Electron (which spawns Python internally) + Vite. Use this to test IPC file saves.
 
 ### Backend only
 
 ```bash
 cd backend
-uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8765
 ```
 
 ### Frontend only (browser, no Electron)
@@ -109,6 +117,7 @@ npx vitest run src/store/__tests__/
 ## Project structure
 
 ```
+
 StudyBuddy/
 ├── electron/           # Electron main process + preload IPC bridge
 ├── backend/
@@ -134,7 +143,7 @@ StudyBuddy/
 
 ## Key constraints
 
-- **No free lunch** — Gemma 4 only organises and rephrases your uploaded content. It never generates facts from its own weights.
+- Gemma 4 only organises and rephrases your uploaded content. It never generates facts from its own weights.
 - Every AI answer cites its source: `[Source: filename, chunk N]`
 - Node mastery scores are monotone non-decreasing — they can only go up
 - All student memory stays local (`~/.studybuddy/`) — nothing goes to the cloud

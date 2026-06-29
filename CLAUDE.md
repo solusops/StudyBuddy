@@ -25,7 +25,7 @@ npm install --prefix frontend      # React deps
 npm run dev
 ```
 
-Backend only: `cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000`
+Backend only: `cd backend && uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8765`
 Frontend only: `cd frontend && npm run dev`
 
 ## Running Tests
@@ -46,8 +46,8 @@ cd frontend && npx vitest run src/store/__tests__/       # single dir
 
 Three processes at runtime:
 
-- **Electron main** (`electron/main.js`) — spawns Python on port 8000, owns the BrowserWindow, exposes file-system IPC via `contextBridge`
-- **Vite/React renderer** — `http://localhost:5173` in dev, `dist/index.html` in prod. Connects to backend at hardcoded `http://127.0.0.1:8000` / `ws://127.0.0.1:8000` (no env var in prod)
+- **Electron main** (`electron/main.js`) — spawns Python on port 8765, owns the BrowserWindow, exposes file-system IPC via `contextBridge`
+- **Vite/React renderer** — `http://localhost:5173` in dev, `dist/index.html` in prod. Connects to backend at hardcoded `http://127.0.0.1:8765` / `ws://127.0.0.1:8765` (no env var in prod)
 - **FastAPI backend** — all agents, RAG, WebSocket dispatch
 
 ### Two Memory Layers — the most important design decision

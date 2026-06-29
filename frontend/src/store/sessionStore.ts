@@ -33,6 +33,8 @@ interface SessionStore {
   // Streaming state
   streamingChat: string
   streamingFeynman: string
+  streamingLesson: string
+  lessonStreaming: boolean
 
   // Actions
   setSession: (id: string, topic: string, familiarity: FamiliarityLevel) => void
@@ -41,6 +43,8 @@ interface SessionStore {
   setVisual: (visual: HTML5VisualPayload) => void
   setFlashcards: (cards: Flashcard[]) => void
   setQuizQuestions: (qs: MCQ[]) => void
+  appendLessonToken: (token: string) => void
+  commitLesson: (visualSuggestion: string) => void
   appendChatToken: (token: string) => void
   commitChatResponse: () => void
   appendFeynmanToken: (token: string) => void
@@ -67,6 +71,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
   chatDraft: "",
   streamingChat: "",
   streamingFeynman: "",
+  streamingLesson: "",
+  lessonStreaming: false,
 
   setSession: (id, topic, familiarity) => set({ sessionId: id, topic, familiarity }),
 
@@ -77,6 +83,21 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setVisual: (visual) => set({ visual }),
   setFlashcards: (cards) => set({ flashcards: cards }),
   setQuizQuestions: (qs) => set({ quizQuestions: qs }),
+
+  appendLessonToken: (token) =>
+    set((s) => ({ streamingLesson: s.streamingLesson + token, lessonStreaming: true })),
+
+  commitLesson: (visualSuggestion) =>
+    set((s) => ({
+      lesson: {
+        anchor: "",
+        grounded_truth: s.streamingLesson,
+        citations: [],
+        visual_suggestion: visualSuggestion,
+      },
+      streamingLesson: "",
+      lessonStreaming: false,
+    })),
 
   appendChatToken: (token) =>
     set((s) => ({ streamingChat: s.streamingChat + token })),
@@ -121,6 +142,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
       chatDraft: "",
       streamingChat: "",
       streamingFeynman: "",
+      streamingLesson: "",
+      lessonStreaming: false,
     }),
 
   reset: () =>
@@ -139,5 +162,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       chatDraft: "",
       streamingChat: "",
       streamingFeynman: "",
+      streamingLesson: "",
+      lessonStreaming: false,
     }),
 }))

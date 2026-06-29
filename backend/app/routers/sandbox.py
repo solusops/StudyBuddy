@@ -4,7 +4,14 @@ from pydantic import BaseModel
 from app.agents.tutor_agent import TutorAgent
 
 router = APIRouter(prefix="/sandbox", tags=["sandbox"])
-_tutor = TutorAgent()
+_tutor: TutorAgent | None = None
+
+
+def _get_tutor() -> TutorAgent:
+    global _tutor
+    if _tutor is None:
+        _tutor = TutorAgent()
+    return _tutor
 
 
 class RepairRequest(BaseModel):
@@ -16,5 +23,5 @@ class RepairRequest(BaseModel):
 
 @router.post("/repair")
 def repair_visual(req: RepairRequest):
-    visual = _tutor.repair_visual(req.original_html, req.error_message)
+    visual = _get_tutor().repair_visual(req.original_html, req.error_message)
     return {"visual": visual.model_dump()}
