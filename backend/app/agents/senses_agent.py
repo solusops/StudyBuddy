@@ -5,6 +5,8 @@ Images must be base64-encoded PNG data URIs — hosted URLs not supported.
 """
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 from app.agents.cerebras_client import CerebrasClient
@@ -16,6 +18,12 @@ class InsightPayload(BaseModel):
     summary: str
     observations: list[str]
     suggested_questions: list[str]
+
+
+class RegionDescription(BaseModel):
+    type: Literal["figure", "plot", "diagram", "table", "equation", "other"]
+    caption: str  # one-line description of what the region shows
+    extracted_content: str  # LaTeX for equations, markdown table for tables, else a short description
 
 
 class SensesAgent:
@@ -57,4 +65,39 @@ class SensesAgent:
         ]
         return self._client.structured_complete(
             messages, InsightPayload, model=VISION_MODEL_ID
+        )
+
+    def describe_region(self, image_base64: str, type_hint: str = "") -> RegionDescription:
+        """Read a cropped page region and return its type, caption, and extracted content.
+
+        For a formula → LaTeX; for a table → GitHub-markdown table; otherwise a
+        short description. Used to make figures/tables/formulas chat- and wiki-ready.
+        """
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{image_base64}"},
+                    },
+                    {
+                        "type": "text",
+                        "text": (
+                            "This is a cropped region from an academic paper"
+                            + (f" (likely a {type_hint})" if type_hint else "")
+                            + ".\n"
+                            "1. Classify its type.\n"
+                            "2. Give a one-line caption of what it shows.\n"
+                            "3. extracted_content: if it is a mathematical formula, output ONLY "
+                            "valid LaTeX. If it is a table, output it as a GitHub-markdown table. "
+                            "Otherwise give a 1-2 sentence factual description. "
+                            "Transcribe only what is visible — do not invent data."
+                        ),
+                    },
+                ],
+            }
+        ]
+        return self._client.structured_complete(
+            messages, RegionDescription, model=VISION_MODEL_ID
         )

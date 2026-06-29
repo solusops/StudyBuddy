@@ -255,12 +255,18 @@ async def upload_and_start(
     # Register uploads dir as the content folder so /library/status sees the files
     save_settings({"content_folder": uploads_dir})
 
-    # Background: chunk full documents into LIBRARY_COLLECTION for RAG
+    # Background: chunk full documents into LIBRARY_COLLECTION for RAG.
+    # Clear this session's prior chunks first so new content fully replaces old
+    # (single-PDF-per-session: no bleed from a previously studied document).
     db = get_db()
+    db.delete_where(LIBRARY_COLLECTION, {"session_id": session_id})
 
     def _chunk_all():
         for content, filename in file_store:
-            ingest_file(content, filename, LIBRARY_COLLECTION, db=db)
+            ingest_file(
+                content, filename, LIBRARY_COLLECTION, db=db,
+                skip_if_indexed=False, session_id=session_id,
+            )
 
     background_tasks.add_task(_chunk_all)
 
@@ -329,7 +335,10 @@ async def refine_tree(req: RefineTreeRequest):
     query_emb = await loop.run_in_executor(
         None, db.embedder.embed, ["main topics overview summary table of contents"]
     )
-    chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
+    chunks = db.query(
+        LIBRARY_COLLECTION, query_emb[0], n_results=20,
+        where={"session_id": req.session_id},
+    )
 
     brain = _get_brain()
 

@@ -19,6 +19,18 @@ interface Props {
   code: string
 }
 
+// Mermaid can't parse node labels containing characters like ()/{} unless they're
+// quoted. Models routinely emit `A[O(n)]`; auto-quote any unquoted [..]/(..) label
+// that contains risky characters so the diagram renders instead of erroring.
+function sanitizeMermaid(code: string): string {
+  // Quote square-bracket node labels containing risky chars, e.g. A[O(n)] -> A["O(n)"].
+  return code.replace(/\[([^\]\n]+)\]/g, (_, inner: string) => {
+    if (inner.startsWith('"') && inner.endsWith('"')) return `[${inner}]`
+    if (/[()<>{}]/.test(inner)) return `["${inner.replace(/"/g, "'")}"]`
+    return `[${inner}]`
+  })
+}
+
 /** Renders a mermaid diagram, falling back to the raw code on syntax error. */
 export function MermaidBlock({ code }: Props) {
   const [svg, setSvg] = useState<string>("")
@@ -28,7 +40,7 @@ export function MermaidBlock({ code }: Props) {
   useEffect(() => {
     let cancelled = false
     mermaid
-      .render(idRef.current, code)
+      .render(idRef.current, sanitizeMermaid(code))
       .then(({ svg }) => {
         if (!cancelled) {
           setSvg(svg)

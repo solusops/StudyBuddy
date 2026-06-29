@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
 import { TabBar } from "../panel/TabBar"
 import { InfiniteWiki } from "../panel/InfiniteWiki"
@@ -23,6 +23,16 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
 
   // Unified tab controller for all 5 tabs
   const [activeTab, setActiveTab] = useState("Infinite Wiki")
+
+  // A region/figure click can request opening a specific tool tab.
+  useEffect(() => {
+    const onOpenTool = (e: Event) => {
+      const tool = (e as CustomEvent).detail?.tool
+      if (tool === "Infinite Wiki" || tool === "Chat") setActiveTab(tool)
+    }
+    window.addEventListener("studybuddy-open-tool", onOpenTool)
+    return () => window.removeEventListener("studybuddy-open-tool", onOpenTool)
+  }, [])
 
   const node = nodes.find((n) => n.id === activeNodeId)
 

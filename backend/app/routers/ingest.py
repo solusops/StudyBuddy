@@ -55,8 +55,13 @@ async def ingest_file_endpoint(
     filename = file.filename or "upload"
     db = get_db()
     loop = asyncio.get_event_loop()
+    # Tag chunks with the session so retrieval scopes to this session's content only.
     count = await loop.run_in_executor(
-        None, ingest_file, content, filename, LIBRARY_COLLECTION, chunk_type, db
+        None,
+        lambda: ingest_file(
+            content, filename, LIBRARY_COLLECTION, chunk_type, db,
+            skip_if_indexed=False, session_id=session_id,
+        ),
     )
     return {"chunks_indexed": count, "filename": file.filename}
 
@@ -64,8 +69,8 @@ async def ingest_file_endpoint(
 @router.post("/text")
 def ingest_text_endpoint(body: TextIngestRequest):
     count = ingest_text(
-        body.text, body.source_label, body.session_id,
-        chunk_type=body.chunk_type, db=get_db()
+        body.text, body.source_label, LIBRARY_COLLECTION,
+        chunk_type=body.chunk_type, db=get_db(), session_id=body.session_id,
     )
     return {"chunks_indexed": count}
 
@@ -81,7 +86,11 @@ async def finalize_ingest(body: FinalizeRequest):
         db = get_db()
         loop = asyncio.get_event_loop()
         query_emb = await loop.run_in_executor(None, db.embedder.embed, ["main topics overview"])
-        chunks = db.query(LIBRARY_COLLECTION, query_emb[0], n_results=20)
+        # Scope to THIS session's content only — never pull chunks from other PDFs/sessions.
+        chunks = db.query(
+            LIBRARY_COLLECTION, query_emb[0], n_results=20,
+            where={"session_id": body.session_id},
+        )
         if not chunks:
             raise HTTPException(400, "No content indexed. Upload at least one content file.")
 

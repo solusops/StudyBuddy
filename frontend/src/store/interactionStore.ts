@@ -29,12 +29,14 @@ export interface CommittedAnnotation {
 
 interface InteractionStore {
   cursorMode: CursorMode
+  regionsOn: boolean
   activeSelectionGroup: SelectionSnippet[]
   activeAnnotationId: string | null
   committedAnnotations: CommittedAnnotation[]
   documentId: string | null
 
   setCursorMode: (mode: CursorMode) => void
+  toggleRegions: () => void
   pushSnippet: (snippet: SelectionSnippet) => void
   clearGroup: () => void
   setActiveAnnotation: (id: string | null) => void
@@ -53,6 +55,7 @@ const initialPositions = savedPositions ? JSON.parse(savedPositions) : {}
 
 export const useInteractionStore = create<InteractionStore>((set) => ({
   cursorMode: "DEFAULT",
+  regionsOn: false,
   activeSelectionGroup: [],
   activeAnnotationId: null,
   committedAnnotations: [],
@@ -60,6 +63,7 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
   notePositions: initialPositions,
 
   setCursorMode: (mode) => set({ cursorMode: mode }),
+  toggleRegions: () => set((s) => ({ regionsOn: !s.regionsOn })),
   pushSnippet: (snippet) =>
     set((s) => ({ activeSelectionGroup: [...s.activeSelectionGroup, snippet] })),
   clearGroup: () => set({ activeSelectionGroup: [] }),

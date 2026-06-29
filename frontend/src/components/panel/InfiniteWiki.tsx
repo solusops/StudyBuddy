@@ -1,8 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from "react"
+import katex from "katex"
+import "katex/dist/katex.min.css"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
 import { VisualSandbox } from "./VisualSandbox"
 import type { AnimationType, HTML5VisualPayload } from "../../types"
+
+// Render $$display$$, $inline$, \[...\], \(...\) LaTeX to HTML; leave bad math as-is.
+function renderMath(text: string): string {
+  const tex = (src: string, displayMode: boolean) => {
+    try {
+      return katex.renderToString(src, { displayMode, throwOnError: false })
+    } catch {
+      return displayMode ? `$$${src}$$` : `$${src}$`
+    }
+  }
+  return text
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => tex(m, true))
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => tex(m, true))
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => tex(m, false))
+    .replace(/\$([^$\n]+?)\$/g, (_, m) => tex(m, false))
+}
 
 interface VisualOffer {
   modality: "STATIC_PLOT" | "INTERACTIVE_SIMULATION"
@@ -256,8 +274,10 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   }
 
   const renderInline = (text: string): string => {
+    // Math first (KaTeX HTML must not be touched by the markdown regexes below).
+    let result = renderMath(text)
     // Bold: **text**
-    let result = text.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     // Links: [text](url)
     result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
     return result

@@ -1,0 +1,117 @@
+"""Interactive paper regions — segment a PDF page into clickable figures/tables/formulas.
+
+Pipeline: PyMuPDF locates regions (exact geometry) → Gemma vision describes each
+crop concurrently (caption / LaTeX / markdown table). Results are cached per page.
+
+The PDF itself is cached server-side by document_id on first receipt, so the
+frontend only uploads the bytes once per session.
+"""
+from __future__ import annotations
+
+import asyncio
+import base64
+import json
+import os
+from typing import List, Optional
+
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel
+
+from app.agents.senses_agent import SensesAgent
+from app.services.layout_service import page_has_text, segment_page
+
+router = APIRouter(prefix="/regions", tags=["regions"])
+
+_PDF_DIR = os.path.expanduser("~/.studybuddy/pdfs")
+_REGION_DIR = os.path.expanduser("~/.studybuddy/regions")
+os.makedirs(_PDF_DIR, exist_ok=True)
+os.makedirs(_REGION_DIR, exist_ok=True)
+
+_senses: Optional[SensesAgent] = None
+
+
+def _get_senses() -> SensesAgent:
+    global _senses
+    if _senses is None:
+        _senses = SensesAgent()
+    return _senses
+
+
+class SegmentRequest(BaseModel):
+    document_id: str
+    page_number: int  # 0-based
+    pdf_base64: Optional[str] = None  # sent once when the server hasn't cached the PDF yet
+
+
+def _pdf_path(document_id: str) -> str:
+    return os.path.join(_PDF_DIR, f"{document_id}.pdf")
+
+
+def _region_cache_path(document_id: str) -> str:
+    return os.path.join(_REGION_DIR, f"{document_id}.json")
+
+
+def _load_region_cache(document_id: str) -> dict:
+    p = _region_cache_path(document_id)
+    if os.path.exists(p):
+        try:
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_region_cache(document_id: str, cache: dict) -> None:
+    with open(_region_cache_path(document_id), "w", encoding="utf-8") as f:
+        json.dump(cache, f)
+
+
+@router.post("/segment")
+async def segment(req: SegmentRequest):
+    # Serve from cache if this page was already segmented.
+    cache = _load_region_cache(req.document_id)
+    page_key = str(req.page_number)
+    if page_key in cache:
+        return {"regions": cache[page_key], "cached": True}
+
+    # Resolve the PDF bytes: cached on disk, or freshly uploaded in this request.
+    pdf_path = _pdf_path(req.document_id)
+    if req.pdf_base64:
+        with open(pdf_path, "wb") as f:
+            f.write(base64.b64decode(req.pdf_base64))
+    if not os.path.exists(pdf_path):
+        # Frontend must resend with pdf_base64.
+        raise HTTPException(status_code=409, detail="pdf_not_cached")
+
+    loop = asyncio.get_event_loop()
+
+    # Scanned page with no text layer → no reliable geometry; signal vision-only fallback.
+    has_text = await loop.run_in_executor(None, page_has_text, None, pdf_path, req.page_number)
+
+    regions, _ = await loop.run_in_executor(
+        None, lambda: segment_page(file_path=pdf_path, page_number=req.page_number)
+    )
+
+    # Describe each region crop concurrently (Cerebras throughput is not the bottleneck).
+    async def describe(region: dict) -> dict:
+        try:
+            desc = await loop.run_in_executor(
+                None, _get_senses().describe_region, region["crop_base64"], region["type"]
+            )
+            return {
+                **region,
+                "type": desc.type,
+                "caption": desc.caption,
+                "extracted_content": desc.extracted_content,
+            }
+        except Exception as e:
+            print("describe_region error:", e)
+            return {**region, "caption": "", "extracted_content": ""}
+
+    described = await asyncio.gather(*(describe(r) for r in regions)) if regions else []
+    described = list(described)
+
+    cache[page_key] = described
+    _save_region_cache(req.document_id, cache)
+    return {"regions": described, "cached": False, "has_text_layer": has_text}

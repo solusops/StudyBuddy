@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import { useInteractionStore, type CommittedAnnotation, type SelectionSnippet } from "../../store/interactionStore"
 import { useContextStore } from "../../store/contextStore"
 

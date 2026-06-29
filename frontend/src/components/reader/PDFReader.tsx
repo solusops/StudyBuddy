@@ -5,6 +5,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css"
 import { useInteractionStore, type SelectionSnippet } from "../../store/interactionStore"
 import { useContextStore } from "../../store/contextStore"
 import { HighlightLayer } from "./HighlightLayer"
+import { RegionLayer } from "./RegionLayer"
 import { MarginGutter } from "./MarginGutter"
 
 // pdf.js worker — Vite serves this from node_modules
@@ -112,7 +113,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
     }
   }
 
-  const handlePointerUp = useCallback((pageNumber: number, e: React.PointerEvent) => {
+  const handlePointerUp = useCallback((pageNumber: number, _e: React.PointerEvent) => {
     const sel = window.getSelection()
     if (!sel || sel.rangeCount === 0 || sel.isCollapsed) {
       return
@@ -235,6 +236,13 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
                 <HighlightLayer
                   pageNumber={pgNum}
                   pageRef={{ current: pageRefs.current.get(pgNum) ?? null }}
+                />
+                <RegionLayer
+                  pageNumber={pgNum}
+                  pageIndex={pgNum - 1}
+                  documentId={documentId}
+                  sessionId={sessionId}
+                  fileUrl={fileUrl}
                 />
               </div>
               <MarginGutter

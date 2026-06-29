@@ -3,14 +3,15 @@ import { useInteractionStore, type CursorMode } from "../../store/interactionSto
 import { useContextStore } from "../../store/contextStore"
 
 export function FloatingToolbar() {
-  const { cursorMode, setCursorMode, clearGroup } = useInteractionStore()
+  const { cursorMode, setCursorMode, clearGroup, regionsOn, toggleRegions } = useInteractionStore()
 
-  // Hotkeys: V = default, N = note-append, Esc = clear
+  // Hotkeys: V = default, N = note-append, R = toggle regions, Esc = clear
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === "v" || e.key === "V") setCursorMode("DEFAULT")
       if (e.key === "n" || e.key === "N") setCursorMode("NOTE_APPEND")
+      if (e.key === "r" || e.key === "R") toggleRegions()
       if (e.key === "Escape") {
         clearGroup()
         useContextStore.getState().clearSelection()
@@ -18,7 +19,7 @@ export function FloatingToolbar() {
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [setCursorMode, clearGroup])
+  }, [setCursorMode, clearGroup, toggleRegions])
 
   const btn = (mode: CursorMode, icon: string, label: string, hotkey: string) => (
     <button
@@ -63,6 +64,27 @@ export function FloatingToolbar() {
     >
       {btn("DEFAULT", "↖", "Read", "V")}
       {btn("NOTE_APPEND", "✏️", "Annotate", "N")}
+      <button
+        title="Toggle clickable figures/tables/formulas (R)"
+        onClick={toggleRegions}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 14px",
+          borderRadius: 20,
+          border: "none",
+          background: regionsOn ? "#1A3557" : "transparent",
+          color: regionsOn ? "#FAF7F2" : "#6B7280",
+          cursor: "pointer",
+          fontSize: 13,
+          fontWeight: regionsOn ? 600 : 400,
+          transition: "background 0.15s",
+        }}
+      >
+        <span style={{ fontSize: 16 }}>▦</span>
+        Regions
+      </button>
     </div>
   )
 }

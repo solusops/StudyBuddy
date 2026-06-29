@@ -9,7 +9,7 @@ load_dotenv()  # must run before any local import that reads env vars
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import annotations, health, ingest, library, sandbox, session
+from app.routers import annotations, health, ingest, library, regions, sandbox, session
 from app.websockets.handlers import get_connection_manager, get_db, handle_event
 
 
@@ -49,6 +49,7 @@ app.include_router(library.router)
 app.include_router(sandbox.router)
 app.include_router(session.router)
 app.include_router(annotations.router)
+app.include_router(regions.router)
 
 
 @app.websocket("/ws/{session_id}")

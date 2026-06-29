@@ -29,5 +29,6 @@ class StudentAnnotation(BaseModel):
     session_id: str
     target_snippets: List[SelectionSnippet]
     note_text: Optional[str] = None
+    image_base64: Optional[str] = None  # cropped region PNG (pinned figures/tables/formulas)
     created_at: float = Field(default_factory=time.time)
     updated_at: float = Field(default_factory=time.time)

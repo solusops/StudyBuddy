@@ -101,6 +101,14 @@ class ChromaDBClient:
             out.append({"text": doc, **meta})
         return out
 
+    def delete_where(self, collection: str, where: Dict[str, Any]) -> None:
+        """Delete all documents in a collection matching a metadata filter."""
+        try:
+            col = self._client.get_collection(collection)
+            col.delete(where=where)
+        except Exception:
+            pass
+
     def collection_count(self, collection: str) -> int:
         try:
             return self._client.get_collection(collection).count()

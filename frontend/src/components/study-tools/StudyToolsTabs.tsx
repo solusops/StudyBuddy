@@ -14,7 +14,7 @@ interface Props {
 const TABS = ["Chat", "Flashcards", "Quiz", "Feynman"] as const
 type Tab = (typeof TABS)[number]
 
-export function StudyToolsTabs({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
+export function StudyToolsTabs({ sendEvent, nodeId, familiarity }: Props) {
   const [active, setActive] = useState<Tab>("Chat")
 
   return (

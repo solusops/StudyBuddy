@@ -158,7 +158,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
 
   // -- Concept highlighting -----------------------------------------------
   const handlePageTextReady = useCallback(
-    async (pageNum: number, text: string) => {
+    async (_pageNum: number, text: string) => {
       if (!text.trim() || concepts.length > 0) return  // already have concepts
       try {
         const resp = await fetch("/library/highlight-concepts", {

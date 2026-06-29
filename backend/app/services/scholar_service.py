@@ -42,8 +42,9 @@ async def fetch_top_papers(query: str, n: int = 3) -> List[Dict[str, Any]]:
 
     params: Dict[str, Any] = {
         "search": query,
-        "sort": "cited_by_count:desc",
-        "per-page": n,
+        # Default relevance ranking — sorting purely by citations returns famous but
+        # off-topic papers. Fetch a few extra and keep the most-cited among the relevant.
+        "per-page": max(n * 3, 10),
     }
     # OpenAlex "polite pool" / premium key conventions.
     api_key = os.getenv("OPENALEX_API_KEY", "")
@@ -63,8 +64,12 @@ async def fetch_top_papers(query: str, n: int = 3) -> List[Dict[str, Any]]:
         print("OpenAlex lookup error:", e)
         return []
 
+    # Keep the most-cited among the top relevance matches (relevant AND notable).
+    top_relevant = results[: max(n * 3, 10)]
+    top_relevant.sort(key=lambda w: w.get("cited_by_count", 0), reverse=True)
+
     papers: List[Dict[str, Any]] = []
-    for w in results[:n]:
+    for w in top_relevant[:n]:
         papers.append({
             "title": w.get("display_name") or "Untitled",
             "authors": _authors(w),

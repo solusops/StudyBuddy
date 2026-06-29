@@ -66,6 +66,8 @@ def ingest_text(
     collection: str = LIBRARY_COLLECTION,
     chunk_type: ChunkType = "content",
     db: Optional[ChromaDBClient] = None,
+    session_id: str = "",
+    document_id: str = "",
 ) -> int:
     if db is None:
         db = ChromaDBClient()
@@ -74,7 +76,13 @@ def ingest_text(
         return 0
     ids = [f"{source_label}_{i}_{uuid.uuid4().hex[:6]}" for i in range(len(chunks))]
     metadatas = [
-        {"source": source_label, "chunk_index": i, "type": chunk_type}
+        {
+            "source": source_label,
+            "chunk_index": i,
+            "type": chunk_type,
+            "session_id": session_id,
+            "document_id": document_id,
+        }
         for i in range(len(chunks))
     ]
     db.upsert(collection, chunks, metadatas, ids)
@@ -88,8 +96,13 @@ def ingest_file(
     chunk_type: ChunkType = "content",
     db: Optional[ChromaDBClient] = None,
     skip_if_indexed: bool = True,
+    session_id: str = "",
 ) -> int:
-    """Chunk and index a file. Returns chunk count (0 if already indexed and skip_if_indexed=True)."""
+    """Chunk and index a file. Returns chunk count (0 if already indexed and skip_if_indexed=True).
+
+    Chunks are tagged with session_id + document_id (content hash) so retrieval can
+    scope to exactly the current session's content and never bleed across PDFs.
+    """
     if db is None:
         db = ChromaDBClient()
 
@@ -105,7 +118,10 @@ def ingest_file(
     else:
         text = file_bytes.decode("utf-8", errors="replace")
 
-    count = ingest_text(text, filename, collection, chunk_type=chunk_type, db=db)
+    count = ingest_text(
+        text, filename, collection, chunk_type=chunk_type, db=db,
+        session_id=session_id, document_id=content_hash,
+    )
     if count > 0:
         db.mark_indexed(content_hash, filename)
     return count

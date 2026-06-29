@@ -44,7 +44,7 @@ interface Props {
 
 export function StudyPage({ sessionId, topic, familiarity, knowledgeMode, initialNodes }: Props) {
   const { setGraph } = useGraphStore()
-  const { setSession, setActiveNode, resetNodeData, lesson, setLesson, activeNodeId } = useSessionStore()
+  const { setSession, setActiveNode, resetNodeData, activeNodeId } = useSessionStore()
   const { sendEvent } = useWebSocket(sessionId)
   const [panelOpen, setPanelOpen] = useState(false)
   const [ending, setEnding] = useState(false)
