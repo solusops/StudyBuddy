@@ -51,6 +51,8 @@ npm run dev
 
 Starts both Vite (`http://localhost:5173`) and uvicorn (`http://127.0.0.1:8765`) concurrently. Open the browser URL.
 
+The "Start Studying" button is disabled until the backend finishes loading (~10–15s on first run while the embedding model warms up).
+
 ### Electron shell (full desktop app)
 
 ```bash
@@ -84,11 +86,13 @@ npm run dev
 3. **Pick a familiarity level** — ELI5 / High School / Graduate / Expert
 4. **Click "Start Studying"** — the curriculum tree is extracted from your material
 5. **Click any node** on the knowledge graph to open the study panel:
-   - **Lesson** — grounded explanation with citations back to your material
-   - **Visual** — interactive HTML5 visual (generated on demand)
-   - **Study Tools** — Chat, Flashcards, Quiz, Feynman (explain it to Clara)
-   - **Deep Dive** — finds the best YouTube video for the topic
-6. **End Session** — scores your mastery, saves a Markdown summary to `~/.studybuddy/summaries/`
+   - **Chat** — grounded Q&A with citations; select text in the PDF first to ground your question
+   - **Infinite Wiki** — select any text while reading; a streaming grounded card appears automatically; highlight any word in the card to drill deeper
+   - **Flashcards / Quiz** — sourced from your uploaded question papers
+   - **Feynman** — explain the topic to Clara (the curious 8-year-old agent)
+   - **Visual** — interactive HTML5 visual generated on demand
+6. **Annotate** — switch to Annotate mode, select text, write a note in the margin gutter beside the PDF page
+7. **End Session** — scores your mastery, saves a Markdown summary to `~/.studybuddy/summaries/`
 
 Session memory is stored locally at `~/.studybuddy/cognee/` and used to personalise future sessions on related topics.
 
@@ -116,26 +120,30 @@ npx vitest run src/store/__tests__/
 
 ## Project structure
 
-```tree
-
+```text
 StudyBuddy/
 ├── electron/           # Electron main process + preload IPC bridge
 ├── backend/
 │   ├── app/
-│   │   ├── agents/     # BrainAgent, TutorAgent, EvaluatorAgent, InfinityWikiAgent, CerebrasClient
+│   │   ├── agents/     # BrainAgent, TutorAgent, EvaluatorAgent, WikiAgent, CerebrasClient
 │   │   ├── rag/        # ChromaDB, embeddings, chunker, ingestion
-│   │   ├── schemas/    # Pydantic data contracts (locked)
-│   │   ├── services/   # GraphStateManager, JournalService, StudentMemoryService, SummaryWriter
+│   │   ├── schemas/    # Pydantic data contracts (locked) + annotation schema
+│   │   ├── services/   # GraphStateManager, JournalService, AnnotationService, StudentMemoryService
 │   │   ├── websockets/ # ConnectionManager + event dispatch table
-│   │   └── routers/    # /ingest, /session, /sandbox, /api/health
+│   │   └── routers/    # /ingest, /session, /sandbox, /library, /annotations, /api/health
 │   └── tests/
 └── frontend/
     └── src/
-        ├── components/ # graph/, panel/, study-tools/, init/
+        ├── components/
+        │   ├── graph/        # KnowledgeGraph, ConceptNode
+        │   ├── panel/        # ScientificFigurePanel, TabBar, InfiniteWiki, ScoreBar
+        │   ├── reader/       # PDFReader, MarginGutter, HighlightLayer
+        │   ├── study-tools/  # ChatTool, FlashcardTool, QuizTool, FeynmanTool
+        │   └── init/         # SetupModal
         ├── hooks/      # useWebSocket
         ├── lib/        # fileSystem (Electron IPC + browser fallback)
-        ├── pages/      # StudyPage
-        ├── store/      # graphStore (Zustand), sessionStore
+        ├── pages/      # TreePage, ManualPage (StudyPage)
+        ├── store/      # graphStore, sessionStore, contextStore, interactionStore
         └── types/      # Shared TypeScript types
 ```
 
@@ -147,3 +155,4 @@ StudyBuddy/
 - Every AI answer cites its source: `[Source: filename, chunk N]`
 - Node mastery scores are monotone non-decreasing — they can only go up
 - All student memory stays local (`~/.studybuddy/`) — nothing goes to the cloud
+- When adding a new FastAPI router: add its path prefix to `frontend/vite.config.ts` proxy list or all dev fetch calls will 404

@@ -30,8 +30,10 @@ export default function App() {
   const { sendEvent } = useWebSocket(session?.sessionId ?? null)
   const setDocumentId = useInteractionStore((s) => s.setDocumentId)
 
-  // On mount, check if library is already configured and restore any saved session
+  // On mount, wait briefly for backend to start, then check if library is already configured
   useEffect(() => {
+    // Small delay so Vite proxy doesn't spam ECONNREFUSED while uvicorn initialises
+    const t = setTimeout(() => {
     fetch("/library/status")
       .then((r) => r.json())
       .then((status) => {
@@ -55,6 +57,8 @@ export default function App() {
       })
       .catch(() => {/* backend not ready yet */})
       .finally(() => setChecking(false))
+    }, 2000)
+    return () => clearTimeout(t)
   }, [])
 
   const handleSessionReady = (s: AppSession) => {
