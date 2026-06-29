@@ -9,8 +9,16 @@ import { useSessionStore } from "../../store/sessionStore"
 import type { NodeData } from "../../types"
 
 const nodeTypes = { concept: ConceptNode }
-const NODE_W = 180
-const NODE_H = 64
+
+/** Compute per-node width/height based on complexity + depth */
+function getNodeDimensions(data: NodeData): { w: number; h: number } {
+  const c = Math.max(1, Math.min(5, data.complexity ?? 3))
+  const isRoot = data.depth === 0
+  // Matches ConceptNode sizing logic
+  const w = isRoot ? 200 : 100 + (c - 1) * 20 + 40 // minWidth + padding
+  const h = isRoot ? 56 : 40 + (c - 1) * 4 + 16    // base + padding
+  return { w, h }
+}
 
 function applyDagreLayout(
   nodes: Node<NodeData>[],
@@ -18,15 +26,37 @@ function applyDagreLayout(
 ): { nodes: Node<NodeData>[]; edges: Edge[] } {
   const g = new dagre.graphlib.Graph()
   g.setDefaultEdgeLabel(() => ({}))
-  g.setGraph({ rankdir: "TB", nodesep: 60, ranksep: 80, marginx: 40, marginy: 40 })
+  g.setGraph({
+    rankdir: "TB",
+    nodesep: 50,
+    ranksep: 100,    // increased for better vertical spacing in deeper trees
+    marginx: 40,
+    marginy: 40,
+  })
 
-  nodes.forEach((n) => g.setNode(n.id, { width: NODE_W, height: NODE_H }))
-  edges.forEach((e) => g.setEdge(e.source, e.target))
+  // Set per-node dimensions so dagre allocates the right space
+  nodes.forEach((n) => {
+    const { w, h } = getNodeDimensions(n.data)
+    g.setNode(n.id, { width: w, height: h })
+  })
+
+  // Only use parent_id edges for the dagre layout — these define the hierarchy.
+  // Cross-links (edges) are drawn but don't influence rank placement.
+  const parentEdgeIds = new Set<string>()
+  nodes.forEach((n) => {
+    if (n.data.parent_id) {
+      const edgeId = `${n.data.parent_id}-${n.id}`
+      parentEdgeIds.add(edgeId)
+      g.setEdge(n.data.parent_id, n.id)
+    }
+  })
+
   dagre.layout(g)
 
   const laid = nodes.map((n) => {
     const pos = g.node(n.id)
-    return { ...n, position: { x: pos.x - NODE_W / 2, y: pos.y - NODE_H / 2 } }
+    const { w, h } = getNodeDimensions(n.data)
+    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 } }
   })
   return { nodes: laid, edges }
 }

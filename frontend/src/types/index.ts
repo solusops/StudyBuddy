@@ -15,6 +15,7 @@ export interface NodeData {
   description: string
   status: NodeStatus
   depth: number
+  complexity: number
   scores: NodeScores
   parent_id: string | null
   children_ids: string[]

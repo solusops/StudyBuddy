@@ -18,6 +18,7 @@ class NodeData(BaseModel):
     description: str = ""
     status: NodeStatus = "LOCKED"
     depth: int = 1
+    complexity: int = Field(3, ge=1, le=5, description="Conceptual density: 1=simple, 5=very complex")
     scores: NodeScores = Field(default_factory=NodeScores)
     parent_id: Optional[str] = None
     children_ids: List[str] = Field(default_factory=list)

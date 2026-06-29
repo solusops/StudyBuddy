@@ -17,12 +17,56 @@ FAMILIARITY_NOTES: Dict[str, str] = {
     "expert": "Pure synthesis. Focus on literature gaps, proofs, and algorithmic details. Zero analogies.",
 }
 
+# Familiarity-specific tree shape — controls how many nodes and how deep the tree goes
+FAMILIARITY_TREE_SHAPE: Dict[str, Dict[str, Any]] = {
+    "eli5": {
+        "node_range": "4-8",
+        "max_depth": 2,
+        "guidance": (
+            "Create a SMALL, SIMPLE tree with only 4-8 nodes. "
+            "Use broad, everyday labels a child would understand. "
+            "Max depth 2 (root + one level of subtopics). "
+            "Keep labels under 4 words. No jargon."
+        ),
+    },
+    "high_school": {
+        "node_range": "8-15",
+        "max_depth": 3,
+        "guidance": (
+            "Create a standard textbook-style tree with 8-15 nodes. "
+            "Use clear chapter/section/topic hierarchy. "
+            "Max depth 3 (root → sections → topics). "
+            "Labels should be concise standard terms."
+        ),
+    },
+    "graduate": {
+        "node_range": "12-20",
+        "max_depth": 3,
+        "guidance": (
+            "Create a detailed tree with 12-20 nodes. "
+            "Include methodology-specific subtopics, key theorems, and techniques. "
+            "Max depth 3. Group by conceptual framework, not just textbook order."
+        ),
+    },
+    "expert": {
+        "node_range": "15-25",
+        "max_depth": 4,
+        "guidance": (
+            "Create a fine-grained tree with 15-25 nodes. "
+            "Include edge cases, proof techniques, open problems, and advanced subtopics. "
+            "Max depth 4 (root → areas → topics → specifics). "
+            "Use precise technical terminology."
+        ),
+    },
+}
+
 
 class _SyllabusNode(BaseModel):
     id: str
     label: str
     description: str
-    depth: int = Field(1, ge=1, le=3)
+    depth: int = Field(1, ge=0, le=4)
+    complexity: int = Field(3, ge=1, le=5, description="Conceptual density: 1=simple definition, 3=moderate, 5=very complex/math-heavy")
     parent_id: Optional[str] = None
 
 
@@ -34,7 +78,7 @@ class _SyllabusEdge(BaseModel):
 
 class _SyllabusBlueprint(BaseModel):
     nodes: List[_SyllabusNode] = Field(
-        ..., description="Ordered list of 6-25 concept nodes, macro to micro"
+        ..., description="Ordered list of concept nodes, root first then macro to micro"
     )
     edges: List[_SyllabusEdge] = Field(
         default_factory=list,
@@ -45,6 +89,30 @@ class _SyllabusBlueprint(BaseModel):
 class BrainAgent:
     def __init__(self, client: Optional[CerebrasClient] = None) -> None:
         self._client = client or CerebrasClient()
+
+    def _build_nodes_and_edges(
+        self, blueprint: _SyllabusBlueprint
+    ) -> Tuple[List[NodeData], List[Dict]]:
+        """Convert a _SyllabusBlueprint into (NodeData list, edge dicts)."""
+        node_ids = {sn.id for sn in blueprint.nodes}
+        nodes = [
+            NodeData(
+                id=sn.id,
+                label=sn.label,
+                description=sn.description,
+                depth=sn.depth,
+                complexity=sn.complexity,
+                parent_id=sn.parent_id,
+                status="ACTIVE",
+            )
+            for sn in blueprint.nodes
+        ]
+        edges = [
+            {"source": e.source, "target": e.target, "relationship": e.relationship}
+            for e in blueprint.edges
+            if e.source in node_ids and e.target in node_ids
+        ]
+        return nodes, edges
 
     def extract_curriculum(
         self,
@@ -61,6 +129,7 @@ class BrainAgent:
             f"[{c.get('source', '?')}]: {c['text'][:300]}" for c in chunks[:20]
         )
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
         memory_note = (
             f"\n\nPrior student knowledge from past sessions:\n{memory_context}"
             if memory_context
@@ -70,44 +139,31 @@ class BrainAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are a curriculum organiser. {familiarity_note}{memory_note}\n"
-                    "Read the provided content excerpts and identify the main topics they cover. "
-                    "DO NOT invent topics not evidenced in the text. "
-                    "Return 6-25 nodes AND a list of edges capturing how the concepts relate to each other. "
-                    "Edges should reflect real conceptual dependencies and relationships, not just a tree — "
-                    "a concept can have multiple prerequisites and be related to several others."
+                    f"You are a curriculum organiser. {familiarity_note}{memory_note}\n\n"
+                    "TREE STRUCTURE RULES:\n"
+                    "1. The FIRST node (id=n0, depth=0) MUST be the overall topic/subject as a root node with parent_id=null.\n"
+                    "2. Every other node MUST have a parent_id pointing to its parent in the hierarchy.\n"
+                    "3. The tree flows top-down: root → major subtopics → specific concepts.\n"
+                    "4. Edges capture cross-connections BETWEEN nodes (prerequisite, related, builds-on) — these are IN ADDITION to the parent-child hierarchy.\n"
+                    "5. Each node gets a complexity score (1-5): 1=simple definition/concept, 3=moderate understanding needed, 5=very complex/math-heavy/proof-based.\n\n"
+                    f"GRANULARITY for this student's level:\n{tree_shape['guidance']}\n\n"
+                    "DO NOT invent topics not evidenced in the text."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Content excerpts:\n{sample}\n\n"
-                    "Extract concept nodes and their interconnections from this material only.\n"
-                    "Nodes: id (n1, n2...), label, brief description from the text, depth (1=macro 2=mid 3=micro), optional parent_id.\n"
-                    "Edges: source node id, target node id, relationship (prerequisite | related | builds-on).\n"
-                    "Include cross-links between non-adjacent concepts where a real relationship exists."
+                    "Build a hierarchical skill tree from this material.\n"
+                    f"Node count: {tree_shape['node_range']} nodes. Max depth: {tree_shape['max_depth']}.\n"
+                    "First node: id=n0, depth=0, label=overall topic name from the material, complexity=3, parent_id=null.\n"
+                    "Remaining nodes: id (n1, n2...), label (≤6 words), brief description, depth, complexity (1-5), parent_id (REQUIRED).\n"
+                    "Edges: source, target, relationship (prerequisite | related | builds-on). Include cross-links where real relationships exist."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        node_ids = {sn.id for sn in blueprint.nodes}
-        nodes = [
-            NodeData(
-                id=sn.id,
-                label=sn.label,
-                description=sn.description,
-                depth=sn.depth,
-                parent_id=sn.parent_id,
-                status="ACTIVE",
-            )
-            for sn in blueprint.nodes
-        ]
-        edges = [
-            {"source": e.source, "target": e.target, "relationship": e.relationship}
-            for e in blueprint.edges
-            if e.source in node_ids and e.target in node_ids
-        ]
-        return nodes, edges
+        return self._build_nodes_and_edges(blueprint)
 
     def extract_curriculum_from_documents(
         self,
@@ -126,6 +182,7 @@ class BrainAgent:
         )
         all_structure = all_structure[:10000]  # hard cap — prevents JSON truncation at 32K MCL
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
         topic_note = f"The student wants to study: {topic_hint}\n\n" if topic_hint else ""
         memory_note = (
             f"Prior student knowledge:\n{memory_context}\n\n" if memory_context else ""
@@ -135,45 +192,33 @@ class BrainAgent:
                 "role": "system",
                 "content": (
                     f"You are a curriculum organiser. {familiarity_note}\n"
-                    f"{topic_note}{memory_note}"
-                    "Read the provided document structure (headings, table of contents, first pages) "
-                    "and derive a knowledge graph — not just a tree. "
-                    "Use ONLY topics evidenced in the documents. "
-                    "Return 6-25 nodes with parent_id links for hierarchy, "
-                    "AND edges capturing prerequisite/related/builds-on relationships between any nodes "
-                    "where a real conceptual link exists."
+                    f"{topic_note}{memory_note}\n"
+                    "TREE STRUCTURE RULES:\n"
+                    "1. The FIRST node (id=n0, depth=0) MUST be the overall topic/subject as a root node with parent_id=null.\n"
+                    f"   Its label should be: '{topic_hint}' if provided, otherwise derive the subject name from the documents.\n"
+                    "2. Every other node MUST have a parent_id pointing to its parent in the hierarchy.\n"
+                    "3. The tree flows top-down: root → major subtopics → specific concepts.\n"
+                    "4. Edges capture cross-connections BETWEEN nodes — these are IN ADDITION to parent-child links.\n"
+                    "5. Each node gets a complexity score (1-5): 1=simple definition, 3=moderate, 5=very complex/math-heavy.\n\n"
+                    f"GRANULARITY for this student's level:\n{tree_shape['guidance']}\n\n"
+                    "Use ONLY topics evidenced in the documents."
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Document structure:\n{all_structure}\n\n"
-                    "Extract concept nodes and interconnections.\n"
-                    "Nodes: id (n1, n2...), label (≤6 words), description (≤80 chars), depth (1=chapter 2=section 3=topic), optional parent_id.\n"
+                    "Build a hierarchical skill tree from these documents.\n"
+                    f"Node count: {tree_shape['node_range']} nodes. Max depth: {tree_shape['max_depth']}.\n"
+                    "First node: id=n0, depth=0, label=overall topic, complexity=3, parent_id=null.\n"
+                    "Remaining nodes: id (n1, n2...), label (≤6 words), description (≤80 chars), depth, complexity (1-5), parent_id (REQUIRED).\n"
                     "Edges: source, target, relationship (prerequisite | related | builds-on).\n"
-                    "Keep descriptions short. Aim for 8-15 nodes total."
+                    "Keep descriptions short."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        node_ids = {sn.id for sn in blueprint.nodes}
-        nodes = [
-            NodeData(
-                id=sn.id,
-                label=sn.label,
-                description=sn.description,
-                depth=sn.depth,
-                parent_id=sn.parent_id,
-                status="ACTIVE",
-            )
-            for sn in blueprint.nodes
-        ]
-        edges = [
-            {"source": e.source, "target": e.target, "relationship": e.relationship}
-            for e in blueprint.edges
-            if e.source in node_ids and e.target in node_ids
-        ]
-        return nodes, edges
+        return self._build_nodes_and_edges(blueprint)
 
     def refine_curriculum(
         self,
@@ -193,10 +238,11 @@ class BrainAgent:
             f"[{c.get('source', '?')}]: {c['text'][:300]}" for c in chunks[:20]
         )
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
 
         # Format existing tree as context
         nodes_desc = "\n".join(
-            f"- {n['id']}: \"{n['label']}\" (depth={n.get('depth', 1)}, parent={n.get('parent_id', 'none')}) — {n.get('description', '')}"
+            f"- {n['id']}: \"{n['label']}\" (depth={n.get('depth', 1)}, complexity={n.get('complexity', 3)}, parent={n.get('parent_id', 'none')}) — {n.get('description', '')}"
             for n in current_nodes
         )
         edges_desc = "\n".join(
@@ -215,13 +261,15 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}\n"
                     "You are REFINING an existing knowledge graph based on student feedback. "
                     "Do NOT regenerate from scratch. Instead:\n"
+                    "- Keep the root node (n0, depth=0) — it is the topic name\n"
                     "- Keep nodes that are still relevant\n"
                     "- Add new nodes if the student wants more coverage\n"
                     "- Remove nodes the student says are unnecessary\n"
                     "- Rename or restructure nodes as requested\n"
                     "- Update edges to reflect the new structure\n"
-                    "All changes must stay grounded in the source material — do NOT invent topics "
-                    "not evidenced in the text."
+                    "- Every non-root node MUST have a parent_id\n"
+                    "- Every node gets a complexity score (1-5)\n"
+                    "All changes must stay grounded in the source material."
                 ),
             },
             {
@@ -230,32 +278,16 @@ class BrainAgent:
                     f"STUDENT FEEDBACK: {user_feedback}\n\n"
                     f"{current_tree}\n\n"
                     f"SOURCE MATERIAL EXCERPTS:\n{sample}\n\n"
-                    "Apply the student's feedback to produce an updated set of nodes and edges. "
-                    "Nodes: id (n1, n2...), label, brief description, depth (1=macro 2=mid 3=micro), optional parent_id.\n"
+                    "Apply the student's feedback to produce an updated set of nodes and edges.\n"
+                    f"Target: {tree_shape['node_range']} nodes, max depth {tree_shape['max_depth']}.\n"
+                    "Keep n0 as root (depth=0). Nodes: id, label, description, depth (0-4), complexity (1-5), parent_id.\n"
                     "Edges: source, target, relationship (prerequisite | related | builds-on).\n"
                     "Reuse existing node IDs where the concept is unchanged."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        node_ids = {sn.id for sn in blueprint.nodes}
-        nodes = [
-            NodeData(
-                id=sn.id,
-                label=sn.label,
-                description=sn.description,
-                depth=sn.depth,
-                parent_id=sn.parent_id,
-                status="ACTIVE",
-            )
-            for sn in blueprint.nodes
-        ]
-        edges = [
-            {"source": e.source, "target": e.target, "relationship": e.relationship}
-            for e in blueprint.edges
-            if e.source in node_ids and e.target in node_ids
-        ]
-        return nodes, edges
+        return self._build_nodes_and_edges(blueprint)
 
     def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:
         """Given a page of text, return a list of key concept phrases to highlight."""

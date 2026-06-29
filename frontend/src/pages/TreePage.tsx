@@ -105,6 +105,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             label: n.data.label,
             description: n.data.description,
             depth: n.data.depth,
+            complexity: n.data.complexity,
             parent_id: n.data.parent_id,
           })),
           current_edges: currentEdges.map((e) => ({
