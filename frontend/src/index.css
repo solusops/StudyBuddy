@@ -72,6 +72,20 @@ body::after {
   background: rgba(26, 53, 87, 0.28);
 }
 
+/* Tokens/sec badge shown beside a live stream */
+.ts-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: #EEF3F8;
+  color: #4A7FB5;
+  font-family: system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 /* Streaming cursor blink */
 @keyframes blink {
   0%, 100% { opacity: 1; }

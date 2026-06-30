@@ -4,6 +4,7 @@ import "katex/dist/katex.min.css"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
 import { useInteractionStore } from "../../store/interactionStore"
+import { useTokenRate } from "../../lib/useTokenRate"
 import { VisualSandbox } from "./VisualSandbox"
 import type { AnimationType, HTML5VisualPayload } from "../../types"
 
@@ -46,6 +47,7 @@ interface WikiPage {
   visualOffer?: VisualOffer | null
   papers?: ScholarPaper[]
   imageBase64?: string
+  recallGenerated?: boolean
 }
 
 interface Props {
@@ -183,6 +185,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   }, [])
 
   const currentPage = stack[currentIdx]
+  const wikiRate = useTokenRate(currentPage?.content ?? "", !!currentPage?.streaming)
 
   // Generate the offered visual on demand, grounded in this card's content.
   const requestVisual = (page: WikiPage) => {
@@ -430,6 +433,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
               {currentPage.streaming && (
                 <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
               )}
+              {currentPage.streaming && wikiRate > 0 && <span className="ts-badge">{wikiRate} t/s</span>}
             </div>
             
             {/* On-demand visual: show a button once the card is done; generate only on click. */}

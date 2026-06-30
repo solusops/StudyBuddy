@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { ReportMarkdown } from "./ReportMarkdown"
 import { VisualSandbox } from "./VisualSandbox"
+import { useTokenRate } from "../../lib/useTokenRate"
 import { useSessionStore } from "../../store/sessionStore"
 import type { AppSession } from "../../App"
 import type { HTML5VisualPayload } from "../../types"
@@ -19,6 +20,7 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
   const [visual, setVisual] = useState<HTML5VisualPayload | null>(null)
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState("")
+  const rate = useTokenRate(content, streaming)
 
   const compile = (edit_instruction = "") => {
     setContent("")
@@ -101,6 +103,7 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
         <div className="report-print" style={{ flex: 1, overflow: "auto", padding: "20px 32px 48px", fontFamily: "var(--font-serif)", fontSize: 16, color: "#1A1A2E" }}>
           <ReportMarkdown text={content} />
           {streaming && <span style={{ display: "inline-block", width: 8, height: 16, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />}
+          {streaming && rate > 0 && <span className="ts-badge">{rate} t/s</span>}
           {visual && (
             <div style={{ marginTop: 16 }}>
               <VisualSandbox visual={visual} nodeId="report" animationType={visual.animation_type} height={320} />

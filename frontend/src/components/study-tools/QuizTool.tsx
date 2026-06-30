@@ -63,7 +63,7 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
 
   if (qIndex >= quizQuestions.length) {
     return (
-      <div style={{ textAlign: "center", padding: 32, color: "white" }}>
+      <div style={{ textAlign: "center", padding: 32, color: "#1A3557", fontFamily: "var(--font-serif)" }}>
         <p style={{ marginBottom: 16 }}>Quiz complete!</p>
         <button onClick={() => { setQIndex(0); setSelected(null) }} style={btnStyle}>
           Retake
@@ -74,16 +74,18 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <div style={{ fontSize: 12, color: "#64748b" }}>{qIndex + 1} / {quizQuestions.length}</div>
-      <p style={{ color: "white", fontSize: 14, fontWeight: 600 }}>{currentQ.question}</p>
+      <div style={{ fontSize: 12, color: "#6B7280" }}>{qIndex + 1} / {quizQuestions.length}</div>
+      <p style={{ color: "#1A1A2E", fontSize: 15, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5 }}>{currentQ.question}</p>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {shuffledOptions.map((opt, i) => {
           const isSelected = selected === i
           const isCorrect = opt.is_correct
-          let bg = "#1e293b"
+          let bg = "#FFFFFF"
+          let border = "#E8E0D5"
+          let color = "#1A1A2E"
           if (selected !== null) {
-            if (isCorrect) bg = "#166534"
-            else if (isSelected) bg = "#7f1d1d"
+            if (isCorrect) { bg = "#E6F4ED"; border = "#2D6A4F"; color = "#2D6A4F" }
+            else if (isSelected) { bg = "#FEF2E8"; border = "#92400E"; color = "#92400E" }
           }
           return (
             <button
@@ -91,23 +93,24 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
               onClick={() => choose(i)}
               style={{
                 background: bg,
-                color: "white",
-                border: "1px solid #334155",
+                color,
+                border: `1px solid ${border}`,
                 borderRadius: 8,
                 padding: "10px 14px",
                 cursor: selected !== null ? "default" : "pointer",
                 textAlign: "left",
-                fontSize: 13,
-                transition: "background 0.2s",
+                fontSize: 14,
+                fontWeight: selected !== null && (isCorrect || isSelected) ? 600 : 400,
+                transition: "background 0.2s, border 0.2s",
               }}
             >
-              {opt.text}
+              {selected !== null && isCorrect ? "✓ " : selected !== null && isSelected ? "✗ " : ""}{opt.text}
             </button>
           )
         })}
       </div>
       {selected !== null && (
-        <div style={{ color: "#94a3b8", fontSize: 12, fontStyle: "italic" }}>
+        <div style={{ color: "#6B7280", fontSize: 13, fontStyle: "italic", fontFamily: "var(--font-serif)" }}>
           {currentQ.explanation}
         </div>
       )}
@@ -121,11 +124,12 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
 }
 
 const btnStyle: React.CSSProperties = {
-  background: "#3b82f6",
-  color: "white",
+  background: "#1A3557",
+  color: "#FAF7F2",
   border: "none",
   borderRadius: 8,
   padding: "8px 20px",
   cursor: "pointer",
-  fontSize: 13,
+  fontSize: 14,
+  fontWeight: 600,
 }

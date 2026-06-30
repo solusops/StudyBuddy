@@ -5,6 +5,7 @@ import { useSessionStore } from "../../store/sessionStore"
 import { useContextStore } from "../../store/contextStore"
 import { useInteractionStore } from "../../store/interactionStore"
 import { splitFencedBlocks } from "../../lib/chatBlocks"
+import { useTokenRate } from "../../lib/useTokenRate"
 import { MermaidBlock } from "./MermaidBlock"
 import { PlotlyBlock } from "./PlotlyBlock"
 
@@ -39,6 +40,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
   const [historyOpen, setHistoryOpen] = useState(false)
 
   const hasContext = !!selectionText || !!selectionImageBase64
+  const chatRate = useTokenRate(streamingChat, !!streamingChat)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -370,6 +372,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
           }}>
             {renderChatContent(streamingChat)}
             <span style={{ display: "inline-block", width: 8, height: 14, background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
+            {chatRate > 0 && <span className="ts-badge">{chatRate} t/s</span>}
           </div>
         )}
         <div ref={bottomRef} />

@@ -50,7 +50,7 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
 
   if (index >= flashcards.length) {
     return (
-      <div style={{ textAlign: "center", padding: 32, color: "white" }}>
+      <div style={{ textAlign: "center", padding: 32, color: "#1A3557", fontFamily: "var(--font-serif)" }}>
         <p style={{ marginBottom: 16 }}>All {flashcards.length} cards done!</p>
         <button onClick={() => { setIndex(0); setFlipped(false) }} style={btnStyle}>
           Review Again
@@ -63,28 +63,32 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: 16 }}>
-      <div style={{ fontSize: 12, color: "#64748b" }}>{index + 1} / {flashcards.length}</div>
+      <div style={{ fontSize: 12, color: "#6B7280" }}>{index + 1} / {flashcards.length}</div>
       <div
         onClick={() => setFlipped((f) => !f)}
         style={{
           width: "100%",
           minHeight: 160,
-          background: "#1e293b",
+          background: "#FFFFFF",
+          border: `1.5px solid ${flipped ? "#2D6A4F" : "#1A3557"}`,
           borderRadius: 12,
           padding: 24,
           cursor: "pointer",
-          color: "white",
+          color: "#1A1A2E",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 15,
+          fontSize: 16,
+          lineHeight: 1.5,
           textAlign: "center",
           userSelect: "none",
+          fontFamily: "var(--font-serif)",
+          boxShadow: "0 1px 4px rgba(26,53,87,0.08)",
         }}
       >
         {flipped ? card.back : card.front}
       </div>
-      <div style={{ fontSize: 12, color: "#64748b" }}>
+      <div style={{ fontSize: 13, color: "#6B7280", fontFamily: "var(--font-hand)" }}>
         {flipped ? "Tap to see question" : "Tap to reveal answer"}
       </div>
       {flipped && (
@@ -101,11 +105,12 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
 }
 
 const btnStyle: React.CSSProperties = {
-  background: "#3b82f6",
-  color: "white",
+  background: "#1A3557",
+  color: "#FAF7F2",
   border: "none",
   borderRadius: 8,
   padding: "8px 20px",
   cursor: "pointer",
-  fontSize: 13,
+  fontSize: 14,
+  fontWeight: 600,
 }

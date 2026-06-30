@@ -75,8 +75,8 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
         let resp = await post()
         if (resp.status === 409) {
           // Server hasn't cached the PDF yet — upload the bytes once, then retry.
-          if (!_pdfB64Cache.has(documentId)) _pdfB64Cache.set(documentId, pdfToBase64(fileUrl))
-          const b64 = await _pdfB64Cache.get(documentId)!
+          if (!_pdfB64Cache.has(documentId!)) _pdfB64Cache.set(documentId!, pdfToBase64(fileUrl))
+          const b64 = await _pdfB64Cache.get(documentId!)!
           resp = await post(b64)
         }
         if (!resp.ok) throw new Error(`segment failed: ${resp.status}`)
@@ -155,8 +155,8 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
 
       let resp = await post()
       if (resp.status === 409) {
-        if (!_pdfB64Cache.has(documentId)) _pdfB64Cache.set(documentId, pdfToBase64(fileUrl))
-        const b64 = await _pdfB64Cache.get(documentId)!
+        if (!_pdfB64Cache.has(documentId!)) _pdfB64Cache.set(documentId!, pdfToBase64(fileUrl))
+        const b64 = await _pdfB64Cache.get(documentId!)!
         resp = await post(b64)
       }
       

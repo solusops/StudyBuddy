@@ -76,9 +76,12 @@ export interface ChatMessage {
 
 export interface ChatSession {
   id: string
-  timestamp: number
-  documentId: string | null
   messages: ChatMessage[]
+  title?: string
+  documentId?: string | null
+  timestamp?: number
+  createdAt?: number
+  updatedAt?: number
 }
 
 export interface VisualOffer {

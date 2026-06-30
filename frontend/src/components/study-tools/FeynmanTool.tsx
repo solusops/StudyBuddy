@@ -142,8 +142,8 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
   const personaName = getPersonaName(familiarity)
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 8 }}>
-      <p style={{ color: "#94a3b8", fontSize: 12, margin: 0 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", gap: 8, padding: 12 }}>
+      <p style={{ color: "#6B7280", fontSize: 14, margin: 0, fontFamily: "var(--font-hand)" }}>
         Explain the concept to {personaName}. They will ask follow-up questions.
       </p>
       <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -152,24 +152,27 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
             key={i}
             style={{
               alignSelf: msg.role === "student" ? "flex-end" : "flex-start",
-              background: msg.role === "student" ? "#7c3aed" : "#1e293b",
-              color: "white",
+              background: msg.role === "student" ? "#EEF3F8" : "#FFFFFF",
+              color: "#1A1A2E",
+              border: "1px solid #E8E0D5",
               padding: "8px 12px",
-              borderRadius: 8,
+              borderRadius: 10,
               maxWidth: "85%",
-              fontSize: 13,
+              fontSize: 14,
+              lineHeight: 1.5,
               whiteSpace: "pre-wrap",
+              fontFamily: msg.role === "clara" ? "var(--font-serif)" : "system-ui, sans-serif",
             }}
           >
-            {msg.role === "clara" && <span style={{ fontWeight: 700, color: "#fbbf24" }}>{personaName}: </span>}
+            {msg.role === "clara" && <span style={{ fontWeight: 700, color: "#92400E", fontFamily: "var(--font-hand)", fontSize: 16 }}>{personaName}: </span>}
             {msg.content}
           </div>
         ))}
         {streamingFeynman && (
-          <div style={{ alignSelf: "flex-start", background: "#1e293b", color: "white", padding: "8px 12px", borderRadius: 8, maxWidth: "85%", fontSize: 13 }}>
-            <span style={{ fontWeight: 700, color: "#fbbf24" }}>{personaName}: </span>
+          <div style={{ alignSelf: "flex-start", background: "#FFFFFF", color: "#1A1A2E", border: "1px solid #E8E0D5", padding: "8px 12px", borderRadius: 10, maxWidth: "85%", fontSize: 14, lineHeight: 1.5, fontFamily: "var(--font-serif)" }}>
+            <span style={{ fontWeight: 700, color: "#92400E", fontFamily: "var(--font-hand)", fontSize: 16 }}>{personaName}: </span>
             {streamingFeynman}
-            <span style={{ opacity: 0.5 }}>▌</span>
+            <span style={{ display: "inline-block", width: 7, height: 13, background: "#1A3557", marginLeft: 1, animation: "blink 1s step-end infinite", verticalAlign: "middle" }} />
           </div>
         )}
         <div ref={bottomRef} />
@@ -181,9 +184,9 @@ export function FeynmanTool({ sendEvent, nodeId, familiarity }: Props) {
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
           placeholder="Explain the concept in your own words…"
           rows={3}
-          style={{ flex: 1, background: "#1e293b", color: "white", border: "1px solid #334155", borderRadius: 6, padding: 8, fontSize: 13, resize: "none" }}
+          style={{ flex: 1, background: "#FAF7F2", color: "#1A1A2E", border: "1px solid #E8E0D5", borderRadius: 8, padding: 8, fontSize: 14, resize: "none", outline: "none", fontFamily: "system-ui, sans-serif" }}
         />
-        <button onClick={send} style={{ background: "#7c3aed", color: "white", border: "none", borderRadius: 6, padding: "0 16px", cursor: "pointer" }}>
+        <button onClick={send} style={{ background: "#1A3557", color: "#FAF7F2", border: "none", borderRadius: 8, padding: "0 16px", cursor: "pointer", fontWeight: 600, fontSize: 14 }}>
           Send
         </button>
         <button

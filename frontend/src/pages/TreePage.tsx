@@ -3,6 +3,7 @@ import katex from "katex"
 import "katex/dist/katex.min.css"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
 import { ReportView } from "../components/panel/ReportView"
+import { useTokenRate } from "../lib/useTokenRate"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import type { AppSession } from "../App"
@@ -30,6 +31,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [showReport, setShowReport] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
+  const lessonRate = useTokenRate(streamingLesson, lessonStreaming)
 
   const applyGraph = (rawNodes: NodeData[], rawEdges?: Array<{source: string; target: string; relationship: string}>) => {
     const flowNodes: Node<NodeData>[] = rawNodes.map((n, i) => ({
@@ -377,6 +379,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                   <div style={{ fontSize: 15, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
                     {renderLesson(streamingLesson)}
                     <span style={{ display: "inline-block", width: 2, height: "1em", background: "#1A3557", marginLeft: 2, animation: "blink 1s step-end infinite", verticalAlign: "text-bottom" }} />
+                    {lessonRate > 0 && <span className="ts-badge">{lessonRate} t/s</span>}
                   </div>
                 )}
                 {!lessonStreaming && lessonText && (
