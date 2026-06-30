@@ -102,6 +102,8 @@ class CerebrasClient:
     def structured_complete(
         self, messages: List[Dict[str, Any]], output_model: Type[BaseModel], model: str | None = None, **kwargs
     ) -> BaseModel:
+        from cerebras.cloud.sdk import APIConnectionError as _ConnErr
+
         self._check_rate_limit()
         schema = self._build_schema(output_model)
         response_format = {
@@ -112,34 +114,37 @@ class CerebrasClient:
                 "schema": schema,
             },
         }
-        try:
-            t0 = time.time()
-            resp = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
-            )
-            t1 = time.time()
-            tokens = getattr(resp.usage, "completion_tokens", 0)
-            if tokens and (t1 - t0) > 0:
-                print(f"[Cerebras Speed] structured_complete generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
-                
-            raw = resp.choices[0].message.content
-            self._health = {"status": "ok"}
-            return output_model.model_validate_json(raw)
-        except CerebrasError:
-            raise
-        except (json.JSONDecodeError, ValidationError):
-            # One retry on parse failure or truncated JSON (EOF validation error)
-            t0 = time.time()
-            resp = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
-            )
-            t1 = time.time()
-            tokens = getattr(resp.usage, "completion_tokens", 0)
-            if tokens and (t1 - t0) > 0:
-                print(f"[Cerebras Speed] structured_complete (retry) generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
-            return output_model.model_validate_json(resp.choices[0].message.content)
-        except Exception as exc:
-            self._handle_sdk_exc(exc)
+        last_exc: Exception = RuntimeError("unreachable")
+        for attempt in range(2):
+            if attempt > 0:
+                time.sleep(2)
+            try:
+                t0 = time.time()
+                resp = self._client.chat.completions.create(
+                    model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
+                )
+                t1 = time.time()
+                tokens = getattr(resp.usage, "completion_tokens", 0)
+                if tokens and (t1 - t0) > 0:
+                    suffix = " (retry)" if attempt > 0 else ""
+                    print(f"[Cerebras Speed] structured_complete{suffix} generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                raw = resp.choices[0].message.content
+                self._health = {"status": "ok"}
+                return output_model.model_validate_json(raw)
+            except CerebrasError:
+                raise
+            except _ConnErr as exc:
+                # HTTP/2 server disconnect — retry once with backoff
+                last_exc = exc
+                continue
+            except (json.JSONDecodeError, ValidationError) as exc:
+                last_exc = exc
+                if attempt == 0:
+                    continue
+                self._handle_sdk_exc(exc)
+            except Exception as exc:
+                self._handle_sdk_exc(exc)
+        self._handle_sdk_exc(last_exc)
 
     def complete_with_tools(
         self,

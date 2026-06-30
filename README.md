@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Gemma_4-Cerebras_800+_TPS-4A7FB5?style=for-the-badge" alt="Gemma 4 on Cerebras" />
+  <img src="https://img.shields.io/badge/Gemma_4-Cerebras_900+_TPS-4A7FB5?style=for-the-badge" alt="Gemma 4 on Cerebras" />
   <img src="https://img.shields.io/badge/React_18-Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="React + Vite" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Electron-47848F?style=for-the-badge&logo=electron&logoColor=white" alt="Electron" />
