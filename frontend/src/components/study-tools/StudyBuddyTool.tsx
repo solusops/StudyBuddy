@@ -33,7 +33,7 @@ interface Props {
 }
 
 export function StudyBuddyTool({ sendEvent, nodeId, familiarity }: Props) {
-  const { studyBuddyHistory, streamingStudyBuddy, addStudyBuddyMessage, setStudyBuddyHistory, studyBuddyInitializing, setStudyBuddyInitializing } = useSessionStore()
+  const { studyBuddyHistory, streamingStudyBuddy, addStudyBuddyMessage, setStudyBuddyHistory, setStudyBuddyInitializing } = useSessionStore()
   const { studyBuddySessions, activeStudyBuddySessionId, setActiveStudyBuddySession, addStudyBuddySession, updateStudyBuddySession } = useInteractionStore()
   const [draft, setDraft] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)

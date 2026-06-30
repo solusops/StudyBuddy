@@ -25,12 +25,12 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
   const sendToTool = (ann: CommittedAnnotation, tool: "Infinite Wiki" | "Chat") => {
     const text = ann.note_text || "Pinned Region"
     const surrounding = ann.target_snippets?.map((s) => s.text).join("\n") || ""
-    setSelection(ann.target_snippets || [], text, surrounding, ann.image_base64)
+    setSelection(ann.target_snippets || [], text, surrounding, ann.image_base64 ?? undefined)
     window.dispatchEvent(new CustomEvent("studybuddy-open-tool", { detail: { tool } }))
     useInteractionStore.getState().setActiveAnnotation(null)
   }
 
-  const editPin = (ann: CommittedAnnotation) => {
+  const editPin = (_ann: CommittedAnnotation) => {
     const store = useInteractionStore.getState()
     store.setCursorMode("NOTE_APPEND")
     // activeAnnotation is already set (it's the popover trigger)
