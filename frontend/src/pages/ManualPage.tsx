@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { PDFReader } from "../components/reader/PDFReader"
 import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
-import { useShallow } from "zustand/react/shallow"
 import { FileText, Check } from "lucide-react"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"

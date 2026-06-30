@@ -1,5 +1,4 @@
 import { useRef, useEffect, useState } from "react"
-import { useShallow } from "zustand/react/shallow"
 import { Mic, Square } from "lucide-react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
