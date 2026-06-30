@@ -54,6 +54,7 @@ interface SessionStore {
   commitStudyBuddyResponse: () => void
   addChatMessage: (msg: ChatMessage) => void
   addStudyBuddyMessage: (msg: StudyBuddyMessage) => void
+  setStudyBuddyHistory: (history: StudyBuddyMessage[]) => void
   setChatDraft: (draft: string) => void
   setChatHistory: (history: ChatMessage[]) => void
   setLessonCache: (cache: Record<string, string>) => void
@@ -151,6 +152,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   addStudyBuddyMessage: (msg) =>
     set((s) => ({ studyBuddyHistory: [...s.studyBuddyHistory, msg] })),
+  setStudyBuddyHistory: (history) => set({ studyBuddyHistory: history }),
 
   setChatDraft: (draft) => set({ chatDraft: draft }),
   setChatHistory: (history) => set({ chatHistory: history }),

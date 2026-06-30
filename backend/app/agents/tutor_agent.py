@@ -325,11 +325,11 @@ class TutorAgent:
             {
                 "role": "system",
                 "content": (
-                    "Generate 8-10 high-level, conceptual multiple-choice questions. "
+                    "Generate high-level, conceptual multiple-choice questions. "
                     "Synthesize information across chunks. Do not ask for verbatim quotes. "
                     "Each question has exactly 1 correct option and 3 distractors. "
                     "Include a conceptual explanation. Cite the chunks used in source_chunk_indexes. "
-                    "Format math using $...$ for inline and $$...$$ for block math."
+                    "Format math using $...$ for inline and $$...$$ for block math. Do not use invalid commands like \\v."
                 ),
             },
             {
@@ -337,36 +337,64 @@ class TutorAgent:
                 "content": user_content,
             },
         ]
-        raw_payload = self._client.structured_complete(messages, _QuizPayload, model="gemma-4-31b")
-        
-        # Quality Check Pass
-        qc_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Evaluate each quiz question strictly WITHOUT reading the source material. "
-                    "Does it make logical sense independently? Are the distractors plausible but clearly wrong? "
-                    "Does it avoid lazy phrasing like 'according to the text'? "
-                    "Reject low-quality trivia or poorly formatted questions."
-                )
-            },
-            {
-                "role": "user",
-                "content": "Questions:\n" + "\n".join(f"{i}. Q: {q.question}\nA: {q.options}" for i, q in enumerate(raw_payload.questions))
-            }
-        ]
-        qc_payload = self._client.structured_complete(qc_messages, _QuizQualityPayload, model="gemma-4-31b")
         
         good_qs = []
-        for q, eval_res in zip(raw_payload.questions, qc_payload.evaluations):
-            if eval_res.is_good:
-                good_qs.append(q)
+        for attempt in range(3):
+            needed = 8 - len(good_qs)
+            if needed <= 0:
+                break
                 
+            # Temporarily instruct how many to generate
+            if attempt > 0:
+                messages[-1]["content"] += f"\n\n(Generate exactly {needed} new multiple-choice questions)"
+            else:
+                messages[-1]["content"] = user_content
+
+            raw_payload = self._client.structured_complete(messages, _QuizPayload, model="gemma-4-31b")
+            
+            # Quality Check Pass
+            qc_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Evaluate each quiz question strictly. "
+                        "1. Does it make logical sense independently? "
+                        "2. Are there invalid LaTeX commands or mismatched $? "
+                        "3. Does it hallucinate technical or biological terms? "
+                        "4. Are distractors plausible but clearly wrong? "
+                        "Reject low-quality trivia, broken LaTeX, or hallucinations."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": "Questions:\n" + "\n".join(f"{i}. Q: {q.question}\nA: {q.options}" for i, q in enumerate(raw_payload.questions))
+                }
+            ]
+            qc_payload = self._client.structured_complete(qc_messages, _QuizQualityPayload, model="gemma-4-31b")
+            
+            feedback = []
+            batch_good = []
+            for idx, (q, eval_res) in enumerate(zip(raw_payload.questions, qc_payload.evaluations)):
+                if eval_res.is_good and not eval_res.has_latex_errors and not eval_res.has_hallucinated_terms:
+                    batch_good.append(q)
+                else:
+                    feedback.append(f"Q{idx}: Rejected. Reason: {eval_res.reason}. LaTeX Error: {eval_res.has_latex_errors}. Hallucination: {eval_res.has_hallucinated_terms}")
+            
+            good_qs.extend(batch_good)
+                    
+            if len(good_qs) < 8 and attempt < 2:
+                messages.append({"role": "assistant", "content": raw_payload.model_dump_json()})
+                messages.append({"role": "user", "content": (
+                    f"Out of that batch, {len(batch_good)} were accepted. The following were rejected by the QC Agent:\n"
+                    + "\n".join(feedback) + "\n\n"
+                    f"Please generate {8 - len(good_qs)} NEW questions. Fix the LaTeX and terminology errors mentioned above. Do not repeat accepted questions."
+                )})
+
         # Fallback if too strict
         if not good_qs:
             good_qs = raw_payload.questions[:5]
 
-        return _QuizPayload(questions=good_qs[:5])
+        return _QuizPayload(questions=good_qs[:8])
 
     # ------------------------------------------------------------------ #
     # Visuals                                                             #
