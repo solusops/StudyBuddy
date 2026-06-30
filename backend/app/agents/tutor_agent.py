@@ -127,29 +127,23 @@ class TutorAgent:
 
         if knowledge_mode == "net_support":
             grounding = (
-                "Ground your explanation in the provided source material and the web source material. "
-                "Draw on your expert knowledge to fully explain the topic, give intuition and analogies, "
-                "and fill any gaps the source doesn't cover. Do NOT refuse to teach the requested topic under "
-                "any circumstances. If the topic is not discussed in the source material, use the web source "
-                "and your own knowledge to teach it fully. Do not fabricate source claims."
+                "Ground your explanation in the provided SOURCE MATERIAL and WEB SOURCE MATERIAL only. "
+                "If the topic is missing from the student's uploaded content, draw on the web search results "
+                "to fill the gap — cite the web source, not your own training weights. "
+                "Do NOT invent facts not present in either the source chunks or the web results."
             )
         else:
             grounding = (
-                "Base the lesson on the provided source material when possible. Teach the topic clearly and "
-                "relate it to the theme of the material. "
-                "IMPORTANT: If the requested topic is not mentioned or discussed in the source material, "
-                "do NOT refuse to teach it and do NOT just talk about other topics from the source (e.g. do not just "
-                "talk about Adam). Instead, explain the requested topic clearly using your own general knowledge, "
-                "and explain how it relates generally to the themes of the source material. Never invent false claims "
-                "about what the source says."
+                "Base the lesson EXCLUSIVELY on the provided source material (the chunks below). "
+                "Do NOT generate facts or claims from your own training weights. "
+                "If the source material does not directly cover a point, say so and "
+                "anchor your explanation to the closest relevant passage that IS in the source."
             )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "You are a Cognitive Translator and tutor. Your job is to TEACH the requested "
-                    f"topic — do NOT refuse, and do NOT state that the topic is not mentioned in the text. "
-                    f"Teach it anyway. {grounding}\n\n"
+                    f"You are a Cognitive Translator and tutor. {grounding}\n\n"
                     "Write a single, flowing lesson — do NOT split into separate sections like "
                     "'Concept' or 'From the Source'. Weave the intuitive explanation and factual "
                     "details together naturally into one coherent narrative.\n\n"

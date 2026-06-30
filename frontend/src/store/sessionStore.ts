@@ -96,8 +96,28 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setKnowledgeMode: (mode) => set({ knowledgeMode: mode }),
 
+  // Switching nodes must drop all previously-generated tool output — otherwise Study
+  // Buddy/Flashcards/Quiz keep showing the prior node's content (lessonCache is the
+  // one exception: it's intentionally keyed by nodeId so revisits don't re-fetch).
   setActiveNode: (id, label) =>
-    set({ activeNodeId: id, activeNodeLabel: label }),
+    set({
+      activeNodeId: id,
+      activeNodeLabel: label,
+      lesson: null,
+      visual: null,
+      flashcards: [],
+      flashcardContextImages: [],
+      quizQuestions: [],
+      quizContextImages: [],
+      chatHistory: [],
+      studyBuddyHistory: [],
+      chatDraft: "",
+      streamingChat: "",
+      streamingStudyBuddy: "",
+      streamingLesson: "",
+      lessonStreaming: false,
+      studyBuddyInitializing: false,
+    }),
 
   setLesson: (lesson) => set({ lesson }),
   setVisual: (visual) => set({ visual }),

@@ -105,11 +105,54 @@ def get_trajectory(document_id: str):
 
 class ClearRequest(BaseModel):
     session_id: str
+    document_id: str = ""
 
 
 @router.post("/clear")
 def clear_session(req: ClearRequest):
+    """Wipe everything tied to this session/document — persistent and in-memory.
+
+    A session is exactly one input document, so clearing means starting over
+    with nothing: no curriculum tree, no lessons, no chunks, no uploaded file.
+    Cognee's cross-session student-memory profile is intentionally NOT touched —
+    it's meant to persist and grow across documents, not reset with them.
+    """
+    import shutil
+    from pathlib import Path
+
+    from app.rag.ingestion import LIBRARY_COLLECTION
+    from app.services.annotation_service import get_annotation_service
+    from app.services.memory_service import MemoryService
+
     _journal.clear_session(req.session_id)
     mgr = get_graph_manager()
     mgr.clear_session(req.session_id)
+
+    db = get_db()
+    db.delete_where(LIBRARY_COLLECTION, {"session_id": req.session_id})
+
+    _ingest_status.pop(req.session_id, None)
+
+    base = Path.home() / ".studybuddy"
+    session_file = base / "sessions" / f"{req.session_id}.json"
+    if session_file.exists():
+        session_file.unlink()
+
+    document_id = req.document_id
+    if document_id:
+        for p in (
+            base / "sessions" / f"doc_{document_id}.json",
+            base / "graphs" / f"doc_{document_id}.json",
+            base / "pdfs" / f"{document_id}.pdf",
+        ):
+            if p.exists():
+                p.unlink()
+        get_annotation_service().delete_for_document(document_id)
+        MemoryService().flush_cluster(document_id)
+
+    # Single-document-per-session model: the uploaded file IS the session's content.
+    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
+    if os.path.isdir(uploads_dir):
+        shutil.rmtree(uploads_dir, ignore_errors=True)
+
     return {"status": "cleared"}

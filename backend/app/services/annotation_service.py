@@ -59,3 +59,24 @@ class AnnotationService:
         if a:
             self._flush(a.document_id)
         return a is not None
+
+    def delete_for_document(self, document_id: str) -> None:
+        """Drop every annotation for a document — in-memory and on disk."""
+        for aid in [a.annotation_id for a in self._store.values() if a.document_id == document_id]:
+            self._store.pop(aid, None)
+        p = self._path(document_id)
+        if os.path.exists(p):
+            os.remove(p)
+
+
+# Single process-wide instance — every caller must go through get_annotation_service()
+# rather than constructing AnnotationService() directly, or in-memory state forks
+# (a write through one instance won't be visible to another until the next disk read).
+_instance: AnnotationService | None = None
+
+
+def get_annotation_service() -> AnnotationService:
+    global _instance
+    if _instance is None:
+        _instance = AnnotationService()
+    return _instance

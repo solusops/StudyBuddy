@@ -1,8 +1,9 @@
-"""Library router — folder-based content management and direct file uploads.
+"""Library router — single-document content management.
 
-Two content paths:
-- Folder-based (Electron): configure content/questions folders, scan in background
-- Upload-based (browser/Electron): drag-and-drop files, instant tree, background chunking
+A session is exactly one uploaded document (set): drag-and-drop files in,
+get an instant curriculum tree, chunk the full text in the background.
+There is no folder-configuration concept — the uploads directory under
+~/.studybuddy/uploads IS the content store.
 """
 import asyncio
 import hashlib
@@ -22,18 +23,13 @@ from app.rag.ingestion import (
     extract_document_structure,
     ingest_file,
 )
-from app.rag.chromadb_client import ChromaDBClient
-from app.services.settings_service import (
-    get_content_folder,
-    get_questions_folder,
-    is_configured,
-    save_settings,
-)
+from app.routers.session import set_ingest_status
 from app.websockets.handlers import get_db, get_graph_manager
 
 router = APIRouter(prefix="/library", tags=["library"])
 
 _SUPPORTED_EXTS = {".pdf", ".docx", ".txt"}
+_UPLOADS_DIR = os.path.expanduser("~/.studybuddy/uploads")
 
 _brain: BrainAgent | None = None
 
@@ -48,11 +44,6 @@ def _get_brain() -> BrainAgent:
 # ------------------------------------------------------------------ #
 # Models                                                              #
 # ------------------------------------------------------------------ #
-
-
-class ConfigureRequest(BaseModel):
-    content_folder: str
-    questions_folder: Optional[str] = None
 
 
 class StartSessionRequest(BaseModel):
@@ -82,100 +73,44 @@ def _list_files(folder: str) -> List[str]:
     ]
 
 
-def _scan_and_index(folder: str, chunk_type: str, db: ChromaDBClient) -> int:
-    """Synchronous folder scan + chunk. Called in executor to avoid blocking."""
-    total = 0
-    for path in _list_files(folder):
-        with open(path, "rb") as f:
-            content = f.read()
-        filename = os.path.basename(path)
-        count = ingest_file(content, filename, LIBRARY_COLLECTION, chunk_type=chunk_type, db=db)  # type: ignore[arg-type]
-        total += count
-    return total
-
-
 # ------------------------------------------------------------------ #
 # Endpoints                                                           #
 # ------------------------------------------------------------------ #
 
 
-@router.post("/configure")
-def configure(req: ConfigureRequest):
-    """Save content and questions folder paths."""
-    if not os.path.isdir(req.content_folder):
-        raise HTTPException(400, f"Content folder not found: {req.content_folder}")
-    if req.questions_folder and not os.path.isdir(req.questions_folder):
-        raise HTTPException(400, f"Questions folder not found: {req.questions_folder}")
-    settings = save_settings(
-        {
-            "content_folder": req.content_folder,
-            "questions_folder": req.questions_folder or "",
-        }
-    )
-    return {"status": "configured", **settings}
-
-
 @router.get("/status")
 def status():
-    """Check if folders are configured and how many files are indexed."""
-    content_folder = get_content_folder()
-    questions_folder = get_questions_folder()
+    """Check what's currently uploaded and how many chunks are indexed."""
     db = get_db()
-    files = _list_files(content_folder or "")
-    
+    files = _list_files(_UPLOADS_DIR)
+
     document_id = None
     if files:
         try:
-            import hashlib
             with open(files[0], "rb") as f:
                 document_id = hashlib.sha256(f.read()).hexdigest()
         except Exception:
             pass
 
     return {
-        "configured": is_configured(),
-        "content_folder": content_folder,
-        "questions_folder": questions_folder,
+        "configured": bool(files),
+        "content_folder": _UPLOADS_DIR if files else None,
         "content_files": [os.path.basename(p) for p in files],
-        "questions_files": [os.path.basename(p) for p in _list_files(questions_folder or "")],
         "indexed_chunks": db.collection_count(LIBRARY_COLLECTION),
         "document_id": document_id,
     }
-
-
-@router.post("/scan")
-async def scan_library(background_tasks: BackgroundTasks):
-    """Trigger background chunking of all new files in the configured folders."""
-    content_folder = get_content_folder()
-    if not content_folder:
-        raise HTTPException(400, "Library not configured. Call POST /library/configure first.")
-    questions_folder = get_questions_folder()
-    db = get_db()
-
-    async def _bg():
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _scan_and_index, content_folder, "content", db)
-        if questions_folder:
-            await loop.run_in_executor(None, _scan_and_index, questions_folder, "question", db)
-
-    background_tasks.add_task(lambda: asyncio.create_task(_bg()))
-    return {"status": "scanning"}
 
 
 @router.post("/start-session")
 async def start_session(req: StartSessionRequest):
     """Instant tree generation from document structure — no RAG needed.
 
-    Reads headings/TOC from each content file and sends to Gemma 4.
+    Reads headings/TOC from each uploaded file and sends to Gemma 4.
     Returns in ~2s, before chunking is complete.
     """
-    content_folder = get_content_folder()
-    if not content_folder:
-        raise HTTPException(400, "Library not configured.")
-
-    files = _list_files(content_folder)
+    files = _list_files(_UPLOADS_DIR)
     if not files:
-        raise HTTPException(400, "No supported files found in content folder.")
+        raise HTTPException(400, "No document uploaded yet.")
 
     # Cache the first file for layout/regions segmentation under its document_id hash
     document_id = ""
@@ -269,10 +204,9 @@ async def upload_and_start(
     # fires BUILD_GRAPH, which streams nodes in parallel ("fireworks"). This returns fast.
 
     # Persist uploaded files to disk so /library/file/{name} can serve them later
-    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
-    os.makedirs(uploads_dir, exist_ok=True)
+    os.makedirs(_UPLOADS_DIR, exist_ok=True)
     for content, filename in file_store:
-        dest = os.path.join(uploads_dir, filename)
+        dest = os.path.join(_UPLOADS_DIR, filename)
         with open(dest, "wb") as fh:
             fh.write(content)
 
@@ -286,8 +220,6 @@ async def upload_and_start(
             if not os.path.exists(dest):
                 with open(dest, "wb") as fh:
                     fh.write(content)
-    # Register uploads dir as the content folder so /library/status sees the files
-    save_settings({"content_folder": uploads_dir})
 
     # Background: chunk full documents into LIBRARY_COLLECTION for RAG.
     # Clear this session's prior chunks first so new content fully replaces old
@@ -295,12 +227,23 @@ async def upload_and_start(
     db = get_db()
     db.delete_where(LIBRARY_COLLECTION, {"session_id": session_id})
 
+    set_ingest_status(session_id, "chunking")
+
     def _chunk_all():
-        for content, filename in file_store:
-            ingest_file(
-                content, filename, LIBRARY_COLLECTION, db=db,
-                skip_if_indexed=False, session_id=session_id,
+        try:
+            total = 0
+            for content, filename in file_store:
+                total += ingest_file(
+                    content, filename, LIBRARY_COLLECTION, db=db,
+                    skip_if_indexed=False, session_id=session_id,
+                )
+            set_ingest_status(session_id, "ready" if total > 0 else "error")
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Background chunking failed for session %s", session_id
             )
+            set_ingest_status(session_id, "error")
 
     background_tasks.add_task(_chunk_all)
 
@@ -315,11 +258,19 @@ async def upload_and_start(
     }
 
 
+@router.post("/clear")
+def clear_library():
+    """Wipe the uploaded document so /library/status reports unconfigured."""
+    import shutil
+    if os.path.isdir(_UPLOADS_DIR):
+        shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
+    return {"status": "cleared"}
+
+
 @router.get("/file/{filename}")
 def serve_library_file(filename: str):
     """Serve a file from the uploads directory (for browser-mode PDF viewer)."""
-    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
-    path = os.path.join(uploads_dir, filename)
+    path = os.path.join(_UPLOADS_DIR, filename)
     if not os.path.isfile(path):
         raise HTTPException(404, f"File not found: {filename}")
     ext = os.path.splitext(filename)[1].lower()

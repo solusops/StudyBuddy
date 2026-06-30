@@ -157,8 +157,6 @@ declare global {
       isElectron: boolean
       saveFile: (path: string, content: string) => Promise<{ success: boolean; filePath: string }>
       getHomeDir: () => Promise<string>
-      selectFolder: (opts?: { title?: string }) => Promise<string | null>
-      listFiles: (folderPath: string) => Promise<Array<{ name: string; path: string }>>
       readFile: (filePath: string) => Promise<string>          // base64
       getFileUrl: (filePath: string) => Promise<string>        // file:// URL
     }

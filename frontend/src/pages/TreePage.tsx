@@ -6,6 +6,8 @@ import { Check, X, ArrowLeft, ArrowRight } from "lucide-react"
 import { ReportView } from "../components/panel/ReportView"
 import { EvaluationView } from "../components/panel/EvaluationView"
 import { useTokenRate } from "../lib/useTokenRate"
+import { clearSessionEverywhere } from "../lib/clearSession"
+import { ConfirmDialog } from "../components/overlay/ConfirmDialog"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import type { AppSession } from "../App"
@@ -32,6 +34,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [commitDone, setCommitDone] = useState(false)
   const [showReport, setShowReport] = useState(false)
   const [showEval, setShowEval] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
   const lessonRate = useTokenRate(streamingLesson, lessonStreaming)
@@ -247,12 +250,8 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   }
 
   const clearSession = async () => {
-    await fetch("/session/clear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: session?.sessionId }),
-    })
-    localStorage.removeItem("studybuddy_session")
+    await clearSessionEverywhere(session?.sessionId ?? null, session?.documentId ?? null)
+    setShowClearConfirm(false)
     onNeedSetup()
   }
 
@@ -359,13 +358,23 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
         {/* Clear */}
         <button
-          onClick={clearSession}
+          onClick={() => setShowClearConfirm(true)}
           title="Delete session and start fresh"
           style={{ background: "transparent", color: "#9CA3AF", border: "1px solid #E8E0D5", borderRadius: 6, padding: "4px 12px", fontSize: 14, cursor: "pointer" }}
         >
           Clear
         </button>
       </div>
+
+      {showClearConfirm && (
+        <ConfirmDialog
+          title="Clear this session?"
+          message="This permanently deletes your curriculum tree, lessons, flashcards, quiz progress, notes, and the uploaded document for this session. This cannot be undone."
+          confirmLabel="Clear everything"
+          onConfirm={clearSession}
+          onCancel={() => setShowClearConfirm(false)}
+        />
+      )}
 
       {/* Main area: graph + sliding node panel */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>

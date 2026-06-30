@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react"
 import { PDFReader } from "../components/reader/PDFReader"
 import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
+import { ConfirmDialog } from "../components/overlay/ConfirmDialog"
 import { FileText, Check } from "lucide-react"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useInteractionStore } from "../store/interactionStore"
 import { useContextStore } from "../store/contextStore"
 import { saveMarkdownFile, sanitizeFilename } from "../lib/fileSystem"
+import { clearSessionEverywhere } from "../lib/clearSession"
 import type { AppSession } from "../App"
 import type { NodeData } from "../types"
 import type { Edge, Node } from "@xyflow/react"
@@ -207,6 +209,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
   const [commitDone, setCommitDone] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const commitSession = async () => {
     const { nodes, edges } = useGraphStore.getState()
@@ -246,12 +249,8 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   }
 
   const clearSession = async () => {
-    await fetch("/session/clear", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: sessionId }),
-    })
-    localStorage.removeItem("studybuddy_session")
+    await clearSessionEverywhere(sessionId, documentId)
+    setShowClearConfirm(false)
     onNeedSetup()
   }
 
@@ -378,7 +377,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
 
         {/* Clear */}
         <button
-          onClick={clearSession}
+          onClick={() => setShowClearConfirm(true)}
           title="Delete session and start fresh"
           style={{
             background: "transparent",
@@ -393,6 +392,16 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           Clear
         </button>
       </div>
+
+      {showClearConfirm && (
+        <ConfirmDialog
+          title="Clear this session?"
+          message="This permanently deletes your curriculum tree, lessons, flashcards, quiz progress, notes, and the uploaded document for this session. This cannot be undone."
+          confirmLabel="Clear everything"
+          onConfirm={clearSession}
+          onCancel={() => setShowClearConfirm(false)}
+        />
+      )}
 
       {/* Main split view */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>

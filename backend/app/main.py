@@ -8,20 +8,31 @@ load_dotenv()  # must run before any local import that reads env vars
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import annotations, health, ingest, library, regions, sandbox, session, review
+from app.routers import annotations, health, library, regions, sandbox, session, review
 from app.websockets.handlers import get_connection_manager, get_db, handle_event
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import os
-    os.environ["LLM_API_KEY"] = os.environ.get("CEREBRAS_API_KEY", "")
-    os.environ["LLM_API_BASE"] = "https://api.cerebras.ai/v1"
+    cerebras_key = os.environ.get("CEREBRAS_API_KEY", "")
+    cerebras_base = "https://api.cerebras.ai/v1"
+    # LiteLLM reads OPENAI_API_KEY/BASE when provider is "openai"
+    os.environ["OPENAI_API_KEY"] = cerebras_key
+    os.environ["OPENAI_API_BASE"] = cerebras_base
+    # Cognee-specific vars (fallback)
+    os.environ["LLM_API_KEY"] = cerebras_key
+    os.environ["LLM_API_BASE"] = cerebras_base
     os.environ["LLM_MODEL"] = "openai/gemma-4-31b"
     
     import cognee
+    from pathlib import Path
     try:
-        await cognee.setup()
+        root = str(Path.home() / ".studybuddy" / "cognee")
+        cognee.config.data_root_directory(root)
+        cognee.config.system_root_directory(f"{root}/system")
+        from cognee.infrastructure.databases.relational.create_db_and_tables import create_db_and_tables
+        await create_db_and_tables()
     except Exception as e:
         print("Cognee setup error:", e)
     yield
@@ -50,7 +61,6 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
-app.include_router(ingest.router)
 app.include_router(library.router)
 app.include_router(sandbox.router)
 app.include_router(session.router)

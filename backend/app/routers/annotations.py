@@ -2,10 +2,10 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.schemas.annotation import StudentAnnotation
-from app.services.annotation_service import AnnotationService
+from app.services.annotation_service import get_annotation_service
 
 router = APIRouter(prefix="/annotations", tags=["annotations"])
-_svc = AnnotationService()
+_svc = get_annotation_service()
 
 
 class PatchNoteRequest(BaseModel):

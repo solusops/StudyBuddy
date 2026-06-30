@@ -79,6 +79,10 @@ interface InteractionStore {
   setActiveStudyBuddySession: (id: string | null) => void
   addStudyBuddySession: (session: StudyBuddySession) => void
   updateStudyBuddySession: (id: string, messages: StudyBuddySession["messages"]) => void
+
+  // Wipes every document-scoped field (in-memory + the localStorage it mirrors).
+  // A session is exactly one document, so clearing a session means clearing all of this.
+  resetDocument: () => void
 }
 
 // Load initial note positions from localStorage
@@ -180,4 +184,24 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
       localStorage.setItem("studybuddy_sb_sessions", JSON.stringify(next))
       return { studyBuddySessions: next }
     }),
+
+  resetDocument: () => {
+    localStorage.removeItem("studybuddy_note_positions")
+    localStorage.removeItem("studybuddy_wiki_history")
+    localStorage.removeItem("studybuddy_chat_sessions")
+    localStorage.removeItem("studybuddy_sb_sessions")
+    set({
+      documentId: null,
+      committedAnnotations: [],
+      activeAnnotationId: null,
+      activeSelectionGroup: [],
+      blinkTarget: null,
+      notePositions: {},
+      wikiHistory: {},
+      chatSessions: [],
+      activeChatSessionId: null,
+      studyBuddySessions: [],
+      activeStudyBuddySessionId: null,
+    })
+  },
 }))

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const fs = require('fs')
@@ -42,27 +42,6 @@ ipcMain.handle('save-file', async (_, { filePath, content }) => {
 })
 
 ipcMain.handle('get-home-dir', () => os.homedir())
-
-// Folder picker — returns the selected directory path or null if cancelled
-ipcMain.handle('select-folder', async (_, opts = {}) => {
-  const result = await dialog.showOpenDialog({
-    properties: ['openDirectory'],
-    title: opts.title || 'Select Folder',
-  })
-  return result.canceled ? null : result.filePaths[0]
-})
-
-// List supported files in a folder
-const SUPPORTED_EXTS = new Set(['.pdf', '.docx', '.txt'])
-ipcMain.handle('list-files', async (_, folderPath) => {
-  if (!folderPath || !fs.existsSync(folderPath)) return []
-  return fs.readdirSync(folderPath)
-    .filter(name => {
-      const ext = path.extname(name).toLowerCase()
-      return SUPPORTED_EXTS.has(ext) && fs.statSync(path.join(folderPath, name)).isFile()
-    })
-    .map(name => ({ name, path: path.join(folderPath, name) }))
-})
 
 // Read a file as base64 (for sending to backend or rendering PDFs)
 ipcMain.handle('read-file', async (_, filePath) => {

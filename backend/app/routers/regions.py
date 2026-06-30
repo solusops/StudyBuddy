@@ -93,9 +93,8 @@ async def segment(req: SegmentRequest):
         print(f"[REGIONS] PDF path {pdf_path} not found. Attempting backend-side resolution...")
         import hashlib
         import shutil
-        from app.services.settings_service import get_content_folder
         resolved = False
-        content_folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
+        content_folder = os.path.expanduser("~/.studybuddy/uploads")
         if os.path.exists(content_folder):
             for filename in os.listdir(content_folder):
                 if filename.lower().endswith(".pdf"):

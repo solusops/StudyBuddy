@@ -96,28 +96,28 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
       >
         {activeTab === "Flashcards" && (
           activeNodeId ? (
-            <FlashcardTool sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
+            <FlashcardTool key={activeNodeId} sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
           ) : (
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to see flashcards.</div>
           )
         )}
         {activeTab === "Quiz" && (
           activeNodeId ? (
-            <QuizTool sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
+            <QuizTool key={activeNodeId} sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
           ) : (
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to take a quiz.</div>
           )
         )}
         {activeTab === "Study Buddy" && (
           activeNodeId ? (
-            <StudyBuddyTool sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
+            <StudyBuddyTool key={activeNodeId} sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
           ) : (
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Study Buddy.</div>
           )
         )}
         {activeTab === "Chat" && (
           activeNodeId ? (
-            <ChatTool sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
+            <ChatTool key={activeNodeId} sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
           ) : (
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to chat.</div>
           )

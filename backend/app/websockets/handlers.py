@@ -8,7 +8,7 @@ requests within one process lifetime.
 """
 import asyncio
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.agents.brain_agent import BrainAgent
 from app.services.output_cache import OutputCache
@@ -47,9 +47,9 @@ _cache = OutputCache()
 _wiki = WikiAgent()
 _study_buddy: StudyBuddyAgent | None = None
 
-from app.services.annotation_service import AnnotationService
+from app.services.annotation_service import get_annotation_service
 from app.services.memory_service import MemoryService
-_annotations = AnnotationService()
+_annotations = get_annotation_service()
 # Local memory: ephemeral per-PDF report clusters + persistent learning trajectory.
 _local_mem = MemoryService()
 
@@ -185,9 +185,8 @@ def _session_documents() -> list[dict]:
     """
     import os
     from app.rag.ingestion import extract_document_structure
-    from app.services.settings_service import get_content_folder
 
-    folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
+    folder = os.path.expanduser("~/.studybuddy/uploads")
     docs: list[dict] = []
     if not os.path.isdir(folder):
         return docs
@@ -464,6 +463,45 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         query = _get_brain().build_rag_query(data.get("node_label", node.label), familiarity)
         # Multi-paper: scope retrieval to this node's source paper(s).
         chunks = await _get_chunks(session_id, query, n=5, document_ids=node.document_ids or None)
+
+        # If chunks are empty the background indexer may still be running — poll while it's
+        # genuinely in progress, but stop immediately once we know it finished (success or error)
+        # rather than repeating a "still indexing" message that will never become true.
+        if not chunks:
+            from app.routers.session import _ingest_status
+            import asyncio as _asyncio
+
+            waited = 0.0
+            while not chunks and waited < 15.0:
+                status = _ingest_status.get(session_id, "unknown")
+                if status == "error":
+                    break
+                if status == "ready" and waited > 0:
+                    break
+                await _asyncio.sleep(3)
+                waited += 3.0
+                chunks = await _get_chunks(session_id, query, n=5, document_ids=node.document_ids or None)
+
+        if not chunks:
+            status = _ingest_status.get(session_id, "unknown")
+            if status == "error":
+                msg = (
+                    "_We couldn't index your document — it may be a scanned/image-only PDF "
+                    "with no readable text, or an unsupported format. Try re-uploading a "
+                    "text-based PDF, DOCX, or TXT file._"
+                )
+            elif status == "ready":
+                msg = (
+                    "_We finished indexing your document, but couldn't find content relevant "
+                    "to this topic. Try a different node, or re-upload the document if this "
+                    "seems wrong._"
+                )
+            else:
+                msg = "_Your documents are still being indexed. Please wait a moment and click the node again._"
+            await _cm.send(session_id, "LESSON_TOKEN", {"token": msg})
+            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "none"})
+            return
+
         selection_text = data.get("selection_text", "")
         anchor_id = data.get("anchor_id") or node_id
         knowledge_mode = data.get("knowledge_mode", "content_only")
@@ -825,7 +863,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         try:
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
-            student_profile = await _memory.get_student_profile()
+            student_profile = await _memory.query_prior_knowledge(node_label)
             async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level, student_profile):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
@@ -854,7 +892,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         try:
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
-            student_profile = await _memory.get_student_profile()
+            student_profile = await _memory.query_prior_knowledge(node_label)
             async for token in _get_study_buddy().evaluate_and_ask_next(
                 node_label=node_label,
                 chunks=chunks,
@@ -905,7 +943,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 try:
                     node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
                     chunks = await _get_chunks(session_id, node_label, n=5)
-                    student_profile = await _memory.get_student_profile()
+                    student_profile = await _memory.query_prior_knowledge(node_label)
                     async for token in _get_study_buddy().evaluate_and_ask_next(
                         node_label=node_label,
                         chunks=chunks,

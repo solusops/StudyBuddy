@@ -33,37 +33,10 @@ export default function App() {
   const setDocumentId = useInteractionStore((s) => s.setDocumentId)
   useSelectionGrow()  // word-grow feedback on selected text (chat + notes)
 
-  // On mount, wait briefly for backend to start, then check if library is already configured
+  // On mount, wait briefly for backend to start before showing setup
   useEffect(() => {
     // Small delay so Vite proxy doesn't spam ECONNREFUSED while uvicorn initialises
-    const t = setTimeout(() => {
-    fetch("/library/status")
-      .then((r) => r.json())
-      .then((status) => {
-        if (status.configured && status.content_files.length > 0) {
-          // Try to restore a committed session from localStorage
-          const saved = localStorage.getItem("studybuddy_session")
-          if (saved) {
-            try {
-              const s: AppSession = JSON.parse(saved)
-              setSession(s)
-              // Restore lesson cache so previously loaded lessons don't need re-fetching
-              if (s.lessonCache && Object.keys(s.lessonCache).length > 0) {
-                useSessionStore.getState().setLessonCache(s.lessonCache)
-              }
-              if (s.knowledgeMode) {
-                useSessionStore.getState().setKnowledgeMode(s.knowledgeMode)
-              }
-              setView("tree")
-              return
-            } catch { /* corrupt data, fall through */ }
-          }
-          setView("manual")
-        }
-      })
-      .catch(() => {/* backend not ready yet */})
-      .finally(() => setChecking(false))
-    }, 2000)
+    const t = setTimeout(() => setChecking(false), 2000)
     return () => clearTimeout(t)
   }, [])
 
