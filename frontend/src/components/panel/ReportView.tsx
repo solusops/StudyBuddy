@@ -22,6 +22,12 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
   const [editText, setEditText] = useState("")
   const rate = useTokenRate(content, streaming)
 
+  // Flush the ephemeral per-PDF report memory cluster when the report is closed.
+  const close = () => {
+    sendEvent("REPORT_CLOSE", { document_id: session?.documentId ?? "" })
+    onClose()
+  }
+
   const compile = (edit_instruction = "") => {
     setContent("")
     setVisual(null)
@@ -78,7 +84,7 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
               <button onClick={() => window.print()} style={btn(true)}>Publish (A4)</button>
             </>
           )}
-          <button onClick={onClose} style={{ ...btn(false), border: "none", fontSize: 18 }}>×</button>
+          <button onClick={close} style={{ ...btn(false), border: "none", fontSize: 18 }}>×</button>
         </div>
 
         {editing && (

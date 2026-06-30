@@ -46,9 +46,10 @@ _cache = OutputCache()
 _wiki = WikiAgent()
 
 from app.services.annotation_service import AnnotationService
+from app.services.memory_service import MemoryService
 _annotations = AnnotationService()
-# Pooled note-insights per session, so a report edit re-synthesizes without reprocessing notes.
-_report_insights: Dict[str, list] = {}
+# Local memory: ephemeral per-PDF report clusters + persistent learning trajectory.
+_local_mem = MemoryService()
 
 # Tool the chat model may call to fetch live web context (executed via WikiAgent.search_tavily).
 _WEB_SEARCH_TOOL = {
@@ -190,11 +191,13 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
     edit_instruction = data.get("edit_instruction", "")
     loop = asyncio.get_event_loop()
 
-    # Edit path: re-synthesize from the cached pool (no note reprocessing).
+    # Edit path: re-synthesize from the per-PDF memory cluster (no note reprocessing).
     insights: list = []
-    if edit_instruction and _report_insights.get(session_id):
-        insights = [NoteInsight(**d) for d in _report_insights[session_id]]
+    if edit_instruction and _local_mem.read_cluster(document_id):
+        insights = [NoteInsight(**d) for d in _local_mem.read_cluster(document_id)]
     else:
+        # Fresh compile — clear any stale cluster for this PDF first.
+        _local_mem.flush_cluster(document_id)
         notes = _annotations.get_for_document(document_id) if document_id else []
         if not notes:
             await _cm.send(session_id, "REPORT_TOKEN", {"token":
@@ -225,8 +228,8 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
 
         results = await asyncio.gather(*(proc(i, n) for i, n in enumerate(notes)))
         insights = [r for r in results if r]
-        _report_insights[session_id] = [r.model_dump() for r in insights]
-        # Cognee hook (scale path): persist each insight to this PDF's memory cluster — v2.
+        # Persist each processed note-insight to this PDF's ephemeral memory cluster.
+        _local_mem.push_insights(document_id, [r.model_dump() for r in insights])
 
     web_context = ""
     if knowledge_mode == "net_support" and topic:
@@ -427,6 +430,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- REPORT_COMPILE (notes → per-PDF report, launched from the graph window) ----
     elif event_type == "REPORT_COMPILE":
         await _compile_report(session_id, data)
+
+    # ---- REPORT_CLOSE — flush the ephemeral per-PDF report memory cluster ----
+    elif event_type == "REPORT_CLOSE":
+        _local_mem.flush_cluster(data.get("document_id", ""))
 
     # ---- REPORT_REQUEST / REPORT_EDIT (per-highlight section — legacy panel mode) ----
     elif event_type in ("REPORT_REQUEST", "REPORT_EDIT"):
