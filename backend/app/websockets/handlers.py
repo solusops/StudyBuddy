@@ -215,28 +215,6 @@ def _resolve_chunk_location(document_id: str | None, chunk_texts: list[str]) -> 
     return None
 
 
-def _read_session_structure() -> str:
-    """Concatenate document structure (headings/first pages) of the uploaded content."""
-    import os
-    from app.rag.ingestion import extract_document_structure
-    from app.services.settings_service import get_content_folder
-
-    folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
-    if not os.path.isdir(folder):
-        return ""
-    parts = []
-    for name in os.listdir(folder):
-        if not name.lower().endswith((".pdf", ".docx", ".txt")):
-            continue
-        try:
-            with open(os.path.join(folder, name), "rb") as f:
-                content = f.read()
-            parts.append(f"Document: {name}\n{extract_document_structure(content, name)[:3000]}")
-        except Exception:
-            continue
-    return "\n\n---\n\n".join(parts)[:10000]
-
-
 async def _replay_doc_graph(session_id: str, nodes: list, edges: list) -> None:
     """Stream a previously-built graph from cache (keeps the pop-in animation, no LLM calls)."""
     _graph_mgr.set_graph(session_id, nodes)
@@ -516,55 +494,6 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- REPORT_CLOSE — flush the ephemeral per-PDF report memory cluster ----
     elif event_type == "REPORT_CLOSE":
         _local_mem.flush_cluster(data.get("document_id", ""))
-
-    # ---- REPORT_REQUEST / REPORT_EDIT (per-highlight section — legacy panel mode) ----
-    elif event_type in ("REPORT_REQUEST", "REPORT_EDIT"):
-        section_id = data.get("section_id", "")
-        topic = data.get("selection_text") or data.get("topic", "")
-        context_text = data.get("surrounding_context", "")
-        knowledge_mode = data.get("knowledge_mode", "content_only")
-        edit_instruction = data.get("edit_instruction", "") if event_type == "REPORT_EDIT" else ""
-        chunks = await _get_chunks(session_id, topic or "overview", n=5)
-
-        web_context = ""
-        if knowledge_mode == "net_support":
-            results = await _wiki.search_tavily(topic)
-            if results:
-                web_context = "\n\n".join(
-                    f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}" for r in results
-                )
-
-        full = ""
-        async for token in _get_report().stream_section(
-            topic, context_text, chunks, familiarity,
-            knowledge_mode=knowledge_mode, edit_instruction=edit_instruction, web_context=web_context,
-        ):
-            full += token
-            await _cm.send(session_id, "REPORT_TOKEN", {"section_id": section_id, "token": token})
-        await _cm.send(session_id, "REPORT_DONE", {"section_id": section_id})
-
-        # Background: attach a grounded visual if the section warrants one.
-        try:
-            loop = asyncio.get_event_loop()
-            decision = await loop.run_in_executor(
-                None, _get_router().classify, topic, full, chunks, familiarity
-            )
-            if decision.modality != "NONE":
-                ctx_chunks = [{"source": "report section", "text": full}] + chunks
-                if decision.modality == "STATIC_PLOT":
-                    visual = await loop.run_in_executor(
-                        None, _get_tutor().generate_plot, topic, ctx_chunks, familiarity
-                    )
-                else:
-                    anim = "three.js" if decision.recommended_tool == "Three.js" else "canvas"
-                    visual = await loop.run_in_executor(
-                        None, _get_tutor().generate_visual, topic, anim, familiarity, ctx_chunks
-                    )
-                await _cm.send(session_id, "REPORT_SECTION_VISUAL", {
-                    "section_id": section_id, "visual": visual.model_dump(),
-                })
-        except Exception as e:
-            print("Report section visual error:", e)
 
     # ---- GENERATE_VISUAL ------------------------------------------
     elif event_type == "GENERATE_VISUAL":
