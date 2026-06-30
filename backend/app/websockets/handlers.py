@@ -45,6 +45,11 @@ _report: ReportAgent | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
 
+from app.services.annotation_service import AnnotationService
+_annotations = AnnotationService()
+# Pooled note-insights per session, so a report edit re-synthesizes without reprocessing notes.
+_report_insights: Dict[str, list] = {}
+
 # Tool the chat model may call to fetch live web context (executed via WikiAgent.search_tavily).
 _WEB_SEARCH_TOOL = {
     "type": "function",
@@ -170,6 +175,90 @@ async def _replay_doc_graph(session_id: str, nodes: list, edges: list) -> None:
     for e in edges:
         await _cm.send(session_id, "GRAPH_EDGE_ADDED", e)
     await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": len(nodes), "reused": True})
+
+
+async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
+    """Per-PDF report: process each note statelessly in parallel, pool the insights, then
+    stream a synthesized, reworded report. A report edit re-synthesizes from the cached pool.
+    """
+    from app.agents.report_agent import NoteInsight
+
+    document_id = data.get("document_id", "")
+    topic = data.get("topic", "")
+    familiarity = data.get("familiarity", "high_school")
+    knowledge_mode = data.get("knowledge_mode", "content_only")
+    edit_instruction = data.get("edit_instruction", "")
+    loop = asyncio.get_event_loop()
+
+    # Edit path: re-synthesize from the cached pool (no note reprocessing).
+    insights: list = []
+    if edit_instruction and _report_insights.get(session_id):
+        insights = [NoteInsight(**d) for d in _report_insights[session_id]]
+    else:
+        notes = _annotations.get_for_document(document_id) if document_id else []
+        if not notes:
+            await _cm.send(session_id, "REPORT_TOKEN", {"token":
+                "_No notes yet. Highlight passages and add margin notes, or pin figures/formulas, "
+                "then compile the report._"})
+            await _cm.send(session_id, "REPORT_DONE", {})
+            return
+
+        await _cm.send(session_id, "REPORT_PROGRESS", {"done": 0, "total": len(notes), "stage": "reading notes"})
+
+        async def proc(idx: int, note) -> Optional[NoteInsight]:
+            snippet_text = " ".join(s.text for s in note.target_snippets)
+            query = snippet_text or note.note_text or topic or "overview"
+            chunks = await _get_chunks(session_id, query, n=3)
+            ctx = "\n".join(c["text"] for c in chunks)
+            extracted = note.note_text if note.image_base64 else ""
+            try:
+                ins = await loop.run_in_executor(
+                    None, _get_report().process_note,
+                    note.note_text or "", snippet_text, ctx, familiarity, extracted,
+                )
+            except Exception as e:
+                print("process_note error:", e)
+                ins = None
+            await _cm.send(session_id, "REPORT_PROGRESS",
+                           {"done": idx + 1, "total": len(notes), "stage": "reading notes"})
+            return ins
+
+        results = await asyncio.gather(*(proc(i, n) for i, n in enumerate(notes)))
+        insights = [r for r in results if r]
+        _report_insights[session_id] = [r.model_dump() for r in insights]
+        # Cognee hook (scale path): persist each insight to this PDF's memory cluster — v2.
+
+    web_context = ""
+    if knowledge_mode == "net_support" and topic:
+        wr = await _wiki.search_tavily(topic)
+        if wr:
+            web_context = "\n\n".join(f"[Web: {r.get('title')}]\n{r.get('content')}" for r in wr)
+
+    toc_labels = [n.label for n in _graph_mgr.list_nodes(session_id)]
+    await _cm.send(session_id, "REPORT_PROGRESS", {"done": 1, "total": 1, "stage": "writing report"})
+
+    full = ""
+    async for token in _get_report().synthesize_report(
+        insights, topic, toc_labels, familiarity,
+        knowledge_mode=knowledge_mode, edit_instruction=edit_instruction, web_context=web_context,
+    ):
+        full += token
+        await _cm.send(session_id, "REPORT_TOKEN", {"token": token})
+    await _cm.send(session_id, "REPORT_DONE", {})
+
+    # Attach a grounded visual to the report if warranted.
+    try:
+        decision = await loop.run_in_executor(None, _get_router().classify, topic or "report", full, [], familiarity)
+        if decision.modality != "NONE":
+            ctx_chunks = [{"source": "report", "text": full}]
+            if decision.modality == "STATIC_PLOT":
+                visual = await loop.run_in_executor(None, _get_tutor().generate_plot, topic or "report", ctx_chunks, familiarity)
+            else:
+                anim = "three.js" if decision.recommended_tool == "Three.js" else "canvas"
+                visual = await loop.run_in_executor(None, _get_tutor().generate_visual, topic or "report", anim, familiarity, ctx_chunks)
+            await _cm.send(session_id, "REPORT_SECTION_VISUAL", {"section_id": "compiled", "visual": visual.model_dump()})
+    except Exception as e:
+        print("Report visual error:", e)
 
 
 async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, document_id: str = "") -> None:
@@ -335,7 +424,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             data.get("document_id", ""),
         )
 
-    # ---- REPORT_REQUEST / REPORT_EDIT (Live-Compiling Report Canvas) ----
+    # ---- REPORT_COMPILE (notes → per-PDF report, launched from the graph window) ----
+    elif event_type == "REPORT_COMPILE":
+        await _compile_report(session_id, data)
+
+    # ---- REPORT_REQUEST / REPORT_EDIT (per-highlight section — legacy panel mode) ----
     elif event_type in ("REPORT_REQUEST", "REPORT_EDIT"):
         section_id = data.get("section_id", "")
         topic = data.get("selection_text") or data.get("topic", "")

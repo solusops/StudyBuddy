@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
+import { ReportView } from "../components/panel/ReportView"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import type { AppSession } from "../App"
@@ -26,6 +27,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
   const [commitDone, setCommitDone] = useState(false)
+  const [showReport, setShowReport] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
 
@@ -264,6 +266,24 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         <span style={{ color: "#9CA3AF", fontSize: 14 }}>
           Click a node to explore · edit its description · refine the whole tree below
         </span>
+        {/* Compile Report — amalgamates your notes across the paper into one document */}
+        <button
+          onClick={() => setShowReport(true)}
+          title="Compile a report from your notes on this paper"
+          style={{
+            background: "#1A3557",
+            color: "#FAF7F2",
+            border: "none",
+            borderRadius: 6,
+            padding: "4px 12px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Compile Report
+        </button>
+
         {/* Commit */}
         <button
           onClick={commitSession}
@@ -450,6 +470,10 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         </div>
         {refineError && <p style={{ color: "#EF4444", fontSize: 14, margin: 0 }}>{refineError}</p>}
       </div>
+
+      {showReport && (
+        <ReportView session={session} sendEvent={sendEvent} onClose={() => setShowReport(false)} />
+      )}
     </div>
   )
 }
