@@ -668,13 +668,27 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
         if not chunks:
             chunks = await _get_chunks(session_id, label, n=8)
+            
+        images_base64 = []
+        doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
+        if doc_ids:
+            from app.routers.regions import _load_region_cache
+            for did in doc_ids:
+                cache = _load_region_cache(did)
+                for page_regions in cache.values():
+                    for r in page_regions:
+                        if r.get("crop_base64"):
+                            images_base64.append(r["crop_base64"])
+        images_base64 = images_base64[:10]  # Cap to prevent context blowup
+
         cache_key = _cache.make_key("FLASHCARDS_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
         if cached:
             await _cm.send(session_id, "FLASHCARDS_READY", cached)
         else:
-            result = _get_tutor().generate_flashcards(label, chunks, familiarity)
+            result = _get_tutor().generate_flashcards(label, chunks, familiarity, images_base64=images_base64)
             payload = result.model_dump()
+            payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "FLASHCARDS_READY", payload)
 
@@ -686,13 +700,27 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
         if not chunks:
             chunks = await _get_chunks(session_id, label, n=8)
+            
+        images_base64 = []
+        doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
+        if doc_ids:
+            from app.routers.regions import _load_region_cache
+            for did in doc_ids:
+                cache = _load_region_cache(did)
+                for page_regions in cache.values():
+                    for r in page_regions:
+                        if r.get("crop_base64"):
+                            images_base64.append(r["crop_base64"])
+        images_base64 = images_base64[:10]  # Cap to prevent context blowup
+
         cache_key = _cache.make_key("QUIZ_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
         if cached:
             await _cm.send(session_id, "QUIZ_READY", cached)
         else:
-            result = _get_tutor().generate_quiz(label, chunks, familiarity)
+            result = _get_tutor().generate_quiz(label, chunks, familiarity, images_base64=images_base64)
             payload = result.model_dump()
+            payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "QUIZ_READY", payload)
 

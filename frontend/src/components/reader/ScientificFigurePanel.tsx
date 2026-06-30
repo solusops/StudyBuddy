@@ -62,9 +62,11 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
         width: "40%",
         display: "flex",
         flexDirection: "column",
-        background: "#FAF7F2",
-        borderLeft: "1px solid #E8E0D5",
+        background: "#FFFFFF",
+        borderLeft: "1px solid #E2E8F0",
+        boxShadow: "-8px 0 24px rgba(0, 0, 0, 0.05)",
         height: "100%",
+        zIndex: 10,
       }}
     >
       {/* Score bar (when a node has progress) */}

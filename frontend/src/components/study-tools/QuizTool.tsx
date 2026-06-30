@@ -13,7 +13,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
-  const { quizQuestions, setQuizQuestions } = useSessionStore()
+  const { quizQuestions, quizContextImages, setQuizQuestions } = useSessionStore()
   const [qIndex, setQIndex] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -73,10 +73,17 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: 16 }}>
-      <div style={{ fontSize: 12, color: "#6B7280" }}>{qIndex + 1} / {quizQuestions.length}</div>
-      <p style={{ color: "#1A1A2E", fontSize: 15, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5 }}>{currentQ.question}</p>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 20 }}>
+      {quizContextImages && quizContextImages.length > 0 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, borderBottom: "1px solid #E2E8F0" }}>
+          {quizContextImages.map((img, idx) => (
+            <img key={idx} src={`data:image/png;base64,${img}`} alt="Context" style={{ height: 100, borderRadius: 6, objectFit: "contain", border: "1px solid #E2E8F0", background: "#FFFFFF", padding: 4 }} />
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{qIndex + 1} / {quizQuestions.length}</div>
+      <p style={{ color: "#0F172A", fontSize: 18, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5, margin: 0 }}>{currentQ.question}</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {shuffledOptions.map((opt, i) => {
           const isSelected = selected === i
           const isCorrect = opt.is_correct
@@ -94,14 +101,15 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
               style={{
                 background: bg,
                 color,
-                border: `1px solid ${border}`,
-                borderRadius: 8,
-                padding: "10px 14px",
+                border: `1.5px solid ${border}`,
+                borderRadius: 10,
+                padding: "14px 18px",
                 cursor: selected !== null ? "default" : "pointer",
                 textAlign: "left",
-                fontSize: 14,
-                fontWeight: selected !== null && (isCorrect || isSelected) ? 600 : 400,
-                transition: "background 0.2s, border 0.2s",
+                fontSize: 16,
+                lineHeight: 1.4,
+                fontWeight: selected !== null && (isCorrect || isSelected) ? 600 : 500,
+                transition: "all 0.2s",
               }}
             >
               {selected !== null && isCorrect ? "✓ " : selected !== null && isSelected ? "✗ " : ""}{opt.text}

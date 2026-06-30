@@ -60,7 +60,8 @@ export const useGraphStore = create<GraphStore>((set) => ({
   addNode: (data) =>
     set((state) => {
       if (state.nodes.some((n) => n.id === data.id)) return state
-      const node: Node<NodeData> = { id: data.id, type: "concept", position: { x: 0, y: 0 }, data }
+      const dataWithIndex = { ...data, _animIndex: state.nodes.length }
+      const node: Node<NodeData> = { id: data.id, type: "concept", position: { x: 0, y: 0 }, data: dataWithIndex }
       return { nodes: [...state.nodes, node] }
     }),
 

@@ -100,10 +100,10 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
           fontFamily: "'Libre Caslon Text', Georgia, serif",
           textAlign: "center",
           transition: "box-shadow 0.3s, transform 0.15s, border-color 0.3s",
-          animation: animate
+          animation: (animate && !isRoot)
             ? `nodePop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay}s both`
             : "none",
-          opacity: animate ? undefined : 1,
+          opacity: (animate && !isRoot) ? undefined : 1,
         }}
       >
         {/* Activity-tally fill — rises from the bottom, animated */}

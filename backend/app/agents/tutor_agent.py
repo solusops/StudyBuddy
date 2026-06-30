@@ -188,53 +188,73 @@ class TutorAgent:
     # ------------------------------------------------------------------ #
 
     def generate_flashcards(
-        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str
+        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
     ) -> _FlashcardsPayload:
         chunk_text = "\n\n".join(
             f"[Source: {c['source']}]\n{c['text']}" for c in chunks
         )
+        user_content: List[Dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    f"Create flashcards specifically focused on the concept '{node_label}' at the {familiarity} level.\n\n"
+                    f"SOURCE:\n{chunk_text}"
+                ),
+            }
+        ]
+        if images_base64:
+            for img in images_base64:
+                user_content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
+
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "Generate 5-10 open-recall flashcards from the source material only. "
+                    f"Generate 5-10 open-recall flashcards specifically about the topic requested, using the source material and any provided images. "
                     "front = question/prompt, back = answer with a source citation."
                 ),
             },
             {
                 "role": "user",
-                "content": (
-                    f"Create flashcards for '{node_label}' at {familiarity} level.\n\n"
-                    f"SOURCE:\n{chunk_text}"
-                ),
+                "content": user_content,
             },
         ]
-        return self._client.structured_complete(messages, _FlashcardsPayload)
+        return self._client.structured_complete(messages, _FlashcardsPayload, model="gemma-4-31b")
 
     def generate_quiz(
-        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str
+        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
     ) -> _QuizPayload:
         chunk_text = "\n\n".join(
             f"[Source: {c['source']}]\n{c['text']}" for c in chunks
         )
+        user_content: List[Dict[str, Any]] = [
+            {
+                "type": "text",
+                "text": (
+                    f"Create quiz questions specifically about the concept '{node_label}' at the {familiarity} level.\n\n"
+                    f"SOURCE:\n{chunk_text}"
+                ),
+            }
+        ]
+        if images_base64:
+            for img in images_base64:
+                user_content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
+
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "Generate 3-5 multiple-choice questions from the source material only. "
+                    "Generate exactly 5 multiple-choice questions specifically about the topic requested, using the source material and any provided images. "
                     "Each question has exactly 1 correct option and 3 distractors. "
                     "Include a brief explanation referencing the source."
                 ),
             },
             {
                 "role": "user",
-                "content": (
-                    f"Create quiz questions for '{node_label}' at {familiarity} level.\n\n"
-                    f"SOURCE:\n{chunk_text}"
-                ),
+                "content": user_content,
             },
         ]
-        return self._client.structured_complete(messages, _QuizPayload)
+        return self._client.structured_complete(messages, _QuizPayload, model="gemma-4-31b")
 
     # ------------------------------------------------------------------ #
     # Visuals                                                             #

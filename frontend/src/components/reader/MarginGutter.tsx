@@ -187,12 +187,12 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
     <div
       style={{
         position: "relative",
-        width: 272,
-        minWidth: 272,
+        width: 320,
+        minWidth: 320,
         height: pageHeightPx,
         flexShrink: 0,
-        background: "#FAF7F2",
-        borderLeft: "1px solid #E8E0D5",
+        background: "#F8F9FA",
+        borderLeft: "1px solid #E2E8F0",
         overflowY: "visible",
       }}
     >
@@ -219,20 +219,20 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
             style={{
               position: "absolute",
               top: topPx,
-              left: 8,
-              right: 8,
-              background: isActive ? "#EEF3F8" : "#FFFFFF",
-              border: `1.5px solid ${isEditingThis ? "#F59E0B" : isActive ? "#1A3557" : "#E8E0D5"}`,
-              borderRadius: 6,
-              padding: isEditingThis ? "4px" : "6px 8px",
+              left: 12,
+              right: 12,
+              background: isActive ? "#FDF8E3" : "#FFFCEB",
+              border: `1.5px solid ${isEditingThis ? "#F59E0B" : isActive ? "#EAB308" : "#FDE68A"}`,
+              borderRadius: 8,
+              padding: isEditingThis ? "6px" : "12px 14px",
               cursor: isEditingThis ? "text" : isDraggingThis ? "grabbing" : "grab",
               zIndex: isEditingThis ? 10 : 5,
               boxShadow: isEditingThis
-                ? "0 2px 12px rgba(245,158,11,0.25)"
+                ? "0 4px 16px rgba(245,158,11,0.25)"
                 : isActive
-                  ? "0 2px 8px rgba(26,53,87,0.15)"
-                  : "0 1px 3px rgba(0,0,0,0.06)",
-              transition: isDraggingThis ? "none" : "border-color 0.15s, top 0.1s",
+                  ? "0 4px 12px rgba(234,179,8,0.2)"
+                  : "0 2px 6px rgba(0,0,0,0.06)",
+              transition: isDraggingThis ? "none" : "border-color 0.15s, top 0.1s, box-shadow 0.15s",
               userSelect: isEditingThis ? "text" : "none",
             }}
           >
@@ -269,10 +269,10 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                   <img 
                     src={`data:image/png;base64,${annotation.image_base64}`}
                     alt="Pinned region"
-                    style={{ maxWidth: "100%", borderRadius: 4, objectFit: "contain", border: "1px solid #E8E0D5" }}
+                    style={{ maxWidth: "100%", borderRadius: 6, objectFit: "contain", border: "1px solid #FDE68A" }}
                   />
                 )}
-                <p style={{ margin: 0, fontSize: 16, color: "#1A3557", lineHeight: 1.3, fontFamily: "var(--font-hand)" }}>
+                <p style={{ margin: 0, fontSize: 18, color: "#451A03", lineHeight: 1.4, fontFamily: "var(--font-hand)", fontWeight: 500 }}>
                   {annotation.note_text || (
                     <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
                   )}

@@ -33,12 +33,12 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const selectedNode = nodes.find((n) => n.id === selectedId)
   const lessonRate = useTokenRate(streamingLesson, lessonStreaming)
 
-  const applyGraph = (rawNodes: NodeData[], rawEdges?: Array<{source: string; target: string; relationship: string}>) => {
+  const applyGraph = (rawNodes: NodeData[], rawEdges?: any[]) => {
     const flowNodes: Node<NodeData>[] = rawNodes.map((n, i) => ({
       id: n.id,
       type: "concept",
       position: { x: i * 200, y: 0 },
-      data: n,
+      data: { ...n, _animIndex: i },
     }))
     // Use explicit AI-generated edges if provided; fall back to children_ids
     const flowEdges: Edge[] = rawEdges?.length

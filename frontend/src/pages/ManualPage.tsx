@@ -114,7 +114,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       id: n.id,
       type: "concept",
       position: { x: i * 200, y: 0 },
-      data: n,
+      data: { ...n, _animIndex: i },
     }))
     const edges: Edge[] = nodes.flatMap((n) =>
       (n.children_ids ?? []).map((cid) => ({

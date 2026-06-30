@@ -21,7 +21,7 @@ function buildFlowGraph(nodes: NodeData[]): { nodes: Node<NodeData>[]; edges: Ed
     id: n.id,
     type: "concept",
     position: { x: (i % COLS) * 200, y: Math.floor(i / COLS) * 120 },
-    data: n,
+    data: { ...n, _animIndex: i },
   }))
   const edges: Edge[] = nodes.flatMap((n) =>
     (n.children_ids ?? []).map((childId) => ({

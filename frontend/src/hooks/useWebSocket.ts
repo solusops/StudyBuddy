@@ -44,6 +44,13 @@ export function useWebSocket(sessionId: string | null) {
     const socket = new WebSocket(`${WS_BASE}/ws/${sessionId}`)
     ws.current = socket
 
+    socket.onopen = () => {
+      while (pending.current.length > 0) {
+        const msg = pending.current.shift()
+        if (msg) socket.send(msg)
+      }
+    }
+
     socket.onmessage = (event) => {
       const msg: WSMessage = JSON.parse(event.data)
 
@@ -60,12 +67,16 @@ export function useWebSocket(sessionId: string | null) {
         case "VISUAL_PAYLOAD":
           setVisual(msg.data as unknown as Parameters<typeof setVisual>[0])
           break
-        case "FLASHCARDS_READY":
-          setFlashcards((msg.data as { cards: Flashcard[] }).cards)
+        case "FLASHCARDS_READY": {
+          const payload = msg.data as { cards: Flashcard[], context_images?: string[] }
+          setFlashcards(payload.cards, payload.context_images)
           break
-        case "QUIZ_READY":
-          setQuizQuestions((msg.data as { questions: MCQ[] }).questions)
+        }
+        case "QUIZ_READY": {
+          const payload = msg.data as { questions: MCQ[], context_images?: string[] }
+          setQuizQuestions(payload.questions, payload.context_images)
           break
+        }
         case "CHAT_TOKEN":
           appendChatToken((msg.data as { token: string }).token)
           break

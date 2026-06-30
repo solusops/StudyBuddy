@@ -20,17 +20,17 @@ export function TabBar({ tabs, active, onChange }: Props) {
           key={tab}
           onClick={() => onChange(tab)}
           style={{
-            padding: "9px 16px",
+            padding: "14px 18px",
             border: "none",
-            borderBottom: active === tab ? "2px solid #1A3557" : "2px solid transparent",
+            borderBottom: active === tab ? "3px solid #1A3557" : "3px solid transparent",
             background: "transparent",
-            color: active === tab ? "#1A3557" : "#6B7280",
-            fontWeight: active === tab ? 600 : 400,
-            fontSize: 13,
+            color: active === tab ? "#1A3557" : "#64748B",
+            fontWeight: active === tab ? 700 : 500,
+            fontSize: 14,
             cursor: "pointer",
             whiteSpace: "nowrap",
             fontFamily: "system-ui, sans-serif",
-            transition: "color 0.15s",
+            transition: "all 0.2s",
             flexShrink: 0,
           }}
         >

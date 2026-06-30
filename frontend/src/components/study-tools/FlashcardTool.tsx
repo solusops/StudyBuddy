@@ -15,7 +15,7 @@ const GRADES = [
 ]
 
 export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
-  const { flashcards, setFlashcards } = useSessionStore()
+  const { flashcards, flashcardContextImages, setFlashcards } = useSessionStore()
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -62,8 +62,15 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
   const card = flashcards[index]
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: 16 }}>
-      <div style={{ fontSize: 12, color: "#6B7280" }}>{index + 1} / {flashcards.length}</div>
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: 20 }}>
+      {flashcardContextImages && flashcardContextImages.length > 0 && (
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, width: "100%", justifyContent: "center" }}>
+          {flashcardContextImages.map((img, idx) => (
+            <img key={idx} src={`data:image/png;base64,${img}`} alt="Context" style={{ height: 100, borderRadius: 6, objectFit: "contain", border: "1px solid #E2E8F0", background: "#FFFFFF", padding: 4 }} />
+          ))}
+        </div>
+      )}
+      <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{index + 1} / {flashcards.length}</div>
       <div
         onClick={() => setFlipped((f) => !f)}
         style={{
@@ -72,18 +79,19 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
           background: "#FFFFFF",
           border: `1.5px solid ${flipped ? "#2D6A4F" : "#1A3557"}`,
           borderRadius: 12,
-          padding: 24,
+          padding: 32,
           cursor: "pointer",
-          color: "#1A1A2E",
+          color: "#0F172A",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          fontSize: 16,
+          fontSize: 18,
           lineHeight: 1.5,
           textAlign: "center",
           userSelect: "none",
           fontFamily: "var(--font-serif)",
-          boxShadow: "0 1px 4px rgba(26,53,87,0.08)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+          transition: "border 0.2s, box-shadow 0.2s",
         }}
       >
         {flipped ? card.back : card.front}
@@ -106,11 +114,12 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
 
 const btnStyle: React.CSSProperties = {
   background: "#1A3557",
-  color: "#FAF7F2",
+  color: "#FFFFFF",
   border: "none",
   borderRadius: 8,
-  padding: "8px 20px",
+  padding: "10px 24px",
   cursor: "pointer",
-  fontSize: 14,
+  fontSize: 15,
   fontWeight: 600,
+  transition: "opacity 0.15s",
 }

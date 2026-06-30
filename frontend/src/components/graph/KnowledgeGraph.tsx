@@ -53,10 +53,10 @@ function applyDagreLayout(
 
   dagre.layout(g)
 
-  const laid = nodes.map((n, i) => {
+  const laid = nodes.map((n) => {
     const pos = g.node(n.id)
     const { w, h } = getNodeDimensions(n.data)
-    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 }, data: { ...n.data, _animIndex: i } }
+    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 } }
   })
   return { nodes: laid, edges }
 }
