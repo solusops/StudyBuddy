@@ -14,7 +14,7 @@ export interface StudyBuddySession {
   updatedAt?: number
 }
 
-export type CursorMode = "DEFAULT" | "NOTE_APPEND"
+export type CursorMode = "DEFAULT" | "NOTE_APPEND" | "MAGNIFY"
 
 export interface BoundingBox {
   page: number

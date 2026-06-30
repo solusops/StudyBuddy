@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import { useInteractionStore, type CommittedAnnotation } from "../../store/interactionStore"
+import { GrowText } from "../../lib/growWords"
 
 interface GutterNote {
   annotation: CommittedAnnotation
@@ -273,7 +274,9 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                   />
                 )}
                 <p style={{ margin: 0, fontSize: 18, color: "#451A03", lineHeight: 1.4, fontFamily: "var(--font-hand)", fontWeight: 500 }}>
-                  {annotation.note_text || (
+                  {annotation.note_text ? (
+                    <GrowText text={annotation.note_text} />
+                  ) : (
                     <span style={{ color: "#9CA3AF", fontStyle: "italic" }}>No note</span>
                   )}
                 </p>

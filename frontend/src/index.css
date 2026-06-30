@@ -86,6 +86,23 @@ body::after {
   vertical-align: middle;
 }
 
+/* Word-grow selection feedback (chat + notes) — single word scales on hover; all
+   words inside the active text selection scale up. Scale-in-place (no reflow). */
+.grow-word {
+  display: inline-block;
+  transition: transform 0.12s ease, color 0.12s;
+  transform-origin: center bottom;
+}
+.grow-word:hover {
+  transform: scale(1.35);
+  color: #1A3557;
+}
+.grow-word.is-selected {
+  transform: scale(1.5);
+  font-weight: 600;
+  color: #1A3557;
+}
+
 /* Streaming cursor blink */
 @keyframes blink {
   0%, 100% { opacity: 1; }

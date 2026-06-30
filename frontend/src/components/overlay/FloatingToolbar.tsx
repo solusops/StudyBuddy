@@ -6,6 +6,7 @@ import { useContextStore } from "../../store/contextStore"
 const ITEMS = [
   { key: "DEFAULT", icon: "↖", label: "Read", hotkey: "V" },
   { key: "NOTE_APPEND", icon: "✏️", label: "Annotate", hotkey: "N" },
+  { key: "MAGNIFY", icon: "🔍", label: "Loupe", hotkey: "M" },
   { key: "regions", icon: "▦", label: "Regions", hotkey: "R" },
 ] as const
 
@@ -21,6 +22,7 @@ export function FloatingToolbar() {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === "v" || e.key === "V") setCursorMode("DEFAULT")
       if (e.key === "n" || e.key === "N") setCursorMode("NOTE_APPEND")
+      if (e.key === "m" || e.key === "M") setCursorMode("MAGNIFY")
       if (e.key === "r" || e.key === "R") toggleRegions()
       if (e.key === "Escape") {
         clearGroup()

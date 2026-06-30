@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from "react"
+import { GrowText } from "../../lib/growWords"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 import { useSessionStore } from "../../store/sessionStore"
@@ -337,7 +338,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
                 )}
                 {msg.selectionText && (
                   <div style={{ fontSize: 12, color: "#4A7FB5", fontStyle: "italic", borderLeft: "2px solid #4A7FB5", paddingLeft: 8 }}>
-                    "{msg.selectionText.slice(0, 150)}{msg.selectionText.length > 150 ? "..." : ""}"
+                    "<GrowText text={`${msg.selectionText.slice(0, 150)}${msg.selectionText.length > 150 ? "..." : ""}`} />"
                   </div>
                 )}
               </div>

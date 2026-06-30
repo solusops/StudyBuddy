@@ -7,6 +7,7 @@ import { useContextStore } from "../../store/contextStore"
 import { HighlightLayer } from "./HighlightLayer"
 import { RegionLayer } from "./RegionLayer"
 import { MarginGutter } from "./MarginGutter"
+import { PdfLoupe } from "./PdfLoupe"
 
 // pdf.js worker — Vite serves this from node_modules
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -265,6 +266,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
           )
         })}
       </Document>
+      <PdfLoupe active={cursorMode === "MAGNIFY"} containerRef={containerRef} />
     </div>
   )
 }
