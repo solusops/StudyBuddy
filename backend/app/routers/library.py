@@ -7,6 +7,9 @@ Two content paths:
 import asyncio
 import hashlib
 import os
+
+# Cap concurrent highlight-concepts LLM calls to avoid token-burst 429s
+_highlight_sem = asyncio.Semaphore(2)
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -225,12 +228,16 @@ async def start_session(req: StartSessionRequest):
 async def highlight_concepts(req: HighlightConceptsRequest):
     """Given a page's text, return key concept phrases to highlight."""
     loop = asyncio.get_event_loop()
-    concepts = await loop.run_in_executor(
-        None,
-        _get_brain().identify_concepts,
-        req.page_text,
-        req.familiarity,
-    )
+    try:
+        async with _highlight_sem:
+            concepts = await loop.run_in_executor(
+                None,
+                _get_brain().identify_concepts,
+                req.page_text,
+                req.familiarity,
+            )
+    except Exception:
+        concepts = []
     return {"concepts": concepts}
 
 
