@@ -3,5 +3,14 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "echo skip",
   "framework": null,
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/:path*",         "destination": "https://solusops-study-buddy.hf.space/api/:path*" },
+    { "source": "/ingest/:path*",      "destination": "https://solusops-study-buddy.hf.space/ingest/:path*" },
+    { "source": "/session/:path*",     "destination": "https://solusops-study-buddy.hf.space/session/:path*" },
+    { "source": "/sandbox/:path*",     "destination": "https://solusops-study-buddy.hf.space/sandbox/:path*" },
+    { "source": "/library/:path*",     "destination": "https://solusops-study-buddy.hf.space/library/:path*" },
+    { "source": "/annotations/:path*", "destination": "https://solusops-study-buddy.hf.space/annotations/:path*" },
+    { "source": "/regions/:path*",     "destination": "https://solusops-study-buddy.hf.space/regions/:path*" },
+    { "source": "/(.*)",               "destination": "/index.html" }
+  ]
 }
