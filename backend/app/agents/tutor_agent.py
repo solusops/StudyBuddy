@@ -82,6 +82,8 @@ class _QuizPayload(BaseModel):
 
 class _MCQEvaluation(BaseModel):
     is_good: bool = Field(description="True if question is high-quality, conceptual, and stands alone.")
+    has_latex_errors: bool = Field(description="True if there are malformed LaTeX commands or mismatched delimiters.")
+    has_hallucinated_terms: bool = Field(description="True if it uses terms not present in the source.")
     reason: str
 
 
@@ -235,6 +237,7 @@ class TutorAgent:
                     "Generate high-level, conceptual open-recall flashcards. "
                     "Do NOT focus on narrow trivia or fill-in-the-blanks. Synthesize information across the chunks. "
                     "front = conceptual question, back = comprehensive answer. "
+                    "For answers, explain the concept directly and authoritatively. Do NOT use lazy phrasing like 'The text explicitly states' or 'According to the chunk'. "
                     "Cite the chunks you used in source_chunk_indexes. "
                     "Format math using $...$ for inline and $$...$$ for block math. Do not use invalid commands like \\v."
                 ),
@@ -328,7 +331,8 @@ class TutorAgent:
                     "Generate high-level, conceptual multiple-choice questions. "
                     "Synthesize information across chunks. Do not ask for verbatim quotes. "
                     "Each question has exactly 1 correct option and 3 distractors. "
-                    "Include a conceptual explanation. Cite the chunks used in source_chunk_indexes. "
+                    "Include a conceptual explanation. Explain the reasoning directly and authoritatively. Do NOT use lazy phrasing like 'The text explicitly states' or 'According to the chunk'. State what concept dictates the answer. "
+                    "Cite the chunks used in source_chunk_indexes. "
                     "Format math using $...$ for inline and $$...$$ for block math. Do not use invalid commands like \\v."
                 ),
             },
@@ -362,7 +366,8 @@ class TutorAgent:
                         "2. Are there invalid LaTeX commands or mismatched $? "
                         "3. Does it hallucinate technical or biological terms? "
                         "4. Are distractors plausible but clearly wrong? "
-                        "Reject low-quality trivia, broken LaTeX, or hallucinations."
+                        "5. Does the explanation avoid lazy phrasing like 'The text explicitly states'? "
+                        "Reject low-quality trivia, broken LaTeX, lazy phrasing, or hallucinations."
                     )
                 },
                 {
