@@ -54,6 +54,7 @@ const ViewSourceIcon = () => (
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
   nodeId: string
+  nodeLabel: string
   familiarity: string
 }
 
@@ -61,7 +62,7 @@ function shuffle<T>(arr: T[]): T[] {
   return [...arr].sort(() => Math.random() - 0.5)
 }
 
-export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
+export function QuizTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
   const { quizQuestions, quizContextImages, setQuizQuestions } = useSessionStore()
   const { setBlinkTarget } = useInteractionStore()
   const [qIndex, setQIndex] = useState(0)
@@ -73,7 +74,7 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
     setQuizQuestions([])
     setQIndex(0)
     setSelected(null)
-    sendEvent("QUIZ_REQUEST", { node_id: nodeId, node_label: nodeId, familiarity })
+    sendEvent("QUIZ_REQUEST", { node_id: nodeId, node_label: nodeLabel, familiarity })
     const unsub = useSessionStore.subscribe((state) => {
       if (state.quizQuestions.length > 0) { setLoading(false); unsub() }
     })

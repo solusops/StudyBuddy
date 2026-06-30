@@ -823,9 +823,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         familiarity_level = data.get("familiarity", familiarity)
         full = ""
         try:
-            node_label = data.get("node_label", node_id)
+            node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
-            async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level):
+            student_profile = await _memory.get_student_profile()
+            async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level, student_profile):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
         except Exception as e:
@@ -851,14 +852,16 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         
         full = ""
         try:
-            node_label = data.get("node_label", node_id)
+            node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
+            student_profile = await _memory.get_student_profile()
             async for token in _get_study_buddy().evaluate_and_ask_next(
                 node_label=node_label,
                 chunks=chunks,
                 familiarity=familiarity_level,
                 history=history,
-                student_answer=student_text
+                student_answer=student_text,
+                student_profile=student_profile
             ):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
@@ -900,14 +903,16 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 
                 full = ""
                 try:
-                    node_label = data.get("node_label", node_id)
+                    node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
                     chunks = await _get_chunks(session_id, node_label, n=5)
+                    student_profile = await _memory.get_student_profile()
                     async for token in _get_study_buddy().evaluate_and_ask_next(
                         node_label=node_label,
                         chunks=chunks,
                         familiarity=familiarity_level,
                         history=history,
-                        student_answer=text
+                        student_answer=text,
+                        student_profile=student_profile
                     ):
                         full += token
                         await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})

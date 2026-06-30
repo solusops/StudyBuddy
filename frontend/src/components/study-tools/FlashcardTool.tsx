@@ -52,6 +52,7 @@ const ViewSourceIcon = () => (
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
   nodeId: string
+  nodeLabel: string
   familiarity: string
 }
 
@@ -62,7 +63,7 @@ const GRADES = [
   { label: "Easy", value: 4, color: "#22c55e" },
 ]
 
-export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
+export function FlashcardTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
   const { flashcards, flashcardContextImages, setFlashcards } = useSessionStore()
   const { setBlinkTarget } = useInteractionStore()
   const [index, setIndex] = useState(0)
@@ -74,7 +75,7 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
     setFlashcards([])
     setIndex(0)
     setFlipped(false)
-    sendEvent("FLASHCARDS_REQUEST", { node_id: nodeId, node_label: nodeId, familiarity })
+    sendEvent("FLASHCARDS_REQUEST", { node_id: nodeId, node_label: nodeLabel, familiarity })
     // Loading flag is cleared when flashcards arrive via store
     const unsub = useSessionStore.subscribe((state) => {
       if (state.flashcards.length > 0) { setLoading(false); unsub() }

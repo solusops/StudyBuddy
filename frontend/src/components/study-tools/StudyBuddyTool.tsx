@@ -30,10 +30,11 @@ function renderInline(text: string): string {
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
   nodeId: string
+  nodeLabel: string
   familiarity: string
 }
 
-export function StudyBuddyTool({ sendEvent, nodeId, familiarity }: Props) {
+export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
   const { studyBuddyHistory, streamingStudyBuddy, addStudyBuddyMessage, setStudyBuddyHistory, setStudyBuddyInitializing } = useSessionStore()
   const { studyBuddySessions, activeStudyBuddySessionId, setActiveStudyBuddySession, addStudyBuddySession, updateStudyBuddySession } = useInteractionStore()
   const [draft, setDraft] = useState("")
@@ -49,9 +50,9 @@ export function StudyBuddyTool({ sendEvent, nodeId, familiarity }: Props) {
   useEffect(() => {
     if (studyBuddyHistory.length === 0 && !streamingStudyBuddy && initializedNodeId.current !== nodeId) {
       initializedNodeId.current = nodeId
-      sendEvent("STUDY_BUDDY_INIT", { node_id: nodeId, familiarity })
+      sendEvent("STUDY_BUDDY_INIT", { node_id: nodeId, node_label: nodeLabel, familiarity })
     }
-  }, [studyBuddyHistory.length, streamingStudyBuddy, nodeId, familiarity, sendEvent])
+  }, [studyBuddyHistory.length, streamingStudyBuddy, nodeId, nodeLabel, familiarity, sendEvent])
 
   // Clear initializing flag when history populates
   useEffect(() => {
@@ -166,7 +167,7 @@ export function StudyBuddyTool({ sendEvent, nodeId, familiarity }: Props) {
           const arrayBuf = await blob.arrayBuffer()
           const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)))
           const historyToSend = studyBuddyHistory.map(m => ({ role: m.role, content: m.content }))
-          sendEvent("STUDY_BUDDY_AUDIO", { audio_base64: base64, node_id: nodeId, familiarity, history: historyToSend })
+          sendEvent("STUDY_BUDDY_AUDIO", { audio_base64: base64, node_id: nodeId, node_label: nodeLabel, familiarity, history: historyToSend })
           stream.getTracks().forEach((t) => t.stop())
         }
         rec.start()
@@ -193,7 +194,7 @@ export function StudyBuddyTool({ sendEvent, nodeId, familiarity }: Props) {
     addStudyBuddyMessage({ role: "student", content: text })
     setDraft("")
     const historyToSend = studyBuddyHistory.map(m => ({ role: m.role, content: m.content }))
-    sendEvent("STUDY_BUDDY_TURN", { node_id: nodeId, student_text: text, familiarity, history: historyToSend })
+    sendEvent("STUDY_BUDDY_TURN", { node_id: nodeId, node_label: nodeLabel, student_text: text, familiarity, history: historyToSend })
   }
 
   const renderProse = (text: string, keyPrefix: string) => {

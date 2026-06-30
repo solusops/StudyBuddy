@@ -30,10 +30,11 @@ function renderMath(text: string): string {
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
   nodeId: string
+  nodeLabel: string
   familiarity: string
 }
 
-export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
+export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
   const { chatHistory, streamingChat, chatDraft, setChatDraft, addChatMessage, setChatHistory, knowledgeMode } = useSessionStore()
   const { selectionText, surroundingContext, selectionImageBase64, clearSelection } = useContextStore()
   const { chatSessions, activeChatSessionId, setActiveChatSession, addChatSession, updateChatSession } = useInteractionStore()
@@ -92,6 +93,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
     setChatDraft("")
     sendEvent("CHAT_TURN", {
       node_id: nodeId,
+      node_label: nodeLabel,
       content: content || "",
       familiarity,
       knowledge_mode: knowledgeMode,

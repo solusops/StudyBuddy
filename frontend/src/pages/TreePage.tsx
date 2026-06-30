@@ -21,7 +21,7 @@ interface Props {
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
-  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode } = useSessionStore()
+  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode, setActiveNode } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [refinementText, setRefinementText] = useState("")
@@ -89,6 +89,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const handleNodeClick = useCallback(
     (id: string, label: string) => {
       setSelectedId(id)
+      setActiveNode(id, label)
       const cached = lessonCache[id]
       if (cached) {
         // Restore from cache — no WS round-trip, no token cost
@@ -102,7 +103,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         })
       }
     },
-    [sendEvent, session?.familiarity, lessonCache, setLesson, knowledgeMode]
+    [sendEvent, session?.familiarity, lessonCache, setLesson, knowledgeMode, setActiveNode]
   )
 
 

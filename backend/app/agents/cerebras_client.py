@@ -12,6 +12,7 @@ Each method is self-contained. If structured_complete breaks, stream still works
 import json
 import os
 import time
+import threading
 from typing import Any, AsyncIterator, Dict, List, Optional, Type
 
 from pydantic import BaseModel, ValidationError
@@ -19,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from app.agents.cerebras_errors import CerebrasError, CerebrasErrorKind, classify_error
 
 MODEL_ID = "gemma-4-31b"
+_cerebras_semaphore = threading.Semaphore(5)
 
 
 class CerebrasClient:
@@ -40,16 +42,18 @@ class CerebrasClient:
     # Internal helpers                                                     #
     # ------------------------------------------------------------------ #
 
-    def _check_rate_limit(self) -> None:
+    async def _async_check_rate_limit(self) -> None:
         remaining = self._rate_limit_until - time.time()
         if remaining > 0:
-            err = CerebrasError(
-                kind=CerebrasErrorKind.RATE_LIMITED,
-                message=f"Rate limit active for {int(remaining)}s more",
-                retry_after_seconds=int(remaining),
-            )
-            self._health = {"status": "error", **err.to_frontend_payload()}
-            raise err
+            print(f"[Cerebras] Waiting {remaining:.1f}s for rate limit cooldown...")
+            import asyncio
+            await asyncio.sleep(remaining)
+
+    def _sync_check_rate_limit(self) -> None:
+        remaining = self._rate_limit_until - time.time()
+        if remaining > 0:
+            print(f"[Cerebras] Waiting {remaining:.1f}s for rate limit cooldown...")
+            time.sleep(remaining)
 
     def _handle_sdk_exc(self, exc: Exception) -> None:
         err = classify_error(exc)
@@ -104,7 +108,7 @@ class CerebrasClient:
     ) -> BaseModel:
         from cerebras.cloud.sdk import APIConnectionError as _ConnErr
 
-        self._check_rate_limit()
+        self._sync_check_rate_limit()
         schema = self._build_schema(output_model)
         response_format = {
             "type": "json_schema",
@@ -115,14 +119,15 @@ class CerebrasClient:
             },
         }
         last_exc: Exception = RuntimeError("unreachable")
-        for attempt in range(2):
-            if attempt > 0:
-                time.sleep(2)
+        max_retries = 3
+        for attempt in range(max_retries):
+            self._sync_check_rate_limit()
             try:
                 t0 = time.time()
-                resp = self._client.chat.completions.create(
-                    model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
-                )
+                with _cerebras_semaphore:
+                    resp = self._client.chat.completions.create(
+                        model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
+                    )
                 t1 = time.time()
                 tokens = getattr(resp.usage, "completion_tokens", 0)
                 if tokens and (t1 - t0) > 0:
@@ -131,18 +136,24 @@ class CerebrasClient:
                 raw = resp.choices[0].message.content
                 self._health = {"status": "ok"}
                 return output_model.model_validate_json(raw)
-            except CerebrasError:
-                raise
             except _ConnErr as exc:
                 # HTTP/2 server disconnect — retry once with backoff
                 last_exc = exc
+                time.sleep(2)
                 continue
-            except (json.JSONDecodeError, ValidationError) as exc:
-                last_exc = exc
-                if attempt == 0:
-                    continue
-                self._handle_sdk_exc(exc)
             except Exception as exc:
+                err = classify_error(exc)
+                if err.kind == CerebrasErrorKind.RATE_LIMITED and attempt < max_retries - 1:
+                    delay = err.retry_after_seconds or (2 ** attempt)
+                    print(f"[Cerebras] Rate limited. Retrying structured_complete in {delay}s...")
+                    self._rate_limit_until = time.time() + delay
+                    last_exc = exc
+                    continue
+                
+                if isinstance(exc, (json.JSONDecodeError, ValidationError)):
+                    last_exc = exc
+                    if attempt == 0:
+                        continue
                 self._handle_sdk_exc(exc)
         self._handle_sdk_exc(last_exc)
 
@@ -160,57 +171,83 @@ class CerebrasClient:
         The caller inspects `.tool_calls`, executes them, appends the results,
         then streams the final answer via stream_complete().
         """
-        self._check_rate_limit()
-        try:
-            t0 = time.time()
-            resp = self._client.chat.completions.create(
-                model=model or MODEL_ID,
-                messages=messages,
-                tools=tools,
-                tool_choice=tool_choice,
-                **kwargs
-            )
-            t1 = time.time()
-            tokens = getattr(resp.usage, "completion_tokens", 0)
-            if tokens and (t1 - t0) > 0:
-                print(f"[Cerebras Speed] complete_with_tools generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
-                
-            self._health = {"status": "ok"}
-            return resp.choices[0].message
-        except CerebrasError:
-            raise
-        except Exception as exc:
-            self._handle_sdk_exc(exc)
+        max_retries = 3
+        last_exc: Exception = RuntimeError("unreachable")
+        for attempt in range(max_retries):
+            self._sync_check_rate_limit()
+            try:
+                t0 = time.time()
+                with _cerebras_semaphore:
+                    resp = self._client.chat.completions.create(
+                        model=model or MODEL_ID,
+                        messages=messages,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                        **kwargs
+                    )
+                t1 = time.time()
+                tokens = getattr(resp.usage, "completion_tokens", 0)
+                if tokens and (t1 - t0) > 0:
+                    print(f"[Cerebras Speed] complete_with_tools generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                    
+                self._health = {"status": "ok"}
+                return resp.choices[0].message
+            except Exception as exc:
+                err = classify_error(exc)
+                if err.kind == CerebrasErrorKind.RATE_LIMITED and attempt < max_retries - 1:
+                    delay = err.retry_after_seconds or (2 ** attempt)
+                    print(f"[Cerebras] Rate limited. Retrying complete_with_tools in {delay}s...")
+                    self._rate_limit_until = time.time() + delay
+                    last_exc = exc
+                    continue
+                self._handle_sdk_exc(exc)
+        self._handle_sdk_exc(last_exc)
 
     async def stream_complete(self, messages: List[Dict[str, Any]], model: str | None = None, **kwargs) -> AsyncIterator[str]:
-        self._check_rate_limit()
-        try:
-            t0 = time.time()
-            stream = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, stream=True, **kwargs
-            )
-            chunk_count = 0
-            usage_logged = False
-            for chunk in stream:
-                usage = getattr(chunk, "usage", None)
-                delta = chunk.choices[0].delta.content if chunk.choices else None
-                if delta:
-                    chunk_count += 1
-                    yield delta
-                if usage and getattr(usage, "completion_tokens", 0) and not usage_logged:
+        max_retries = 3
+        last_exc: Exception = RuntimeError("unreachable")
+        for attempt in range(max_retries):
+            await self._async_check_rate_limit()
+            try:
+                t0 = time.time()
+                with _cerebras_semaphore:
+                    # Note: this blocks the thread during generator creation.
+                    # We only hold the semaphore for the initial call, the streaming
+                    # generator yields responses over time. But wait, if stream is sync,
+                    # the generator yields in real-time. Since we process chunks outside the
+                    # semaphore, we don't hold the semaphore while yielding.
+                    stream = self._client.chat.completions.create(
+                        model=model or MODEL_ID, messages=messages, stream=True, **kwargs
+                    )
+                chunk_count = 0
+                usage_logged = False
+                for chunk in stream:
+                    usage = getattr(chunk, "usage", None)
+                    delta = chunk.choices[0].delta.content if chunk.choices else None
+                    if delta:
+                        chunk_count += 1
+                        yield delta
+                    if usage and getattr(usage, "completion_tokens", 0) and not usage_logged:
+                        t1 = time.time()
+                        tokens = usage.completion_tokens
+                        if tokens and (t1 - t0) > 0:
+                            print(f"[Cerebras Speed] stream_complete generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                            usage_logged = True
+                            
+                if not usage_logged:
                     t1 = time.time()
-                    tokens = usage.completion_tokens
-                    if tokens and (t1 - t0) > 0:
-                        print(f"[Cerebras Speed] stream_complete generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
-                        usage_logged = True
-                        
-            if not usage_logged:
-                t1 = time.time()
-                if (t1 - t0) > 0 and chunk_count > 0:
-                    print(f"[Cerebras Speed] stream_complete (approx) generated {chunk_count} chunks in {t1-t0:.2f}s ({chunk_count/(t1-t0):.1f} chunks/s)")
+                    if (t1 - t0) > 0 and chunk_count > 0:
+                        print(f"[Cerebras Speed] stream_complete (approx) generated {chunk_count} chunks in {t1-t0:.2f}s ({chunk_count/(t1-t0):.1f} chunks/s)")
 
-            self._health = {"status": "ok"}
-        except CerebrasError:
-            raise
-        except Exception as exc:
-            self._handle_sdk_exc(exc)
+                self._health = {"status": "ok"}
+                return
+            except Exception as exc:
+                err = classify_error(exc)
+                if err.kind == CerebrasErrorKind.RATE_LIMITED and attempt < max_retries - 1:
+                    delay = err.retry_after_seconds or (2 ** attempt)
+                    print(f"[Cerebras] Rate limited. Retrying stream_complete in {delay}s...")
+                    self._rate_limit_until = time.time() + delay
+                    last_exc = exc
+                    continue
+                self._handle_sdk_exc(exc)
+        self._handle_sdk_exc(last_exc)

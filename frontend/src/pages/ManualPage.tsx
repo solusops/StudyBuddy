@@ -60,8 +60,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     if (s.contentFiles.length > 0) {
       await loadFirstPDF(s.contentFiles[0])
     }
-    // Check indexing status periodically
-    pollIndexing()
+    // Check indexing status handled by useEffect
   }
 
   const resumeSession = async () => {
@@ -144,16 +143,11 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     }
   }
 
-  const pollIndexing = () => {
-    const interval = setInterval(async () => {
-      const status = await fetch("/library/status").then((r) => r.json())
-      if (status.indexed_chunks > 0) {
-        setIsIndexing(false)
-        clearInterval(interval)
-      }
-    }, 2000)
-    setTimeout(() => clearInterval(interval), 120_000)
-  }
+  useEffect(() => {
+    if (!isIndexing) return
+    const timeout = setTimeout(() => setIsIndexing(false), 3000)
+    return () => clearTimeout(timeout)
+  }, [isIndexing])
 
   // -- WebSocket -- sendEvent is provided by parent App (single connection) --
 

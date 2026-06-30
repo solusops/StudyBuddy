@@ -17,9 +17,13 @@ async def lifespan(app: FastAPI):
     import os
     os.environ["LLM_API_KEY"] = os.environ.get("CEREBRAS_API_KEY", "")
     os.environ["LLM_API_BASE"] = "https://api.cerebras.ai/v1"
-    os.environ["LLM_MODEL"] = "gemma-4-31b"
+    os.environ["LLM_MODEL"] = "openai/gemma-4-31b"
     
     import cognee
+    try:
+        await cognee.setup()
+    except Exception as e:
+        print("Cognee setup error:", e)
     yield
 
 
@@ -63,7 +67,7 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
         while True:
             msg = await ws.receive_json()
             await handle_event(session_id, msg.get("type", ""), msg.get("data", {}))
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
         cm.disconnect(session_id)
     except Exception:
         cm.disconnect(session_id)

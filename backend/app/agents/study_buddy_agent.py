@@ -10,7 +10,8 @@ class StudyBuddyAgent:
         self,
         node_label: str,
         chunks: List[Dict[str, Any]],
-        familiarity: str
+        familiarity: str,
+        student_profile: str = ""
     ):
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}"
@@ -24,8 +25,9 @@ class StudyBuddyAgent:
                     "You are Study Buddy, an expert tutor utilizing the Socratic method and active recall. "
                     f"Your goal is to guide the user to master the topic at a {familiarity} level "
                     "through a conversational interview.\n\n"
+                    f"STUDENT PROFILE:\n{student_profile if student_profile else 'Unknown (First time user)'}\n\n"
                     "INSTRUCTIONS:\n"
-                    "1. Welcome the student and introduce the core concept in 1-2 short sentences using the source material.\n"
+                    "1. Welcome the student. If their name is unknown, kindly ask for it to personalize future sessions. If known, greet them by name. Introduce the core concept in 1-2 short sentences using the source material.\n"
                     "2. Ask ONE conceptually engaging, open-ended question to test their understanding. DO NOT ask multiple questions.\n"
                     "3. Frame the question like a real-world interview (e.g. 'Can you explain why...', 'How would you apply...').\n"
                     "4. Keep your response conversational, encouraging, and concisely formatted.\n"
@@ -48,7 +50,8 @@ class StudyBuddyAgent:
         chunks: List[Dict[str, Any]],
         familiarity: str,
         history: List[Dict[str, str]],
-        student_answer: str
+        student_answer: str,
+        student_profile: str = ""
     ):
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}"
@@ -68,6 +71,7 @@ class StudyBuddyAgent:
                 "content": (
                     f"You are Study Buddy tutoring a student on '{node_label}' at a {familiarity} level using Socratic questioning. "
                     "Evaluate their answer based on the SOURCE MATERIAL.\n\n"
+                    f"STUDENT PROFILE:\n{student_profile if student_profile else 'Unknown'}\n\n"
                     "INSTRUCTIONS:\n"
                     "1. If they are wrong or missing nuance, use scaffolding: gently point out the gap and ask a leading question to help them discover the answer themselves.\n"
                     "2. If they are right, affirm it enthusiastically and briefly summarize why they are right.\n"

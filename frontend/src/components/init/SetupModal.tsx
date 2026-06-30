@@ -51,7 +51,7 @@ export function SetupModal({ onSessionReady }: Props) {
           const r = await fetch("/api/health", { signal: AbortSignal.timeout(2000) })
           if (r.ok) { setBackendReady(true); return }
         } catch { /* not ready yet */ }
-        await new Promise((res) => setTimeout(res, 1000))
+        await new Promise((res) => setTimeout(res, 3000))
       }
     }
     poll()
