@@ -10,15 +10,16 @@ function parseText(text: string, sourceLocation: any, sourceChunkText: string | 
   return parts.map((part, i) => {
     if (part.startsWith("$$") && part.endsWith("$$")) {
       const math = part.slice(2, -2)
-      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} style={{ margin: "12px 0" }} /> }
+      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true, throwOnError: false }) }} style={{ margin: "12px 0" }} /> }
       catch { return <div key={i} style={{ margin: "12px 0" }}>{part}</div> }
     }
     if (part.startsWith("$") && part.endsWith("$")) {
       const math = part.slice(1, -1)
-      try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false }) }} /> }
+      try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false, throwOnError: false }) }} /> }
       catch { return <span key={i}>{part}</span> }
     }
     if (/^\[?chunk\s*\d+\]?$/i.test(part)) {
+      if (!sourceLocation && !sourceChunkText) return null;
       return (
         <button
           key={i}

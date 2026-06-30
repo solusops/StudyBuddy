@@ -55,6 +55,8 @@ class _FlashcardsPayload(BaseModel):
 
 class _FlashcardEvaluation(BaseModel):
     is_good: bool = Field(description="True if flashcard stands alone perfectly without needing source text.")
+    has_latex_errors: bool = Field(description="True if there are malformed LaTeX commands (like \\v) or mismatched $ delimiters.")
+    has_hallucinated_terms: bool = Field(description="True if the card uses biological, technical, or specific jargon not present in the source.")
     reason: str
 
 
@@ -230,11 +232,11 @@ class TutorAgent:
             {
                 "role": "system",
                 "content": (
-                    "Generate 8-12 high-level, conceptual open-recall flashcards. "
+                    "Generate high-level, conceptual open-recall flashcards. "
                     "Do NOT focus on narrow trivia or fill-in-the-blanks. Synthesize information across the chunks. "
                     "front = conceptual question, back = comprehensive answer. "
                     "Cite the chunks you used in source_chunk_indexes. "
-                    "Format math using $...$ for inline and $$...$$ for block math."
+                    "Format math using $...$ for inline and $$...$$ for block math. Do not use invalid commands like \\v."
                 ),
             },
             {
@@ -242,31 +244,58 @@ class TutorAgent:
                 "content": user_content,
             },
         ]
-        raw_payload = self._client.structured_complete(messages, _FlashcardsPayload, model="gemma-4-31b")
-
-        # Quality Check Pass
-        qc_messages = [
-            {
-                "role": "system",
-                "content": (
-                    "Evaluate each flashcard strictly WITHOUT reading the source material. "
-                    "Is it well-formatted? Does it make complete sense on its own? "
-                    "Does it avoid lazy phrasing like 'according to the text' or 'in the provided algorithm'? "
-                    "Reject any question that feels like a 'fill in the blank' for a specific quote."
-                )
-            },
-            {
-                "role": "user",
-                "content": "Flashcards:\n" + "\n".join(f"{i}. Q: {c.front}\nA: {c.back}" for i, c in enumerate(raw_payload.cards))
-            }
-        ]
-        qc_payload = self._client.structured_complete(qc_messages, _FlashcardQualityPayload, model="gemma-4-31b")
         
         good_cards = []
-        for card, eval_res in zip(raw_payload.cards, qc_payload.evaluations):
-            if eval_res.is_good:
-                good_cards.append(card)
-        
+        for attempt in range(3):
+            needed = 10 - len(good_cards)
+            if needed <= 0:
+                break
+                
+            # Temporarily instruct how many to generate
+            if attempt > 0:
+                messages[-1]["content"] += f"\n\n(Generate exactly {needed} new flashcards)"
+            else:
+                messages[-1]["content"] = user_content # ensure clean state
+
+            raw_payload = self._client.structured_complete(messages, _FlashcardsPayload, model="gemma-4-31b")
+
+            # Quality Check Pass
+            qc_messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "Evaluate each flashcard strictly. "
+                        "1. Is it well-formatted? "
+                        "2. Are there any invalid LaTeX commands (e.g., \\v instead of \\hat{v} or v, unmatched $)? "
+                        "3. Does it hallucinate technical or biological terms not common knowledge or explicitly in the source? "
+                        "Reject any question with broken LaTeX or hallucinations."
+                    )
+                },
+                {
+                    "role": "user",
+                    "content": "Flashcards:\n" + "\n".join(f"{i}. Q: {c.front}\nA: {c.back}" for i, c in enumerate(raw_payload.cards))
+                }
+            ]
+            qc_payload = self._client.structured_complete(qc_messages, _FlashcardQualityPayload, model="gemma-4-31b")
+            
+            feedback = []
+            batch_good = []
+            for idx, (card, eval_res) in enumerate(zip(raw_payload.cards, qc_payload.evaluations)):
+                if eval_res.is_good and not eval_res.has_latex_errors and not eval_res.has_hallucinated_terms:
+                    batch_good.append(card)
+                else:
+                    feedback.append(f"Card {idx}: Rejected. Reason: {eval_res.reason}. LaTeX Error: {eval_res.has_latex_errors}. Hallucination: {eval_res.has_hallucinated_terms}")
+            
+            good_cards.extend(batch_good)
+            
+            if len(good_cards) < 10 and attempt < 2:
+                messages.append({"role": "assistant", "content": raw_payload.model_dump_json()})
+                messages.append({"role": "user", "content": (
+                    f"Out of that batch, {len(batch_good)} were accepted. The following were rejected by the QC Agent:\n"
+                    + "\n".join(feedback) + "\n\n"
+                    f"Please generate {10 - len(good_cards)} NEW flashcards. Fix the LaTeX and terminology errors mentioned above. Do not repeat accepted cards."
+                )})
+
         # Fallback if too strict
         if not good_cards:
             good_cards = raw_payload.cards[:5]
