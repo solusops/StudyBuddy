@@ -372,12 +372,36 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
   }
 
   const renderInline = (text: string): string => {
-    // Math first (KaTeX HTML must not be touched by the markdown regexes below).
-    let result = renderMath(text)
+    // Protect math: render it to KaTeX HTML and stash it behind a placeholder so the
+    // word-grow wrapping below (and the bold/link regexes) never touch KaTeX's internal
+    // nested span structure, which would break its layout.
+    const mathHtml: string[] = []
+    const protectedText = text.replace(
+      /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$/g,
+      (match) => {
+        mathHtml.push(renderMath(match))
+        return ` ${mathHtml.length - 1} `
+      }
+    )
+    let result = protectedText
     // Bold: **text**
     result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     // Links: [text](url)
     result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
+    // Word-grow hover/selection feedback — wrap plain-text words (outside any tag) so
+    // hovering/selecting a word scales it, matching the notes/chat effect.
+    result = result
+      .split(/(<[^>]+>)/g)
+      .map((part) =>
+        part.startsWith("<")
+          ? part
+          : part.replace(/ \d+ |\S+/g, (token) =>
+              token.startsWith(" ") ? token : `<span class="grow-word">${token}</span>`
+            )
+      )
+      .join("")
+    // Restore protected math HTML, untouched.
+    result = result.replace(/ (\d+) /g, (_, idx) => mathHtml[Number(idx)])
     return result
   }
 

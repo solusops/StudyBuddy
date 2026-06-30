@@ -18,6 +18,7 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
   const [streaming, setStreaming] = useState(true)
   const [progress, setProgress] = useState<{ done: number; total: number; stage: string } | null>(null)
   const [visual, setVisual] = useState<HTML5VisualPayload | null>(null)
+  const [webSources, setWebSources] = useState<{ title: string; url: string }[]>([])
   const [editing, setEditing] = useState(false)
   const [editText, setEditText] = useState("")
   const rate = useTokenRate(content, streaming)
@@ -31,6 +32,7 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
   const compile = (edit_instruction = "") => {
     setContent("")
     setVisual(null)
+    setWebSources([])
     setStreaming(true)
     setProgress(null)
     sendEvent("REPORT_COMPILE", {
@@ -51,7 +53,11 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
   useEffect(() => {
     const onProg = (e: Event) => setProgress((e as CustomEvent).detail)
     const onToken = (e: Event) => setContent((c) => c + (e as CustomEvent).detail.token)
-    const onDone = () => { setStreaming(false); setProgress(null) }
+    const onDone = (e: Event) => {
+      setStreaming(false)
+      setProgress(null)
+      setWebSources((e as CustomEvent).detail?.web_sources ?? [])
+    }
     const onVisual = (e: Event) => setVisual((e as CustomEvent).detail.visual)
     window.addEventListener("report-progress", onProg)
     window.addEventListener("report-token", onToken)
@@ -113,6 +119,27 @@ export function ReportView({ session, sendEvent, onClose }: Props) {
           {visual && (
             <div style={{ marginTop: 16 }}>
               <VisualSandbox visual={visual} nodeId="report" animationType={visual.animation_type} height={320} />
+            </div>
+          )}
+          {!streaming && webSources.length > 0 && (
+            <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
+              <h4 style={{ fontFamily: "var(--font-hand)", color: "#1A3557", fontSize: 16, fontWeight: 700, margin: "0 0 10px 0" }}>
+                Web Sources
+              </h4>
+              <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+                {webSources.map((s, i) => (
+                  <li key={i} style={{ fontSize: 13, lineHeight: 1.4 }}>
+                    <a
+                      href={s.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ color: "#3b82f6", textDecoration: "underline", fontWeight: 600 }}
+                    >
+                      {s.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
         </div>

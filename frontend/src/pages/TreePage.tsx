@@ -23,7 +23,7 @@ interface Props {
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
-  const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode, setActiveNode } = useSessionStore()
+  const { streamingLesson, lessonStreaming, lesson, lessonCache, lessonWebSources, setLesson, knowledgeMode, setActiveNode } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [refinementText, setRefinementText] = useState("")
@@ -430,6 +430,35 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 )}
                 {!lessonStreaming && !lessonText && (
                   <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>Loading lesson…</p>
+                )}
+                {!lessonStreaming && lessonWebSources.length > 0 && (
+                  <div style={{ marginTop: 16, borderTop: "1px solid #E8E0D5", paddingTop: 12 }}>
+                    <h4 style={{
+                      fontFamily: "'Libre Caslon Text', Georgia, serif",
+                      color: "#1A3557",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      margin: "0 0 8px 0",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                    }}>
+                      Web Sources
+                    </h4>
+                    <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 6 }}>
+                      {lessonWebSources.map((s, i) => (
+                        <li key={i} style={{ fontSize: 13, lineHeight: 1.4 }}>
+                          <a
+                            href={s.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ color: "#3b82f6", textDecoration: "underline", fontWeight: 600 }}
+                          >
+                            {s.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 )}
               </div>
 

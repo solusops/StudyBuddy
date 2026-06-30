@@ -308,10 +308,17 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
         _local_mem.push_insights(document_id, [r.model_dump() for r in insights])
 
     web_context = ""
+    report_web_sources = []
     if knowledge_mode == "net_support" and topic:
         wr = await _wiki.search_tavily(topic)
         if wr:
             web_context = "\n\n".join(f"[Web: {r.get('title')}]\n{r.get('content')}" for r in wr)
+            seen_urls: set = set()
+            for r in wr:
+                u = r.get("url")
+                if u and u not in seen_urls:
+                    seen_urls.add(u)
+                    report_web_sources.append({"title": r.get("title", u), "url": u})
 
     toc_labels = [n.label for n in _graph_mgr.list_nodes(session_id)]
     await _cm.send(session_id, "REPORT_PROGRESS", {"done": 1, "total": 1, "stage": "writing report"})
@@ -323,7 +330,7 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
     ):
         full += token
         await _cm.send(session_id, "REPORT_TOKEN", {"token": token})
-    await _cm.send(session_id, "REPORT_DONE", {})
+    await _cm.send(session_id, "REPORT_DONE", {"web_sources": report_web_sources})
 
     # Attach a grounded visual to the report if warranted.
     try:
@@ -508,6 +515,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
 
         # Fetch Tavily web results if Net Support is enabled
         web_context = ""
+        tavily_results: list = []
         if knowledge_mode == "net_support":
             tavily_results = await _wiki.search_tavily(data.get("node_label", node.label))
             if tavily_results:
@@ -515,6 +523,13 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}"
                     for r in tavily_results
                 )
+        web_sources = []
+        seen_urls: set = set()
+        for r in tavily_results:
+            u = r.get("url")
+            if u and u not in seen_urls:
+                seen_urls.add(u)
+                web_sources.append({"title": r.get("title", u), "url": u})
 
         cache_key = _cache.make_key(
             "LEARN_NODE", familiarity, anchor_id, [c["text"] for c in chunks],
@@ -533,7 +548,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             # Replay cached lesson as tokens to preserve streaming UX
             for word in cached_lesson.split(" "):
                 await _cm.send(session_id, "LESSON_TOKEN", {"token": word + " "})
-            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
+            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas", "web_sources": web_sources})
         else:
             full_lesson = ""
             async for token in _get_tutor().stream_lesson(
@@ -542,7 +557,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 full_lesson += token
                 await _cm.send(session_id, "LESSON_TOKEN", {"token": token})
             _cache.put(cache_key, full_lesson)
-            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas"})
+            await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas", "web_sources": web_sources})
 
     # ---- BUILD_GRAPH (parallel curriculum streaming — "fireworks") ------
     elif event_type == "BUILD_GRAPH":
@@ -622,21 +637,28 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         full_response = ""
 
         if knowledge_mode == "net_support":
-            # Hybrid tutor: source-anchored, but free to use web + expert knowledge.
+            # Hybrid tutor: grounded in the source material OR the live web — never raw model
+            # weights for factual claims. Net Support widens the grounding to the web; it does
+            # NOT license answering from memorized/parametric knowledge.
             system_msg = (
                 "You are Study Buddy, an expert research tutor helping a student understand a paper "
                 "they uploaded. Be genuinely helpful and substantive — explain, define, give intuition, "
                 "analogies, and worked reasoning. Tailor the depth to the "
                 f"{familiarity} level.\n\n"
                 f"{selection_prefix}"
-                "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. You may ALSO "
-                "use your own expert knowledge, and call the web_search tool for facts, recent "
-                "information, or external definitions that are not in the material.\n\n"
+                "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. When the "
+                "student's question involves a fact, definition, dataset, statistic, or claim that is "
+                "NOT covered by the SOURCE MATERIAL, you MUST call the web_search tool to find it — "
+                "do NOT answer factual questions from your own training data. The only things you may "
+                "explain directly without a source are pure reasoning, intuition, analogies, or "
+                "restating/clarifying material that IS already in the SOURCE MATERIAL.\n\n"
                 "Attribution rules:\n"
                 "- A fact from the student's material → cite inline like [Source: <label>].\n"
                 "- A fact from the web → cite the title/URL it came from.\n"
-                "- Explaining from general expertise → just explain it clearly; no citation needed.\n"
-                "- NEVER invent a citation or attribute a claim to the source if it is not there.\n\n"
+                "- Pure intuition/analogy/reasoning (no external fact) → no citation needed.\n"
+                "- NEVER invent a citation or attribute a claim to the source if it is not there.\n"
+                "- NEVER state a fact, figure, or claim you have not grounded in SOURCE MATERIAL or "
+                "a web_search result.\n\n"
                 f"{_CHAT_FORMATTING}"
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )

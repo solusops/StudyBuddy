@@ -61,9 +61,11 @@ export function useWebSocket(sessionId: string | null) {
         case "LESSON_TOKEN":
           appendLessonToken((msg.data as { token: string }).token)
           break
-        case "LESSON_DONE":
-          commitLesson((msg.data as { visual_suggestion: string }).visual_suggestion ?? "canvas")
+        case "LESSON_DONE": {
+          const payload = msg.data as { visual_suggestion: string; web_sources?: { title: string; url: string }[] }
+          commitLesson(payload.visual_suggestion ?? "canvas", payload.web_sources)
           break
+        }
         case "LESSON_PAYLOAD":
           setLesson(msg.data as unknown as Parameters<typeof setLesson>[0])
           break

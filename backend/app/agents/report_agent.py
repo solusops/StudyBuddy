@@ -80,7 +80,11 @@ class ReportAgent:
         toc = "\n".join(f"- {t}" for t in toc_labels) if toc_labels else "(none)"
 
         if knowledge_mode == "net_support":
-            grounding = "Ground the report in the pooled notes and web context; you may add expert framing."
+            grounding = (
+                "Ground the report strictly in the pooled notes and the WEB CONTEXT provided below — "
+                "you may reorganize and reword for clarity, but never add a fact, figure, or claim "
+                "that is not present in the notes or web context."
+            )
         else:
             grounding = "Base the report strictly on the pooled notes and their source. Never fabricate."
 

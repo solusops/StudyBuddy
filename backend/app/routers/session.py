@@ -83,7 +83,8 @@ async def commit_session(req: CommitRequest):
     
     # Execute memory snapshot using shutil.copytree for Memory Versioning
     try:
-        data_root = cognee.config.data_root_directory()
+        from cognee.base_config import get_base_config
+        data_root = get_base_config().data_root_directory
         if data_root and os.path.exists(data_root):
             snapshot_dir = f"{data_root}_snapshot_{req.session_id}"
             if os.path.exists(snapshot_dir):

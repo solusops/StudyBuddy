@@ -37,6 +37,8 @@ interface SessionStore {
 
   // Lesson cache — keyed by nodeId, avoids re-fetching already-loaded lessons
   lessonCache: Record<string, string>
+  // Web sources (title + url) the current lesson drew on, when Net Support fetched them
+  lessonWebSources: { title: string; url: string }[]
 
   // Actions
   setSession: (id: string, topic: string, familiarity: FamiliarityLevel, knowledgeMode?: "content_only" | "net_support") => void
@@ -47,7 +49,7 @@ interface SessionStore {
   setFlashcards: (cards: Flashcard[], contextImages?: string[]) => void
   setQuizQuestions: (qs: MCQ[], contextImages?: string[]) => void
   appendLessonToken: (token: string) => void
-  commitLesson: (visualSuggestion: string) => void
+  commitLesson: (visualSuggestion: string, webSources?: { title: string; url: string }[]) => void
   appendChatToken: (token: string) => void
   commitChatResponse: () => void
   appendStudyBuddyToken: (token: string) => void
@@ -85,6 +87,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   lessonStreaming: false,
   studyBuddyInitializing: false,
   lessonCache: {},
+  lessonWebSources: [],
 
   setSession: (id, topic, familiarity, knowledgeMode) =>
     set((state) => ({
@@ -117,6 +120,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingLesson: "",
       lessonStreaming: false,
       studyBuddyInitializing: false,
+      lessonWebSources: [],
     }),
 
   setLesson: (lesson) => set({ lesson }),
@@ -127,7 +131,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   appendLessonToken: (token) =>
     set((s) => ({ streamingLesson: s.streamingLesson + token, lessonStreaming: true })),
 
-  commitLesson: (visualSuggestion) =>
+  commitLesson: (visualSuggestion, webSources) =>
     set((s) => ({
       lesson: {
         anchor: "",
@@ -141,6 +145,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
         : s.lessonCache,
       streamingLesson: "",
       lessonStreaming: false,
+      lessonWebSources: webSources ?? [],
     })),
 
   appendChatToken: (token) =>
@@ -196,6 +201,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingLesson: "",
       lessonStreaming: false,
       studyBuddyInitializing: false,
+      lessonWebSources: [],
     }),
 
   reset: () =>
@@ -220,5 +226,6 @@ export const useSessionStore = create<SessionStore>((set) => ({
       lessonStreaming: false,
       studyBuddyInitializing: false,
       lessonCache: {},
+      lessonWebSources: [],
     }),
 }))

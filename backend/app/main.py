@@ -24,7 +24,14 @@ async def lifespan(app: FastAPI):
     os.environ["LLM_API_KEY"] = cerebras_key
     os.environ["LLM_API_BASE"] = cerebras_base
     os.environ["LLM_MODEL"] = "openai/gemma-4-31b"
-    
+    # Cerebras has no embeddings endpoint — Cognee's default embedding model
+    # (openai/text-embedding-3-large) would otherwise be routed through the
+    # OPENAI_API_BASE override above and 404. Use a local, fully offline
+    # embedding model instead (matches CLAUDE.md: Cognee never writes to cloud).
+    os.environ.setdefault("EMBEDDING_PROVIDER", "fastembed")
+    os.environ.setdefault("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
+    os.environ.setdefault("EMBEDDING_DIMENSIONS", "384")
+
     import cognee
     from pathlib import Path
     try:
