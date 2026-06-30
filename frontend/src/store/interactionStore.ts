@@ -35,6 +35,7 @@ interface InteractionStore {
   activeAnnotationId: string | null
   committedAnnotations: CommittedAnnotation[]
   documentId: string | null
+  blinkTarget: { page: number, boxes: BoundingBox[] } | null
 
   setCursorMode: (mode: CursorMode) => void
   toggleRegions: () => void
@@ -42,6 +43,7 @@ interface InteractionStore {
   clearGroup: () => void
   setActiveAnnotation: (id: string | null) => void
   setDocumentId: (id: string | null) => void
+  setBlinkTarget: (target: { page: number, boxes: BoundingBox[] } | null) => void
   setAnnotations: (annotations: CommittedAnnotation[]) => void
   addAnnotation: (annotation: CommittedAnnotation) => void
   updateAnnotationNote: (id: string, note: string) => void
@@ -77,6 +79,7 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
   activeAnnotationId: null,
   committedAnnotations: [],
   documentId: null,
+  blinkTarget: null,
   notePositions: initialPositions,
 
   setCursorMode: (mode) => set({ cursorMode: mode }),
@@ -86,6 +89,7 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
   clearGroup: () => set({ activeSelectionGroup: [] }),
   setActiveAnnotation: (id) => set({ activeAnnotationId: id }),
   setDocumentId: (id) => set({ documentId: id }),
+  setBlinkTarget: (target) => set({ blinkTarget: target }),
   setAnnotations: (annotations) => set({ committedAnnotations: annotations }),
   addAnnotation: (annotation) =>
     set((s) => ({ committedAnnotations: [...s.committedAnnotations, annotation] })),

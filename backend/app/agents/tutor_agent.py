@@ -46,10 +46,20 @@ class LessonPayload(BaseModel):
 class _Flashcard(BaseModel):
     front: str
     back: str
+    source_chunk_indexes: List[int] = Field(description="Indexes of the chunks used to synthesize this flashcard")
 
 
 class _FlashcardsPayload(BaseModel):
     cards: List[_Flashcard]
+
+
+class _FlashcardEvaluation(BaseModel):
+    is_good: bool = Field(description="True if flashcard stands alone perfectly without needing source text.")
+    reason: str
+
+
+class _FlashcardQualityPayload(BaseModel):
+    evaluations: List[_FlashcardEvaluation]
 
 
 class _MCQOption(BaseModel):
@@ -61,10 +71,20 @@ class _MCQ(BaseModel):
     question: str
     options: List[_MCQOption]
     explanation: str
+    source_chunk_indexes: List[int] = Field(description="Indexes of the chunks used to synthesize this question")
 
 
 class _QuizPayload(BaseModel):
     questions: List[_MCQ]
+
+
+class _MCQEvaluation(BaseModel):
+    is_good: bool = Field(description="True if question is high-quality, conceptual, and stands alone.")
+    reason: str
+
+
+class _QuizQualityPayload(BaseModel):
+    evaluations: List[_MCQEvaluation]
 
 
 class TutorAgent:
@@ -191,13 +211,13 @@ class TutorAgent:
         self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
     ) -> _FlashcardsPayload:
         chunk_text = "\n\n".join(
-            f"[Source: {c['source']}]\n{c['text']}" for c in chunks
+            f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}" for i, c in enumerate(chunks)
         )
         user_content: List[Dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    f"Create flashcards specifically focused on the concept '{node_label}' at the {familiarity} level.\n\n"
+                    f"Create deep, conceptual flashcards about '{node_label}' at the {familiarity} level.\n\n"
                     f"SOURCE:\n{chunk_text}"
                 ),
             }
@@ -210,8 +230,11 @@ class TutorAgent:
             {
                 "role": "system",
                 "content": (
-                    f"Generate 5-10 open-recall flashcards specifically about the topic requested, using the source material and any provided images. "
-                    "front = question/prompt, back = answer with a source citation."
+                    "Generate 8-12 high-level, conceptual open-recall flashcards. "
+                    "Do NOT focus on narrow trivia or fill-in-the-blanks. Synthesize information across the chunks. "
+                    "front = conceptual question, back = comprehensive answer. "
+                    "Cite the chunks you used in source_chunk_indexes. "
+                    "Format math using $...$ for inline and $$...$$ for block math."
                 ),
             },
             {
@@ -219,19 +242,48 @@ class TutorAgent:
                 "content": user_content,
             },
         ]
-        return self._client.structured_complete(messages, _FlashcardsPayload, model="gemma-4-31b")
+        raw_payload = self._client.structured_complete(messages, _FlashcardsPayload, model="gemma-4-31b")
+
+        # Quality Check Pass
+        qc_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Evaluate each flashcard strictly WITHOUT reading the source material. "
+                    "Is it well-formatted? Does it make complete sense on its own? "
+                    "Does it avoid lazy phrasing like 'according to the text' or 'in the provided algorithm'? "
+                    "Reject any question that feels like a 'fill in the blank' for a specific quote."
+                )
+            },
+            {
+                "role": "user",
+                "content": "Flashcards:\n" + "\n".join(f"{i}. Q: {c.front}\nA: {c.back}" for i, c in enumerate(raw_payload.cards))
+            }
+        ]
+        qc_payload = self._client.structured_complete(qc_messages, _FlashcardQualityPayload, model="gemma-4-31b")
+        
+        good_cards = []
+        for card, eval_res in zip(raw_payload.cards, qc_payload.evaluations):
+            if eval_res.is_good:
+                good_cards.append(card)
+        
+        # Fallback if too strict
+        if not good_cards:
+            good_cards = raw_payload.cards[:5]
+            
+        return _FlashcardsPayload(cards=good_cards[:10])
 
     def generate_quiz(
         self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
     ) -> _QuizPayload:
         chunk_text = "\n\n".join(
-            f"[Source: {c['source']}]\n{c['text']}" for c in chunks
+            f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}" for i, c in enumerate(chunks)
         )
         user_content: List[Dict[str, Any]] = [
             {
                 "type": "text",
                 "text": (
-                    f"Create quiz questions specifically about the concept '{node_label}' at the {familiarity} level.\n\n"
+                    f"Create sophisticated multiple-choice questions about '{node_label}' at the {familiarity} level.\n\n"
                     f"SOURCE:\n{chunk_text}"
                 ),
             }
@@ -244,9 +296,11 @@ class TutorAgent:
             {
                 "role": "system",
                 "content": (
-                    "Generate exactly 5 multiple-choice questions specifically about the topic requested, using the source material and any provided images. "
+                    "Generate 8-10 high-level, conceptual multiple-choice questions. "
+                    "Synthesize information across chunks. Do not ask for verbatim quotes. "
                     "Each question has exactly 1 correct option and 3 distractors. "
-                    "Include a brief explanation referencing the source."
+                    "Include a conceptual explanation. Cite the chunks used in source_chunk_indexes. "
+                    "Format math using $...$ for inline and $$...$$ for block math."
                 ),
             },
             {
@@ -254,7 +308,36 @@ class TutorAgent:
                 "content": user_content,
             },
         ]
-        return self._client.structured_complete(messages, _QuizPayload, model="gemma-4-31b")
+        raw_payload = self._client.structured_complete(messages, _QuizPayload, model="gemma-4-31b")
+        
+        # Quality Check Pass
+        qc_messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Evaluate each quiz question strictly WITHOUT reading the source material. "
+                    "Does it make logical sense independently? Are the distractors plausible but clearly wrong? "
+                    "Does it avoid lazy phrasing like 'according to the text'? "
+                    "Reject low-quality trivia or poorly formatted questions."
+                )
+            },
+            {
+                "role": "user",
+                "content": "Questions:\n" + "\n".join(f"{i}. Q: {q.question}\nA: {q.options}" for i, q in enumerate(raw_payload.questions))
+            }
+        ]
+        qc_payload = self._client.structured_complete(qc_messages, _QuizQualityPayload, model="gemma-4-31b")
+        
+        good_qs = []
+        for q, eval_res in zip(raw_payload.questions, qc_payload.evaluations):
+            if eval_res.is_good:
+                good_qs.append(q)
+                
+        # Fallback if too strict
+        if not good_qs:
+            good_qs = raw_payload.questions[:5]
+
+        return _QuizPayload(questions=good_qs[:5])
 
     # ------------------------------------------------------------------ #
     # Visuals                                                             #

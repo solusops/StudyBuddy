@@ -39,7 +39,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   const [pageWidth, setPageWidth] = useState(600)
   const containerRef = useRef<HTMLDivElement>(null)
   const pageTexts = useRef<Map<number, string>>(new Map())
-  const { cursorMode, pushSnippet, setAnnotations } = useInteractionStore()
+  const { cursorMode, pushSnippet, setAnnotations, blinkTarget } = useInteractionStore()
   const { setSelection } = useContextStore()
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map())
   const [pageHeights, setPageHeights] = useState<Map<number, number>>(new Map())
@@ -63,6 +63,16 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
       .then((data) => setAnnotations(Array.isArray(data) ? data : []))
       .catch(() => {})
   }, [documentId, setAnnotations])
+
+  // Scroll to blinkTarget
+  useEffect(() => {
+    if (blinkTarget && blinkTarget.page) {
+      const el = pageRefs.current.get(blinkTarget.page)
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" })
+      }
+    }
+  }, [blinkTarget])
 
   const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
     setNumPages(numPages)

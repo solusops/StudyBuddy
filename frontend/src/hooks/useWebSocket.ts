@@ -21,8 +21,8 @@ export function useWebSocket(sessionId: string | null) {
     commitLesson,
     appendChatToken,
     commitChatResponse,
-    appendFeynmanToken,
-    commitFeynmanResponse,
+    appendStudyBuddyToken,
+    commitStudyBuddyResponse,
   } = useSessionStore()
 
   const sendEvent = useCallback(
@@ -86,14 +86,14 @@ export function useWebSocket(sessionId: string | null) {
         case "CHAT_DONE":
           commitChatResponse()
           break
-        case "FEYNMAN_TOKEN":
-          appendFeynmanToken((msg.data as { token: string }).token)
+        case "STUDY_BUDDY_TOKEN":
+          appendStudyBuddyToken((msg.data as { token: string }).token)
           break
-        case "FEYNMAN_DONE":
-          commitFeynmanResponse()
+        case "STUDY_BUDDY_DONE":
+          commitStudyBuddyResponse()
           break
-        case "FEYNMAN_TRANSCRIBED":
-          window.dispatchEvent(new CustomEvent("feynman-transcribed", { detail: { text: (msg.data as { text: string }).text } }))
+        case "STUDY_BUDDY_TRANSCRIBED":
+          window.dispatchEvent(new CustomEvent("study-buddy-transcribed", { detail: { text: (msg.data as { text: string }).text } }))
           break
         case "SCORE_PATCH":
           applyNodePatch(msg.data as unknown as NodePatch)

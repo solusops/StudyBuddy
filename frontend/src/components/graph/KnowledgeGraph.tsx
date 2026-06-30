@@ -61,12 +61,14 @@ function applyDagreLayout(
   return { nodes: laid, edges }
 }
 
-// Re-fit the viewport as nodes stream in during BUILD_GRAPH so the graph stays framed.
-function FitOnChange({ count }: { count: number }) {
+// Re-fit the viewport only after the graph build is complete.
+function FitOnChange() {
   const rf = useReactFlow()
   useEffect(() => {
-    if (count > 0) rf.fitView({ padding: 0.2, duration: 350 })
-  }, [count, rf])
+    const handler = () => rf.fitView({ padding: 0.2, duration: 600 })
+    window.addEventListener("graph-build-done", handler)
+    return () => window.removeEventListener("graph-build-done", handler)
+  }, [rf])
   return null
 }
 
@@ -113,7 +115,7 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
         fitViewOptions={{ padding: 0.2 }}
         proOptions={{ hideAttribution: true }}
       >
-        <FitOnChange count={nodes.length} />
+        <FitOnChange />
         <Background color="#E8E0D5" gap={24} style={{ background: "#FAF7F2" }} />
         <Controls style={{ background: "#FFFFFF", border: "1px solid #E8E0D5", borderRadius: 8 }} />
       </ReactFlow>

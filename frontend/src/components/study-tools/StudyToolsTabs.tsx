@@ -2,7 +2,7 @@ import { useState } from "react"
 import { ChatTool } from "./ChatTool"
 import { FlashcardTool } from "./FlashcardTool"
 import { QuizTool } from "./QuizTool"
-import { FeynmanTool } from "./FeynmanTool"
+import { StudyBuddyTool } from "./StudyBuddyTool"
 
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
@@ -11,7 +11,7 @@ interface Props {
   familiarity: string
 }
 
-const TABS = ["Chat", "Flashcards", "Quiz", "Feynman"] as const
+const TABS = ["Chat", "Flashcards", "Quiz", "Study Buddy"] as const
 type Tab = (typeof TABS)[number]
 
 export function StudyToolsTabs({ sendEvent, nodeId, familiarity }: Props) {
@@ -43,7 +43,7 @@ export function StudyToolsTabs({ sendEvent, nodeId, familiarity }: Props) {
         {active === "Chat" && <ChatTool sendEvent={sendEvent} nodeId={nodeId} familiarity={familiarity} />}
         {active === "Flashcards" && <FlashcardTool sendEvent={sendEvent} nodeId={nodeId} familiarity={familiarity} />}
         {active === "Quiz" && <QuizTool sendEvent={sendEvent} nodeId={nodeId} familiarity={familiarity} />}
-        {active === "Feynman" && <FeynmanTool sendEvent={sendEvent} nodeId={nodeId} familiarity={familiarity} />}
+        {active === "Study Buddy" && <StudyBuddyTool sendEvent={sendEvent} nodeId={nodeId} familiarity={familiarity} />}
       </div>
     </div>
   )

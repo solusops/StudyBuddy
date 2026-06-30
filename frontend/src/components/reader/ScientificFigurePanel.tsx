@@ -8,7 +8,7 @@ import { useContextStore } from "../../store/contextStore"
 import { ChatTool } from "../study-tools/ChatTool"
 import { FlashcardTool } from "../study-tools/FlashcardTool"
 import { QuizTool } from "../study-tools/QuizTool"
-import { FeynmanTool } from "../study-tools/FeynmanTool"
+import { StudyBuddyTool } from "../study-tools/StudyBuddyTool"
 
 interface Props {
   activeConcept: string | null
@@ -78,7 +78,7 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
 
       {/* Main Tab bar */}
       <TabBar
-        tabs={["Infinite Wiki", "Chat", "Flashcards", "Quiz", "Feynman"]}
+        tabs={["Infinite Wiki", "Chat", "Flashcards", "Quiz", "Study Buddy"]}
         active={activeTab}
         onChange={setActiveTab}
       />
@@ -108,11 +108,11 @@ export function ScientificFigurePanel({ activeNodeId, sendEvent }: Props) {
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to take a quiz.</div>
           )
         )}
-        {activeTab === "Feynman" && (
+        {activeTab === "Study Buddy" && (
           activeNodeId ? (
-            <FeynmanTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
+            <StudyBuddyTool sendEvent={sendEvent} nodeId={activeNodeId} familiarity={familiarity} />
           ) : (
-            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Feynman mode.</div>
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Study Buddy.</div>
           )
         )}
         {activeTab === "Chat" && (

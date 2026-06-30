@@ -1,5 +1,32 @@
 import { useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
+import { useInteractionStore } from "../../store/interactionStore"
+import katex from "katex"
+import "katex/dist/katex.min.css"
+
+function renderMath(text: string) {
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith("$$") && part.endsWith("$$")) {
+      const math = part.slice(2, -2)
+      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} /> }
+      catch { return <div key={i}>{part}</div> }
+    }
+    if (part.startsWith("$") && part.endsWith("$")) {
+      const math = part.slice(1, -1)
+      try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false }) }} /> }
+      catch { return <span key={i}>{part}</span> }
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
+const ViewSourceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+    <circle cx="12" cy="12" r="3"></circle>
+  </svg>
+)
 
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
@@ -16,6 +43,7 @@ const GRADES = [
 
 export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
   const { flashcards, flashcardContextImages, setFlashcards } = useSessionStore()
+  const { setBlinkTarget } = useInteractionStore()
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -94,10 +122,20 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
           transition: "border 0.2s, box-shadow 0.2s",
         }}
       >
-        {flipped ? card.back : card.front}
+        {renderMath(flipped ? card.back : card.front)}
       </div>
-      <div style={{ fontSize: 13, color: "#6B7280", fontFamily: "var(--font-hand)" }}>
+      <div style={{ fontSize: 13, color: "#6B7280", fontFamily: "var(--font-hand)", display: "flex", alignItems: "center", gap: 16 }}>
         {flipped ? "Tap to see question" : "Tap to reveal answer"}
+        
+        {flipped && card.source_location && (
+          <button 
+            onClick={(e) => { e.stopPropagation(); setBlinkTarget(card.source_location!) }} 
+            style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#3B82F6", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 }}
+          >
+            <ViewSourceIcon />
+            View Source
+          </button>
+        )}
       </div>
       {flipped && (
         <div style={{ display: "flex", gap: 8 }}>

@@ -18,6 +18,7 @@ from app.agents.modality_router import ModalityRouter
 from app.agents.report_agent import ReportAgent
 from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
+from app.agents.study_buddy_agent import StudyBuddyAgent
 from app.rag.chromadb_client import ChromaDBClient
 from app.rag.ingestion import LIBRARY_COLLECTION
 from app.schemas.journal import JournalEntry, JournalEventType
@@ -44,6 +45,7 @@ _router: ModalityRouter | None = None
 _report: ReportAgent | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
+_study_buddy: StudyBuddyAgent | None = None
 
 from app.services.annotation_service import AnnotationService
 from app.services.memory_service import MemoryService
@@ -91,6 +93,13 @@ def _get_tutor() -> TutorAgent:
     if _tutor is None:
         _tutor = TutorAgent()
     return _tutor
+
+
+def _get_study_buddy() -> StudyBuddyAgent:
+    global _study_buddy
+    if _study_buddy is None:
+        _study_buddy = StudyBuddyAgent()
+    return _study_buddy
 
 
 def _get_router() -> ModalityRouter:
@@ -142,6 +151,35 @@ def _safe_get_node(session_id: str, node_id: str) -> NodeData:
         return _graph_mgr.get_node(session_id, node_id)
     except KeyError:
         return NodeData(id=node_id, label=node_id, status="ACTIVE")
+
+
+def _resolve_chunk_location(document_id: str | None, chunk_texts: list[str]) -> dict | None:
+    if not document_id: return None
+    import os
+    pdf_path = os.path.expanduser(f"~/.studybuddy/pdfs/{document_id}.pdf")
+    if not os.path.exists(pdf_path): return None
+    
+    try:
+        import fitz
+        doc = fitz.open(pdf_path)
+        for chunk in chunk_texts:
+            import re
+            # Find a solid block of text without newlines to improve exact match chances
+            blocks = [b.strip() for b in re.split(r'\n+', chunk) if len(b.strip()) >= 15]
+            if not blocks: continue
+            
+            search_text = blocks[0][:40] # take up to 40 chars
+            
+            for page_num in range(len(doc)):
+                page = doc.load_page(page_num)
+                rects = page.search_for(search_text)
+                if rects:
+                    pr = page.rect
+                    boxes = [{"x": r.x0/pr.width, "y": r.y0/pr.height, "w": r.width/pr.width, "h": r.height/pr.height} for r in rects]
+                    return {"page": page_num + 1, "boxes": boxes}
+    except Exception as e:
+        print("PDF search error:", e)
+    return None
 
 
 def _read_session_structure() -> str:
@@ -688,6 +726,13 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         else:
             result = _get_tutor().generate_flashcards(label, chunks, familiarity, images_base64=images_base64)
             payload = result.model_dump()
+            
+            doc_id = chunks[0].get("document_id") if chunks else None
+            for card in payload["cards"]:
+                idxs = card.get("source_chunk_indexes", [])
+                c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
+                card["source_location"] = _resolve_chunk_location(doc_id, c_texts)
+                
             payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "FLASHCARDS_READY", payload)
@@ -720,6 +765,13 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         else:
             result = _get_tutor().generate_quiz(label, chunks, familiarity, images_base64=images_base64)
             payload = result.model_dump()
+            
+            doc_id = chunks[0].get("document_id") if chunks else None
+            for q in payload["questions"]:
+                idxs = q.get("source_chunk_indexes", [])
+                c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
+                q["source_location"] = _resolve_chunk_location(doc_id, c_texts)
+                
             payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "QUIZ_READY", payload)
@@ -751,80 +803,71 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             {"correct": data.get("correct"), "was_correct": data.get("was_correct")},
         )
 
-    # ---- FEYNMAN_TURN --------------------------------------------
-    elif event_type == "FEYNMAN_TURN":
+    # ---- STUDY_BUDDY_INIT ----------------------------------------
+    elif event_type == "STUDY_BUDDY_INIT":
         familiarity_level = data.get("familiarity", familiarity)
-        feynman_persona = {
-            "eli5": {
-                "name": "Study Buddy (Age 5)",
-                "system": (
-                    "You are Study Buddy (Age 5), a curious 5-year-old child. When the student explains something, "
-                    "ask very simple, innocent questions. Use basic words. Say things like 'But why?' or 'What does that mean?' "
-                    "Be very encouraging; only interject if the analogy completely breaks. "
-                    "Never reveal answers directly."
-                )
-            },
-            "high_school": {
-                "name": "Study Buddy (Age 15)",
-                "system": (
-                    "You are Study Buddy (Age 15), a high school student learning this for the first time. "
-                    "Ask standard conceptual questions. "
-                    "Interject on clear factual errors (>40% drift from the text). "
-                    "Never reveal answers directly."
-                )
-            },
-            "graduate": {
-                "name": "Study Buddy (Age 22)",
-                "system": (
-                    "You are Study Buddy (Age 22), a college graduate student. "
-                    "Ask analytical and technical questions. "
-                    "Interject on any technical inaccuracy (>15% drift). "
-                    "Never reveal answers directly."
-                )
-            },
-            "expert": {
-                "name": "Study Buddy (Age 30)",
-                "system": (
-                    "You are Study Buddy (Age 30), a junior researcher or peer. "
-                    "Ask deep, critical, and rigorous questions. Challenge logic. "
-                    "Interject on any invalid logical leaps or unsupported claims. "
-                    "Never reveal answers directly."
-                )
-            }
-        }.get(familiarity_level, {
-            "name": "Study Buddy (Age 15)",
-            "system": "You are Study Buddy (Age 15). Ask questions on this level. Never reveal answers directly."
-        })
-
-        messages = [
-            {
-                "role": "system",
-                "content": feynman_persona["system"],
-            },
-            {"role": "user", "content": data.get("student_text", "")},
-        ]
         full = ""
-        async for token in _get_tutor()._client.stream_complete(messages):
-            full += token
-            await _cm.send(session_id, "FEYNMAN_TOKEN", {"token": token})
+        try:
+            chunks = _get_db().get_chunks_for_node(document_id, node_id)
+            async for token in _get_study_buddy().generate_initial_question(node, chunks, familiarity_level):
+                full += token
+                await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
+        except Exception as e:
+            print("StudyBuddy Init Error:", e)
+            full = "Oops, I encountered an error. Could you try again?"
+            await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": full})
+        
         _journal.append(
             JournalEntry(
                 session_id=session_id,
                 node_id=node_id,
                 event_type=JournalEventType.FEYNMAN_TURN,
-                data={"student_text": data.get("student_text"), "response": full},
+                data={"event": "init", "response": full},
             )
         )
-        await _cm.send(session_id, "FEYNMAN_DONE", {})
+        await _cm.send(session_id, "STUDY_BUDDY_DONE", {})
 
-    # ---- FEYNMAN_AUDIO (voice → STT → Feynman turn) ----------------------
-    elif event_type == "FEYNMAN_AUDIO":
+    # ---- STUDY_BUDDY_TURN ----------------------------------------
+    elif event_type == "STUDY_BUDDY_TURN":
+        familiarity_level = data.get("familiarity", familiarity)
+        history = data.get("history", [])
+        student_text = data.get("student_text", "")
+        
+        full = ""
+        try:
+            chunks = _get_db().get_chunks_for_node(document_id, node_id)
+            async for token in _get_study_buddy().evaluate_and_ask_next(
+                node=node,
+                chunks=chunks,
+                familiarity=familiarity_level,
+                history=history,
+                student_answer=student_text
+            ):
+                full += token
+                await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
+        except Exception as e:
+            print("StudyBuddy Turn Error:", e)
+            full = "Oops, I encountered an error. Could you try again?"
+            await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": full})
+            
+        _journal.append(
+            JournalEntry(
+                session_id=session_id,
+                node_id=node_id,
+                event_type=JournalEventType.FEYNMAN_TURN,
+                data={"student_text": student_text, "response": full},
+            )
+        )
+        await _cm.send(session_id, "STUDY_BUDDY_DONE", {})
+
+    # ---- STUDY_BUDDY_AUDIO (voice → STT → Study Buddy turn) ----------------------
+    elif event_type == "STUDY_BUDDY_AUDIO":
         stt = TranscriptionService.get()
         audio_b64 = data.get("audio_base64", "")
         if not audio_b64:
-            await _cm.send(session_id, "FEYNMAN_DONE", {"error": "no audio"})
+            await _cm.send(session_id, "STUDY_BUDDY_DONE", {"error": "no audio"})
         elif not stt.is_available:
-            await _cm.send(session_id, "FEYNMAN_DONE", {
+            await _cm.send(session_id, "STUDY_BUDDY_DONE", {
                 "error": "STT model not available (Canary-Qwen not loaded)"
             })
         else:
@@ -832,64 +875,33 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             audio_bytes = base64.b64decode(audio_b64)
             text = stt.transcribe(audio_bytes)
             if not text:
-                await _cm.send(session_id, "FEYNMAN_DONE", {"error": "transcription returned empty"})
+                await _cm.send(session_id, "STUDY_BUDDY_DONE", {"error": "transcription returned empty"})
             else:
-                await _cm.send(session_id, "FEYNMAN_TRANSCRIBED", {"text": text})
+                await _cm.send(session_id, "STUDY_BUDDY_TRANSCRIBED", {"text": text})
                 familiarity_level = data.get("familiarity", familiarity)
-                feynman_persona = {
-                    "eli5": {
-                        "name": "Study Buddy (Age 5)",
-                        "system": (
-                            "You are Study Buddy (Age 5), a curious 5-year-old child. When the student explains something, "
-                            "ask very simple, innocent questions. Use basic words. Say things like 'But why?' or 'What does that mean?' "
-                            "Be very encouraging; only interject if the analogy completely breaks. "
-                            "Never reveal answers directly."
-                        )
-                    },
-                    "high_school": {
-                        "name": "Study Buddy (Age 15)",
-                        "system": (
-                            "You are Study Buddy (Age 15), a high school student learning this for the first time. "
-                            "Ask standard conceptual questions. "
-                            "Interject on clear factual errors (>40% drift from the text). "
-                            "Never reveal answers directly."
-                        )
-                    },
-                    "graduate": {
-                        "name": "Study Buddy (Age 22)",
-                        "system": (
-                            "You are Study Buddy (Age 22), a college graduate student. "
-                            "Ask analytical and technical questions. "
-                            "Interject on any technical inaccuracy (>15% drift). "
-                            "Never reveal answers directly."
-                        )
-                    },
-                    "expert": {
-                        "name": "Study Buddy (Age 30)",
-                        "system": (
-                            "You are Study Buddy (Age 30), a junior researcher or peer. "
-                            "Ask deep, critical, and rigorous questions. Challenge logic. "
-                            "Interject on any invalid logical leaps or unsupported claims. "
-                            "Never reveal answers directly."
-                        )
-                    }
-                }.get(familiarity_level, {
-                    "name": "Study Buddy (Age 15)",
-                    "system": "You are Study Buddy (Age 15). Ask questions on this level. Never reveal answers directly."
-                })
-
-                messages = [
-                    {"role": "system", "content": feynman_persona["system"]},
-                    {"role": "user", "content": text},
-                ]
+                history = data.get("history", [])
+                
                 full = ""
-                async for token in _get_tutor()._client.stream_complete(messages):
-                    full += token
-                    await _cm.send(session_id, "FEYNMAN_TOKEN", {"token": token})
+                try:
+                    chunks = _get_db().get_chunks_for_node(document_id, node_id)
+                    async for token in _get_study_buddy().evaluate_and_ask_next(
+                        node=node,
+                        chunks=chunks,
+                        familiarity=familiarity_level,
+                        history=history,
+                        student_answer=text
+                    ):
+                        full += token
+                        await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
+                except Exception as e:
+                    print("StudyBuddy Audio Error:", e)
+                    full = "Oops, I encountered an error processing your voice."
+                    await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": full})
+                    
                 _journal.append(JournalEntry(session_id=session_id, node_id=node_id,
                     event_type=JournalEventType.FEYNMAN_TURN,
                     data={"student_text": text, "input_type": "voice", "response": full}))
-                await _cm.send(session_id, "FEYNMAN_DONE", {})
+                await _cm.send(session_id, "STUDY_BUDDY_DONE", {})
 
     # ---- INFINITY_WIKI_REQUEST -----------------------------------
     elif event_type == "INFINITY_WIKI_REQUEST":

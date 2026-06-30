@@ -1,8 +1,8 @@
 import { create } from "zustand"
 import type { FamiliarityLevel, Flashcard, MCQ, LessonPayload, HTML5VisualPayload, ChatMessage } from "../types"
 
-interface FeynmanMessage {
-  role: "student" | "clara"
+interface StudyBuddyMessage {
+  role: "student" | "study_buddy"
   content: string
 }
 
@@ -25,12 +25,12 @@ interface SessionStore {
   quizQuestions: MCQ[]
   quizContextImages: string[]
   chatHistory: ChatMessage[]
-  feynmanHistory: FeynmanMessage[]
+  studyBuddyHistory: StudyBuddyMessage[]
   chatDraft: string
 
   // Streaming state
   streamingChat: string
-  streamingFeynman: string
+  streamingStudyBuddy: string
   streamingLesson: string
   lessonStreaming: boolean
 
@@ -49,10 +49,10 @@ interface SessionStore {
   commitLesson: (visualSuggestion: string) => void
   appendChatToken: (token: string) => void
   commitChatResponse: () => void
-  appendFeynmanToken: (token: string) => void
-  commitFeynmanResponse: () => void
+  appendStudyBuddyToken: (token: string) => void
+  commitStudyBuddyResponse: () => void
   addChatMessage: (msg: ChatMessage) => void
-  addFeynmanMessage: (msg: FeynmanMessage) => void
+  addStudyBuddyMessage: (msg: StudyBuddyMessage) => void
   setChatDraft: (draft: string) => void
   setChatHistory: (history: ChatMessage[]) => void
   setLessonCache: (cache: Record<string, string>) => void
@@ -74,10 +74,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
   quizQuestions: [],
   quizContextImages: [],
   chatHistory: [],
-  feynmanHistory: [],
+  studyBuddyHistory: [],
   chatDraft: "",
   streamingChat: "",
-  streamingFeynman: "",
+  streamingStudyBuddy: "",
   streamingLesson: "",
   lessonStreaming: false,
   lessonCache: {},
@@ -131,23 +131,23 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingChat: "",
     })),
 
-  appendFeynmanToken: (token) =>
-    set((s) => ({ streamingFeynman: s.streamingFeynman + token })),
+  appendStudyBuddyToken: (token) =>
+    set((s) => ({ streamingStudyBuddy: s.streamingStudyBuddy + token })),
 
-  commitFeynmanResponse: () =>
+  commitStudyBuddyResponse: () =>
     set((s) => ({
-      feynmanHistory: [
-        ...s.feynmanHistory,
-        { role: "clara" as const, content: s.streamingFeynman },
+      studyBuddyHistory: [
+        ...s.studyBuddyHistory,
+        { role: "study_buddy" as const, content: s.streamingStudyBuddy },
       ],
-      streamingFeynman: "",
+      streamingStudyBuddy: "",
     })),
 
   addChatMessage: (msg) =>
     set((s) => ({ chatHistory: [...s.chatHistory, msg] })),
 
-  addFeynmanMessage: (msg) =>
-    set((s) => ({ feynmanHistory: [...s.feynmanHistory, msg] })),
+  addStudyBuddyMessage: (msg) =>
+    set((s) => ({ studyBuddyHistory: [...s.studyBuddyHistory, msg] })),
 
   setChatDraft: (draft) => set({ chatDraft: draft }),
   setChatHistory: (history) => set({ chatHistory: history }),
@@ -163,10 +163,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
       quizQuestions: [],
       quizContextImages: [],
       chatHistory: [],
-      feynmanHistory: [],
+      studyBuddyHistory: [],
       chatDraft: "",
       streamingChat: "",
-      streamingFeynman: "",
+      streamingStudyBuddy: "",
       streamingLesson: "",
       lessonStreaming: false,
     }),
@@ -185,10 +185,10 @@ export const useSessionStore = create<SessionStore>((set) => ({
       quizQuestions: [],
       quizContextImages: [],
       chatHistory: [],
-      feynmanHistory: [],
+      studyBuddyHistory: [],
       chatDraft: "",
       streamingChat: "",
-      streamingFeynman: "",
+      streamingStudyBuddy: "",
       streamingLesson: "",
       lessonStreaming: false,
       lessonCache: {},

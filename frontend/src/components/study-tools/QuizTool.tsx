@@ -1,6 +1,33 @@
 import { useMemo, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
+import { useInteractionStore } from "../../store/interactionStore"
 import type { MCQOption } from "../../types"
+import katex from "katex"
+import "katex/dist/katex.min.css"
+
+function renderMath(text: string) {
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
+  return parts.map((part, i) => {
+    if (part.startsWith("$$") && part.endsWith("$$")) {
+      const math = part.slice(2, -2)
+      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} /> }
+      catch { return <div key={i}>{part}</div> }
+    }
+    if (part.startsWith("$") && part.endsWith("$")) {
+      const math = part.slice(1, -1)
+      try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false }) }} /> }
+      catch { return <span key={i}>{part}</span> }
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
+const ViewSourceIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+    <circle cx="12" cy="12" r="3"></circle>
+  </svg>
+)
 
 interface Props {
   sendEvent: (type: string, data?: Record<string, unknown>) => void
@@ -14,6 +41,7 @@ function shuffle<T>(arr: T[]): T[] {
 
 export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
   const { quizQuestions, quizContextImages, setQuizQuestions } = useSessionStore()
+  const { setBlinkTarget } = useInteractionStore()
   const [qIndex, setQIndex] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
@@ -82,7 +110,9 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
         </div>
       )}
       <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{qIndex + 1} / {quizQuestions.length}</div>
-      <p style={{ color: "#0F172A", fontSize: 18, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5, margin: 0 }}>{currentQ.question}</p>
+      <p style={{ color: "#0F172A", fontSize: 18, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5, margin: 0 }}>
+        {renderMath(currentQ.question)}
+      </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {shuffledOptions.map((opt, i) => {
           const isSelected = selected === i
@@ -112,15 +142,25 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
                 transition: "all 0.2s",
               }}
             >
-              {selected !== null && isCorrect ? "✓ " : selected !== null && isSelected ? "✗ " : ""}{opt.text}
+              {selected !== null && isCorrect ? "✓ " : selected !== null && isSelected ? "✗ " : ""}
+              {renderMath(opt.text)}
             </button>
           )
         })}
       </div>
       {selected !== null && (
         <div style={{ color: "#6B7280", fontSize: 13, fontStyle: "italic", fontFamily: "var(--font-serif)" }}>
-          {currentQ.explanation}
+          {renderMath(currentQ.explanation)}
         </div>
+      )}
+      {selected !== null && currentQ.source_location && (
+        <button 
+          onClick={() => setBlinkTarget(currentQ.source_location)} 
+          style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#3B82F6", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0, marginTop: 4, width: "fit-content" }}
+        >
+          <ViewSourceIcon />
+          View Source in PDF
+        </button>
       )}
       {selected !== null && (
         <button onClick={() => { setQIndex((q) => q + 1); setSelected(null) }} style={{ ...btnStyle, alignSelf: "flex-end" }}>
