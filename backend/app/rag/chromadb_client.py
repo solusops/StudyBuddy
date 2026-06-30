@@ -1,26 +1,22 @@
 import hashlib
-import os
 from typing import Any, Dict, List, Optional
 
 import chromadb
 
 from app.rag.embeddings import Embedder
 
-_CHROMA_PATH = os.path.expanduser("~/.studybuddy/chroma")
 _FILE_INDEX_COLLECTION = "file-index"
 
 
 class ChromaDBClient:
-    """Persistent ChromaDB wrapper.
+    """In-memory ChromaDB wrapper for the web demo deployment.
 
-    Content lives in ~/.studybuddy/chroma/ across sessions.
-    Files are deduplicated by SHA-256 content hash — re-chunking only happens
-    when a file's content changes.
+    State is ephemeral — lost on process restart. Files are deduplicated by
+    SHA-256 content hash within a single process lifetime.
     """
 
     def __init__(self, embedder: Optional[Embedder] = None) -> None:
-        os.makedirs(_CHROMA_PATH, exist_ok=True)
-        self._client = chromadb.PersistentClient(path=_CHROMA_PATH)
+        self._client = chromadb.EphemeralClient()
         self.embedder = embedder or Embedder()
 
     # ------------------------------------------------------------------ #

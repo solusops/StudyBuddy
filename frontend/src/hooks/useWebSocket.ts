@@ -3,10 +3,13 @@ import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import type { Flashcard, MCQ, NodeData, NodePatch, WSMessage } from "../types"
 
-// In dev, Vite proxies /ws/* to the backend. In Electron prod, use direct localhost.
+// Electron prod: file:// → direct localhost. Web demo: VITE_API_URL → Railway. Dev: Vite proxy.
+const _API_URL = import.meta.env.VITE_API_URL as string | undefined
 const WS_BASE = window.location.protocol === "file:"
   ? "ws://127.0.0.1:8765"
-  : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
+  : _API_URL
+    ? _API_URL.replace(/^http/, "ws")
+    : `${window.location.protocol === "https:" ? "wss" : "ws"}://${window.location.host}`
 
 export function useWebSocket(sessionId: string | null) {
   const ws = useRef<WebSocket | null>(null)

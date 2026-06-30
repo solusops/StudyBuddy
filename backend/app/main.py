@@ -1,5 +1,4 @@
 import os
-import threading
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
@@ -15,9 +14,6 @@ from app.websockets.handlers import get_connection_manager, get_db, handle_event
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Warm the embedding model in the background so the port binds immediately
-    # but the 12s model load overlaps with session creation + topic selection.
-    threading.Thread(target=get_db, daemon=True, name="embedder-warmup").start()
     yield
 
 
