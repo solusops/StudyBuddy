@@ -7,6 +7,8 @@ import { useContextStore } from "../../store/contextStore"
 import { useInteractionStore } from "../../store/interactionStore"
 import { splitFencedBlocks } from "../../lib/chatBlocks"
 import { useTokenRate } from "../../lib/useTokenRate"
+import { useShallow } from "zustand/react/shallow"
+import { Globe, X } from "lucide-react"
 import { MermaidBlock } from "./MermaidBlock"
 import { PlotlyBlock } from "./PlotlyBlock"
 
@@ -355,7 +357,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
             fontFamily: "system-ui, sans-serif",
             padding: "4px 6px",
           }}>
-            🌐 Searching the web…
+            <Globe size={14} style={{ marginRight: 6 }} /> Searching the web…
           </div>
         )}
         {streamingChat && (
@@ -418,7 +420,7 @@ export function ChatTool({ sendEvent, nodeId, familiarity }: Props) {
               title="Clear selection"
               style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 16, padding: 0, lineHeight: 1, flexShrink: 0 }}
             >
-              ×
+              <X size={14} />
             </button>
           </div>
         )}

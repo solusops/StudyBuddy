@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
+import { Check } from "lucide-react"
 import type { NodeData } from "../../types"
 import { useGraphStore } from "../../store/graphStore"
 
@@ -121,7 +122,7 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
         </div>
         {!isRoot && (
           <div style={{ position: "relative", zIndex: 1, fontSize: 10, marginTop: 5, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.03em", fontWeight: 700, color: complete ? "#2D6A4F" : baseColors.text }}>
-            {complete ? "✓ COMPLETED" : `${percent}%`}
+            {complete ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}><Check size={12} /> COMPLETED</span> : `${percent}%`}
           </div>
         )}
       </div>

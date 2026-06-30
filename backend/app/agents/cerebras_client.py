@@ -100,7 +100,7 @@ class CerebrasClient:
     # ------------------------------------------------------------------ #
 
     def structured_complete(
-        self, messages: List[Dict[str, Any]], output_model: Type[BaseModel], model: str | None = None
+        self, messages: List[Dict[str, Any]], output_model: Type[BaseModel], model: str | None = None, **kwargs
     ) -> BaseModel:
         self._check_rate_limit()
         schema = self._build_schema(output_model)
@@ -113,9 +113,15 @@ class CerebrasClient:
             },
         }
         try:
+            t0 = time.time()
             resp = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, response_format=response_format
+                model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
             )
+            t1 = time.time()
+            tokens = getattr(resp.usage, "completion_tokens", 0)
+            if tokens and (t1 - t0) > 0:
+                print(f"[Cerebras Speed] structured_complete generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                
             raw = resp.choices[0].message.content
             self._health = {"status": "ok"}
             return output_model.model_validate_json(raw)
@@ -123,9 +129,14 @@ class CerebrasClient:
             raise
         except (json.JSONDecodeError, ValidationError):
             # One retry on parse failure or truncated JSON (EOF validation error)
+            t0 = time.time()
             resp = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, response_format=response_format
+                model=model or MODEL_ID, messages=messages, response_format=response_format, **kwargs
             )
+            t1 = time.time()
+            tokens = getattr(resp.usage, "completion_tokens", 0)
+            if tokens and (t1 - t0) > 0:
+                print(f"[Cerebras Speed] structured_complete (retry) generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
             return output_model.model_validate_json(resp.choices[0].message.content)
         except Exception as exc:
             self._handle_sdk_exc(exc)
@@ -136,6 +147,7 @@ class CerebrasClient:
         tools: List[Dict[str, Any]],
         tool_choice: str = "auto",
         model: str | None = None,
+        **kwargs
     ):
         """Non-streaming completion that may return tool calls.
 
@@ -145,12 +157,19 @@ class CerebrasClient:
         """
         self._check_rate_limit()
         try:
+            t0 = time.time()
             resp = self._client.chat.completions.create(
                 model=model or MODEL_ID,
                 messages=messages,
                 tools=tools,
                 tool_choice=tool_choice,
+                **kwargs
             )
+            t1 = time.time()
+            tokens = getattr(resp.usage, "completion_tokens", 0)
+            if tokens and (t1 - t0) > 0:
+                print(f"[Cerebras Speed] complete_with_tools generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                
             self._health = {"status": "ok"}
             return resp.choices[0].message
         except CerebrasError:
@@ -158,16 +177,33 @@ class CerebrasClient:
         except Exception as exc:
             self._handle_sdk_exc(exc)
 
-    async def stream_complete(self, messages: List[Dict[str, Any]], model: str | None = None) -> AsyncIterator[str]:
+    async def stream_complete(self, messages: List[Dict[str, Any]], model: str | None = None, **kwargs) -> AsyncIterator[str]:
         self._check_rate_limit()
         try:
+            t0 = time.time()
             stream = self._client.chat.completions.create(
-                model=model or MODEL_ID, messages=messages, stream=True
+                model=model or MODEL_ID, messages=messages, stream=True, **kwargs
             )
+            chunk_count = 0
+            usage_logged = False
             for chunk in stream:
-                delta = chunk.choices[0].delta.content
+                usage = getattr(chunk, "usage", None)
+                delta = chunk.choices[0].delta.content if chunk.choices else None
                 if delta:
+                    chunk_count += 1
                     yield delta
+                if usage and getattr(usage, "completion_tokens", 0) and not usage_logged:
+                    t1 = time.time()
+                    tokens = usage.completion_tokens
+                    if tokens and (t1 - t0) > 0:
+                        print(f"[Cerebras Speed] stream_complete generated {tokens} tokens in {t1-t0:.2f}s ({tokens/(t1-t0):.1f} tok/s)")
+                        usage_logged = True
+                        
+            if not usage_logged:
+                t1 = time.time()
+                if (t1 - t0) > 0 and chunk_count > 0:
+                    print(f"[Cerebras Speed] stream_complete (approx) generated {chunk_count} chunks in {t1-t0:.2f}s ({chunk_count/(t1-t0):.1f} chunks/s)")
+
             self._health = {"status": "ok"}
         except CerebrasError:
             raise

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
+import { CheckCircle2, XCircle } from "lucide-react"
 import { useInteractionStore } from "../../store/interactionStore"
 import type { MCQOption } from "../../types"
 import katex from "katex"
@@ -163,7 +164,7 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
                 transition: "all 0.2s",
               }}
             >
-              {selected !== null && isCorrect ? <span style={{ marginRight: 6 }}>✓</span> : selected !== null && isSelected ? <span style={{ marginRight: 6 }}>✗</span> : null}
+              {selected !== null && isCorrect ? <span style={{ marginRight: 6 }}><CheckCircle2 size={16} color="green" /></span> : selected !== null && isSelected ? <span style={{ marginRight: 6 }}><XCircle size={16} color="red" /></span> : null}
               {parseText(opt.text, currentQ.source_location, currentQ.source_chunk_text, setBlinkTarget)}
             </button>
           )

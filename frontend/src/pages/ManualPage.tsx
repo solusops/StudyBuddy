@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react"
 import { PDFReader } from "../components/reader/PDFReader"
 import { ScientificFigurePanel } from "../components/reader/ScientificFigurePanel"
+import { useShallow } from "zustand/react/shallow"
+import { FileText, Check } from "lucide-react"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useInteractionStore } from "../store/interactionStore"
@@ -359,7 +361,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             transition: "background 0.2s",
           }}
         >
-          {commitDone ? "Saved ✓" : "Commit"}
+          {commitDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Saved <Check size={14} /></span> : "Commit"}
         </button>
 
         {/* Push */}
@@ -378,7 +380,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
             fontWeight: 600,
           }}
         >
-          {isPushing ? "Evaluating…" : pushDone ? "Pushed ✓" : "Push"}
+          {isPushing ? "Evaluating…" : pushDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Pushed <Check size={14} /></span> : "Push"}
         </button>
 
         {/* Clear */}
@@ -437,7 +439,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
               cursor: "default",
             }}
           >
-            <div style={{ fontSize: 40, opacity: 0.4 }}>📄</div>
+            <div style={{ opacity: 0.4 }}><FileText size={40} /></div>
             <p style={{ margin: 0, fontSize: 16, fontFamily: "'Libre Caslon Text', Georgia, serif", color: "#6B7280", textAlign: "center" }}>
               {isElectron ? "Loading document…" : "Drop a PDF here to view it"}
             </p>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
+import { Check, X, ArrowLeft, ArrowRight } from "lucide-react"
 import { ReportView } from "../components/panel/ReportView"
 import { EvaluationView } from "../components/panel/EvaluationView"
 import { useTokenRate } from "../lib/useTokenRate"
@@ -272,7 +273,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           style={{ background: "transparent", color: "#1A3557", border: "none", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0", lineHeight: 1 }}
           aria-label="Back to reading"
         >
-          ←
+          <ArrowLeft size={16} />
         </button>
         <span style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 17, flex: 1 }}>
           {session?.topic || "Knowledge Tree"}
@@ -333,7 +334,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             transition: "background 0.2s",
           }}
         >
-          {commitDone ? "Saved ✓" : "Commit"}
+          {commitDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Saved <Check size={14} /></span> : "Commit"}
         </button>
 
         {/* Push */}
@@ -352,7 +353,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
             cursor: isPushing ? "not-allowed" : "pointer",
           }}
         >
-          {isPushing ? "Evaluating…" : pushDone ? "Pushed ✓" : "Push"}
+          {isPushing ? "Evaluating…" : pushDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Pushed <Check size={14} /></span> : "Push"}
         </button>
 
         {/* Clear */}
@@ -394,7 +395,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 onClick={() => setSelectedId(null)}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 18, padding: 0, lineHeight: 1 }}
               >
-                ×
+                <X size={18} />
               </button>
             </div>
 
@@ -438,8 +439,8 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 }}
               >
                 {(selectedNode.data.scores.memory > 0 || selectedNode.data.scores.comprehension > 0 || selectedNode.data.scores.structure > 0 || selectedNode.data.scores.application > 0)
-                  ? "Continue Studying →"
-                  : "Start Studying →"}
+                  ? <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>Continue Studying <ArrowRight size={16} /></span>
+                  : <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6 }}>Start Studying <ArrowRight size={16} /></span>}
               </button>
             </div>
           </div>
