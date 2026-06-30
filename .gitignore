@@ -16,3 +16,5 @@ Thumbs.db
 backend/tests/.pytest_cache/
 .pytest_cache/
 .claude/
+cognee_arch.txt
+cognee_implementation.txt
