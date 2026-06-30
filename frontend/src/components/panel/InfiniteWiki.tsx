@@ -38,6 +38,14 @@ interface ScholarPaper {
   url: string
 }
 
+interface DeepDiveVideo {
+  video_id: string
+  title: string
+  channel: string
+  thumbnail: string
+  url: string
+}
+
 interface WikiPage {
   term: string
   content: string
@@ -48,6 +56,10 @@ interface WikiPage {
   papers?: ScholarPaper[]
   imageBase64?: string
   recallGenerated?: boolean
+  videos?: DeepDiveVideo[]
+  videosLoading?: boolean
+  activeVideoId?: string
+  videoSummary?: { video_id: string; summary: string; key_points?: string[] }
 }
 
 interface Props {
@@ -139,6 +151,22 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
         return next
       })
     }
+    const onDeepDiveVideos = (e: Event) => {
+      const { term, videos } = (e as CustomEvent).detail
+      setStack((prev) => {
+        const next = prev.map((p) =>
+          p.term === term ? { ...p, videos, videosLoading: false, activeVideoId: videos?.[0]?.video_id } : p
+        )
+        if (documentId) updateWikiPage(documentId, term, { videos })
+        return next
+      })
+    }
+    const onDeepDiveSummary = (e: Event) => {
+      const { term, video_id, summary, key_points } = (e as CustomEvent).detail
+      setStack((prev) =>
+        prev.map((p) => (p.term === term ? { ...p, videoSummary: { video_id, summary, key_points } } : p))
+      )
+    }
     const onVisualStart = (e: Event) => {
       const { term } = (e as CustomEvent).detail
       setStack((prev) =>
@@ -158,6 +186,8 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     window.addEventListener("wiki-done", onDone)
     window.addEventListener("wiki-visual-available", onVisualAvailable)
     window.addEventListener("wiki-further-reading", onFurtherReading)
+    window.addEventListener("wiki-deepdive-videos", onDeepDiveVideos)
+    window.addEventListener("wiki-deepdive-summary", onDeepDiveSummary)
     window.addEventListener("wiki-visual-start", onVisualStart)
     window.addEventListener("wiki-visual-payload", onVisualPayload)
     return () => {
@@ -165,6 +195,8 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
       window.removeEventListener("wiki-done", onDone)
       window.removeEventListener("wiki-visual-available", onVisualAvailable)
       window.removeEventListener("wiki-further-reading", onFurtherReading)
+      window.removeEventListener("wiki-deepdive-videos", onDeepDiveVideos)
+      window.removeEventListener("wiki-deepdive-summary", onDeepDiveSummary)
       window.removeEventListener("wiki-visual-start", onVisualStart)
       window.removeEventListener("wiki-visual-payload", onVisualPayload)
     }
@@ -186,6 +218,20 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
 
   const currentPage = stack[currentIdx]
   const wikiRate = useTokenRate(currentPage?.content ?? "", !!currentPage?.streaming)
+
+  // On-demand YouTube Deep Dive — fetch watchable videos (played in-app) + summaries.
+  const requestDeepDive = (page: WikiPage) => {
+    setStack((prev) => prev.map((p) => (p.term === page.term ? { ...p, videosLoading: true } : p)))
+    sendEvent("WIKI_DEEPDIVE_REQUEST", { selection_text: page.term, familiarity })
+  }
+
+  const selectVideo = (page: WikiPage, v: DeepDiveVideo) => {
+    setStack((prev) => prev.map((p) => (p.term === page.term ? { ...p, activeVideoId: v.video_id } : p)))
+    // Summarize on demand if we don't already have this video's summary.
+    if (page.videoSummary?.video_id !== v.video_id) {
+      sendEvent("WIKI_DEEPDIVE_SUMMARIZE", { video_id: v.video_id, term: page.term, title: v.title, familiarity })
+    }
+  }
 
   // Generate the offered visual on demand, grounded in this card's content.
   const requestVisual = (page: WikiPage) => {
@@ -531,6 +577,82 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                     </li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {/* Deep Dive — on-demand YouTube videos, played in-app */}
+            {!currentPage.streaming && (
+              <div style={{ marginTop: 24, borderTop: "1px solid #E8E0D5", paddingTop: 16 }}>
+                {!currentPage.videos && !currentPage.videosLoading && (
+                  <button
+                    onClick={() => requestDeepDive(currentPage)}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 10,
+                      background: "#EEF3F8", border: "1.5px solid #4A7FB5", borderRadius: 10,
+                      padding: "10px 16px", cursor: "pointer", color: "#1A3557", fontSize: 14, fontWeight: 600,
+                    }}
+                  >
+                    🎥 Deep Dive — find videos
+                  </button>
+                )}
+                {currentPage.videosLoading && (
+                  <p style={{ color: "#6B7280", fontSize: 13, fontStyle: "italic", margin: 0 }}>Finding videos…</p>
+                )}
+                {currentPage.videos && currentPage.videos.length === 0 && (
+                  <p style={{ color: "#9CA3AF", fontSize: 13, margin: 0 }}>No videos found (check YOUTUBE_API_KEY).</p>
+                )}
+                {currentPage.videos && currentPage.videos.length > 0 && (
+                  <div>
+                    <h4 style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", color: "#1A3557", fontSize: 15, fontWeight: 700, margin: "0 0 10px 0" }}>
+                      Deep Dive
+                    </h4>
+                    {/* In-app player */}
+                    {currentPage.activeVideoId && (
+                      <div style={{ position: "relative", paddingTop: "56.25%", borderRadius: 8, overflow: "hidden", border: "1px solid #E8E0D5", marginBottom: 10 }}>
+                        <iframe
+                          title="deep-dive-video"
+                          src={`https://www.youtube.com/embed/${currentPage.activeVideoId}`}
+                          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                          allowFullScreen
+                          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none" }}
+                        />
+                      </div>
+                    )}
+                    {/* Thumbnail picker */}
+                    <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 6 }}>
+                      {currentPage.videos.map((v) => (
+                        <button
+                          key={v.video_id}
+                          onClick={() => selectVideo(currentPage, v)}
+                          title={`${v.title} — ${v.channel}`}
+                          style={{
+                            flexShrink: 0, width: 140, textAlign: "left", cursor: "pointer",
+                            background: "transparent", padding: 0,
+                            border: v.video_id === currentPage.activeVideoId ? "2px solid #1A3557" : "1px solid #E8E0D5",
+                            borderRadius: 8, overflow: "hidden",
+                          }}
+                        >
+                          {v.thumbnail && <img src={v.thumbnail} alt="" style={{ width: "100%", display: "block" }} />}
+                          <span style={{ display: "block", padding: "4px 6px", fontSize: 11, lineHeight: 1.3, color: "#1A1A2E", fontFamily: "system-ui, sans-serif" }}>
+                            {v.title.length > 55 ? v.title.slice(0, 55) + "…" : v.title}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                    {/* Summary (also fed into Quiz/Flashcards) */}
+                    {currentPage.videoSummary && currentPage.videoSummary.video_id === currentPage.activeVideoId && (
+                      <div style={{ marginTop: 10, padding: 10, background: "#F0F5FA", borderLeft: "4px solid #4A7FB5", borderRadius: "0 8px 8px 0", fontSize: 13, lineHeight: 1.5, color: "#1A3557", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                        <strong style={{ display: "block", marginBottom: 4 }}>Video summary</strong>
+                        {currentPage.videoSummary.summary}
+                        {currentPage.videoSummary.key_points && currentPage.videoSummary.key_points.length > 0 && (
+                          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
+                            {currentPage.videoSummary.key_points.map((k, i) => <li key={i}>{k}</li>)}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

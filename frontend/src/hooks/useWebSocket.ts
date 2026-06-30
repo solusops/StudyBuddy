@@ -126,8 +126,11 @@ export function useWebSocket(sessionId: string | null) {
           // Handled in StudyPage
           window.dispatchEvent(new CustomEvent("session-complete", { detail: msg.data }))
           break
-        case "INFINITY_WIKI_RESULT":
-          window.dispatchEvent(new CustomEvent("infinity-wiki-result", { detail: msg.data }))
+        case "WIKI_DEEPDIVE_VIDEOS":
+          window.dispatchEvent(new CustomEvent("wiki-deepdive-videos", { detail: msg.data }))
+          break
+        case "WIKI_DEEPDIVE_SUMMARY":
+          window.dispatchEvent(new CustomEvent("wiki-deepdive-summary", { detail: msg.data }))
           break
         case "WIKI_TOKEN":
           window.dispatchEvent(new CustomEvent("wiki-token", { detail: { token: msg.data.token } }))

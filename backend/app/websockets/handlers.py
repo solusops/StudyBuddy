@@ -20,7 +20,7 @@ from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.agents.study_buddy_agent import StudyBuddyAgent
 from app.rag.chromadb_client import ChromaDBClient
-from app.rag.ingestion import LIBRARY_COLLECTION
+from app.rag.ingestion import LIBRARY_COLLECTION, ingest_text
 from app.schemas.journal import JournalEntry, JournalEventType
 from app.schemas.graph import NodeData
 from app.services.graph_state import GraphStateManager
@@ -114,6 +114,34 @@ def _get_report() -> ReportAgent:
     if _report is None:
         _report = ReportAgent()
     return _report
+
+
+_infinity: InfinityWikiAgent | None = None
+
+
+def _get_infinity() -> InfinityWikiAgent:
+    global _infinity
+    if _infinity is None:
+        _infinity = InfinityWikiAgent()
+    return _infinity
+
+
+async def _summarize_and_ingest_video(session_id: str, video_id: str, term: str, title: str, familiarity: str):
+    """Summarize a video and ingest the summary so Quiz/Flashcards/revision can use it."""
+    loop = asyncio.get_event_loop()
+    summ = await loop.run_in_executor(None, _get_infinity().summarize_video, video_id, term, familiarity)
+    text = summ.summary + ("\n" + "\n".join(f"- {p}" for p in summ.key_points) if summ.key_points else "")
+    try:
+        await loop.run_in_executor(
+            None,
+            lambda: ingest_text(text, f"YouTube: {title}", LIBRARY_COLLECTION, "content",
+                                _get_db(), session_id, f"yt_{video_id}"),
+        )
+    except Exception as e:
+        print("video summary ingest error:", e)
+    await _cm.send(session_id, "WIKI_DEEPDIVE_SUMMARY", {
+        "term": term, "video_id": video_id, "summary": summ.summary, "key_points": summ.key_points,
+    })
 
 
 def get_connection_manager() -> ConnectionManager:
@@ -893,22 +921,30 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     data={"student_text": text, "input_type": "voice", "response": full}))
                 await _cm.send(session_id, "STUDY_BUDDY_DONE", {})
 
-    # ---- INFINITY_WIKI_REQUEST -----------------------------------
-    elif event_type == "INFINITY_WIKI_REQUEST":
+    # ---- WIKI_DEEPDIVE_REQUEST (on-demand YouTube videos, played in-app) ----
+    elif event_type == "WIKI_DEEPDIVE_REQUEST":
+        term = data.get("selection_text") or data.get("node_label", node_id)
         try:
-            wiki = InfinityWikiAgent()
-            result = await wiki.deep_dive(data.get("node_label", node_id), familiarity)
-        except Exception:
-            result = {"video_url": None, "summary": "Deep Dive unavailable — add a YOUTUBE_API_KEY to backend/.env"}
-        _journal.append(
-            JournalEntry(
-                session_id=session_id,
-                node_id=node_id,
-                event_type=JournalEventType.DEEP_DIVE,
-                data=result,
-            )
+            videos = await _get_infinity().find_videos(term, familiarity)
+        except Exception as e:
+            print("deep dive search error:", e)
+            videos = []
+        await _cm.send(session_id, "WIKI_DEEPDIVE_VIDEOS", {"term": term, "videos": videos})
+        _journal.append(JournalEntry(
+            session_id=session_id, node_id=node_id,
+            event_type=JournalEventType.DEEP_DIVE, data={"term": term, "count": len(videos)},
+        ))
+        # Auto-summarize the top video (grounds Quiz/Flashcards on it).
+        if videos:
+            v = videos[0]
+            await _summarize_and_ingest_video(session_id, v["video_id"], term, v["title"], familiarity)
+
+    # ---- WIKI_DEEPDIVE_SUMMARIZE (student opened a different video) ----
+    elif event_type == "WIKI_DEEPDIVE_SUMMARIZE":
+        await _summarize_and_ingest_video(
+            session_id, data.get("video_id", ""), data.get("term", ""),
+            data.get("title", ""), familiarity,
         )
-        await _cm.send(session_id, "INFINITY_WIKI_RESULT", result)
 
     # ---- EVALUATE_SESSION (Push) --------------------------------
     elif event_type == "EVALUATE_SESSION":

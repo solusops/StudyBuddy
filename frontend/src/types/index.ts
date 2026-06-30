@@ -113,6 +113,10 @@ export interface WikiPage {
   papers?: ScholarPaper[]
   imageBase64?: string
   recallGenerated?: boolean
+  videos?: Array<{ video_id: string; title: string; channel: string; thumbnail: string; url: string }>
+  videosLoading?: boolean
+  activeVideoId?: string
+  videoSummary?: { video_id: string; summary: string; key_points?: string[] }
 }
 
 export interface WSMessage {
