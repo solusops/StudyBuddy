@@ -6,8 +6,6 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Study Buddy is a **local-first Electron desktop app** — an agentic study partner. Gemma 4 on Cerebras acts as a Cognitive Translator: it organises and rephrases student-uploaded content, never generates facts from its own weights. Students must upload their own material. The app ships as a native desktop executable; Python FastAPI runs as a child process spawned by Electron.
 
-**Implementation plan:** `C:\Users\SystemSu\.claude\plans\deep-forging-lampson.md`
-
 ---
 
 ## Running the App
@@ -240,6 +238,11 @@ Structured outputs always use `strict=True` + `additionalProperties: false` at e
 - Cognee never writes to cloud, local LanceDB only at `~/.studybuddy/cognee/`
 - Python 3.11+ required on host machine (assumed installed; not bundled in v1)
 - Vision model for `SensesAgent`: MUST be `gemma-4-31b` only
+- **Grounded-only generation** -> Gemma 4 organises and rephrases your uploaded content. It never generates facts from its own weights (except in Net Support mode, where web sources are cited)
+- **Source citations** -> every AI answer cites its source: `[Source: filename, chunk N]`
+- **Monotone mastery** -> node mastery scores can only increase, never decrease
+- **Local-first data** -> all student memory stays at `~/.studybuddy/`. Nothing is sent to third-party storage
+- **Proxy rule** -> when adding a new FastAPI router, add its path prefix to `frontend/vite.config.ts` proxy list or dev fetch calls will 404
 
 ## Planned V2
 

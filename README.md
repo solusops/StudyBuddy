@@ -130,14 +130,14 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 
 ---
 
-## 🧱 Architecture
+## 🧱 Architecture (Auto-Generated)
 
-```
-┌──────────────────────────────────────────────────────────┐
+```tree
+┌──────────────────────────────────────────────────────────-┐
 │                    Electron Shell                         │
-│  ┌────────────────────────┬───────────────────────────┐  │
+│  ┌────────────────────────┬───────────────────────────-┐  │
 │  │     React Frontend     │     FastAPI Backend        │  │
-│  │     (Vite, port 5173)  │     (uvicorn, port 8765)  │  │
+│  │     (Vite, port 5173)  │     (uvicorn, port 8765)   │  │
 │  │                        │                            │  │
 │  │  PDFReader ◄──────────►│  WebSocket /ws/{session}   │  │
 │  │  InfiniteWiki          │  ├─ BrainAgent             │  │
@@ -158,9 +158,9 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 │  │                        │  Services                  │  │
 │  │                        │  ├─ ChromaDB (RAG)         │  │
 │  │                        │  ├─ LayoutService (PyMuPDF)│  │
-│  │                        │  ├─ OutputCache             │  │
+│  │                        │  ├─ OutputCache            │  │
 │  │                        │  └─ AnnotationService      │  │
-│  └────────────────────────┴───────────────────────────┘  │
+│  └────────────────────────┴──────────────────────────-─┘  │
 │                              │                            │
 │                    ┌─────────▼──────────┐                 │
 │                    │   Cerebras Cloud   │                 │
@@ -172,12 +172,12 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 │                    │   Tavily Search    │                 │
 │                    │   (Net Support)    │                 │
 │                    └────────────────────┘                 │
-└──────────────────────────────────────────────────────────┘
+└───────────────────────────────────────────────────────-───┘
 ```
 
 ---
 
-## 📂 Project Structure
+## 📂 Project Structure (Auto-Generated)
 
 <details><summary>Click to expand</summary>
 
@@ -235,7 +235,7 @@ StudyBuddy/
 
 ---
 
-## 🧪 Running Tests
+## Running Tests
 
 ```bash
 # Full backend suite
@@ -260,16 +260,6 @@ npx vitest run
 | `TAVILY_API_KEY` | ❌ | Enables "Net Support" knowledge mode (web search fallback) |
 | `YOUTUBE_API_KEY` | ❌ | Enables Deep Dive video search |
 | `ALLOWED_ORIGINS` | ❌ | CORS origins (defaults to `http://localhost:5173`) |
-
----
-
-## Key Constraints
-
-- **Grounded-only generation** -> Gemma 4 organises and rephrases your uploaded content. It never generates facts from its own weights (except in Net Support mode, where web sources are cited)
-- **Source citations** -> every AI answer cites its source: `[Source: filename, chunk N]`
-- **Monotone mastery** -> node mastery scores can only increase, never decrease
-- **Local-first data** -> all student memory stays at `~/.studybuddy/`. Nothing is sent to third-party storage
-- **Proxy rule** -> when adding a new FastAPI router, add its path prefix to `frontend/vite.config.ts` proxy list or dev fetch calls will 404
 
 ---
 
