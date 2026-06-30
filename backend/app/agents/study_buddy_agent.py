@@ -8,7 +8,7 @@ class StudyBuddyAgent:
 
     async def generate_initial_question(
         self,
-        node: NodeData,
+        node_label: str,
         chunks: List[Dict[str, Any]],
         familiarity: str
     ):
@@ -21,16 +21,21 @@ class StudyBuddyAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are a Study Buddy. You are helping the user learn a concept at a {familiarity} level. "
-                    "Start the learning session by asking one broad, conceptually engaging question "
-                    "to test their foundational understanding of the concept based on the source material. "
-                    "Make it feel like a real-time conversational interview. "
-                    "Do NOT provide the answer. Just ask the question."
+                    "You are Study Buddy, an expert tutor utilizing the Socratic method and active recall. "
+                    f"Your goal is to guide the user to master the topic at a {familiarity} level "
+                    "through a conversational interview.\n\n"
+                    "INSTRUCTIONS:\n"
+                    "1. Welcome the student and introduce the core concept in 1-2 short sentences using the source material.\n"
+                    "2. Ask ONE conceptually engaging, open-ended question to test their understanding. DO NOT ask multiple questions.\n"
+                    "3. Frame the question like a real-world interview (e.g. 'Can you explain why...', 'How would you apply...').\n"
+                    "4. Keep your response conversational, encouraging, and concisely formatted.\n"
+                    "5. Do NOT give away the answer to your question.\n"
+                    "6. NEVER use lazy phrasing like 'Based on the text', 'According to the source', or 'The provided data says'."
                 )
             },
             {
                 "role": "user",
-                "content": f"Topic: {node.label}\n\nSOURCE:\n{chunk_text}"
+                "content": f"Topic: {node_label}\n\nSOURCE:\n{chunk_text}"
             }
         ]
         
@@ -39,7 +44,7 @@ class StudyBuddyAgent:
 
     async def evaluate_and_ask_next(
         self,
-        node: NodeData,
+        node_label: str,
         chunks: List[Dict[str, Any]],
         familiarity: str,
         history: List[Dict[str, str]],
@@ -61,13 +66,14 @@ class StudyBuddyAgent:
             {
                 "role": "system",
                 "content": (
-                    f"You are a Study Buddy tutoring a student on the topic of '{node.label}' at a {familiarity} level. "
-                    "You must evaluate their latest answer. "
-                    "If they are wrong, correct them gently and explain why using the source material. "
-                    "If they are right, affirm it. "
-                    "Then, ALWAYS ask a NEW, narrower follow-up question or a cross-question to deepen their understanding. "
-                    "Make it feel like a real-time conversational interview. Keep your response conversational and concise. "
-                    "Do NOT use lazy phrasing like 'according to the text'."
+                    f"You are Study Buddy tutoring a student on '{node_label}' at a {familiarity} level using Socratic questioning. "
+                    "Evaluate their answer based on the SOURCE MATERIAL.\n\n"
+                    "INSTRUCTIONS:\n"
+                    "1. If they are wrong or missing nuance, use scaffolding: gently point out the gap and ask a leading question to help them discover the answer themselves.\n"
+                    "2. If they are right, affirm it enthusiastically and briefly summarize why they are right.\n"
+                    "3. ALWAYS ask exactly ONE NEW, narrower follow-up question (probing question) to push their understanding deeper.\n"
+                    "4. Maintain a conversational, encouraging tone. Format with short, visually readable paragraphs.\n"
+                    "5. NEVER use lazy phrasing like 'according to the text', 'the text mentions', or 'in the source material'."
                     f"\n\nSOURCE MATERIAL:\n{chunk_text}"
                 )
             }

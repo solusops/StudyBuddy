@@ -1,6 +1,19 @@
 import { create } from "zustand"
 import type { ChatSession, WikiPage } from "../types"
 
+export interface StudyBuddyMessage {
+  role: "student" | "study_buddy"
+  content: string
+}
+
+export interface StudyBuddySession {
+  id: string
+  messages: StudyBuddyMessage[]
+  title?: string
+  createdAt?: number
+  updatedAt?: number
+}
+
 export type CursorMode = "DEFAULT" | "NOTE_APPEND"
 
 export interface BoundingBox {
@@ -60,6 +73,12 @@ interface InteractionStore {
   setActiveChatSession: (id: string | null) => void
   addChatSession: (session: ChatSession) => void
   updateChatSession: (id: string, messages: ChatSession["messages"]) => void
+
+  studyBuddySessions: StudyBuddySession[]
+  activeStudyBuddySessionId: string | null
+  setActiveStudyBuddySession: (id: string | null) => void
+  addStudyBuddySession: (session: StudyBuddySession) => void
+  updateStudyBuddySession: (id: string, messages: StudyBuddySession["messages"]) => void
 }
 
 // Load initial note positions from localStorage
@@ -71,6 +90,9 @@ const initialWikiHistory = savedWikiHistory ? JSON.parse(savedWikiHistory) : {}
 
 const savedChatSessions = localStorage.getItem("studybuddy_chat_sessions")
 const initialChatSessions = savedChatSessions ? JSON.parse(savedChatSessions) : []
+
+const savedStudyBuddySessions = localStorage.getItem("studybuddy_sb_sessions")
+const initialStudyBuddySessions = savedStudyBuddySessions ? JSON.parse(savedStudyBuddySessions) : []
 
 export const useInteractionStore = create<InteractionStore>((set) => ({
   cursorMode: "DEFAULT",
@@ -141,5 +163,21 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
       const next = s.chatSessions.map((c) => (c.id === id ? { ...c, messages } : c))
       localStorage.setItem("studybuddy_chat_sessions", JSON.stringify(next))
       return { chatSessions: next }
+    }),
+
+  studyBuddySessions: initialStudyBuddySessions,
+  activeStudyBuddySessionId: null,
+  setActiveStudyBuddySession: (id) => set({ activeStudyBuddySessionId: id }),
+  addStudyBuddySession: (session) =>
+    set((s) => {
+      const next = [...s.studyBuddySessions, session]
+      localStorage.setItem("studybuddy_sb_sessions", JSON.stringify(next))
+      return { studyBuddySessions: next }
+    }),
+  updateStudyBuddySession: (id, messages) =>
+    set((s) => {
+      const next = s.studyBuddySessions.map((c) => (c.id === id ? { ...c, messages } : c))
+      localStorage.setItem("studybuddy_sb_sessions", JSON.stringify(next))
+      return { studyBuddySessions: next }
     }),
 }))

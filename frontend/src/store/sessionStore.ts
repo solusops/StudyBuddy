@@ -33,6 +33,7 @@ interface SessionStore {
   streamingStudyBuddy: string
   streamingLesson: string
   lessonStreaming: boolean
+  studyBuddyInitializing: boolean
 
   // Lesson cache — keyed by nodeId, avoids re-fetching already-loaded lessons
   lessonCache: Record<string, string>
@@ -56,6 +57,7 @@ interface SessionStore {
   setChatDraft: (draft: string) => void
   setChatHistory: (history: ChatMessage[]) => void
   setLessonCache: (cache: Record<string, string>) => void
+  setStudyBuddyInitializing: (initializing: boolean) => void
   resetNodeData: () => void
   reset: () => void
 }
@@ -80,6 +82,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   streamingStudyBuddy: "",
   streamingLesson: "",
   lessonStreaming: false,
+  studyBuddyInitializing: false,
   lessonCache: {},
 
   setSession: (id, topic, familiarity, knowledgeMode) =>
@@ -153,6 +156,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   setChatHistory: (history) => set({ chatHistory: history }),
 
   setLessonCache: (cache) => set({ lessonCache: cache }),
+  setStudyBuddyInitializing: (initializing) => set({ studyBuddyInitializing: initializing }),
 
   resetNodeData: () =>
     set({
@@ -169,6 +173,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingStudyBuddy: "",
       streamingLesson: "",
       lessonStreaming: false,
+      studyBuddyInitializing: false,
     }),
 
   reset: () =>
@@ -191,6 +196,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       streamingStudyBuddy: "",
       streamingLesson: "",
       lessonStreaming: false,
+      studyBuddyInitializing: false,
       lessonCache: {},
     }),
 }))

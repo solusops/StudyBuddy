@@ -5,18 +5,38 @@ import type { MCQOption } from "../../types"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 
-function renderMath(text: string) {
-  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
+function parseText(text: string, sourceLocation: any, sourceChunkText: string | undefined, setBlinkTarget: any) {
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$|\[?chunk\s*\d+\]?)/gi)
   return parts.map((part, i) => {
     if (part.startsWith("$$") && part.endsWith("$$")) {
       const math = part.slice(2, -2)
-      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} /> }
-      catch { return <div key={i}>{part}</div> }
+      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} style={{ margin: "12px 0" }} /> }
+      catch { return <div key={i} style={{ margin: "12px 0" }}>{part}</div> }
     }
     if (part.startsWith("$") && part.endsWith("$")) {
       const math = part.slice(1, -1)
       try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false }) }} /> }
       catch { return <span key={i}>{part}</span> }
+    }
+    if (/^\[?chunk\s*\d+\]?$/i.test(part)) {
+      return (
+        <button
+          key={i}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (sourceLocation) setBlinkTarget(sourceLocation); 
+          }}
+          style={{
+            background: "none", border: "none", padding: 0, margin: "0 4px",
+            color: sourceLocation ? "#3B82F6" : "#94A3B8", 
+            cursor: sourceLocation ? "pointer" : "help", 
+            display: "inline-flex", alignItems: "center", verticalAlign: "middle"
+          }}
+          title={sourceChunkText || "Source chunk text unavailable"}
+        >
+          <ViewSourceIcon />
+        </button>
+      )
     }
     return <span key={i}>{part}</span>
   })
@@ -110,9 +130,9 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
         </div>
       )}
       <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{qIndex + 1} / {quizQuestions.length}</div>
-      <p style={{ color: "#0F172A", fontSize: 18, fontWeight: 700, fontFamily: "var(--font-serif)", lineHeight: 1.5, margin: 0 }}>
-        {renderMath(currentQ.question)}
-      </p>
+      <h3 style={{ margin: "0 0 16px 0", color: "#1A3557", fontSize: 20, lineHeight: 1.4 }}>
+        {parseText(currentQ.question, currentQ.source_location, currentQ.source_chunk_text, setBlinkTarget)}
+      </h3>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {shuffledOptions.map((opt, i) => {
           const isSelected = selected === i
@@ -142,15 +162,15 @@ export function QuizTool({ sendEvent, nodeId, familiarity }: Props) {
                 transition: "all 0.2s",
               }}
             >
-              {selected !== null && isCorrect ? "✓ " : selected !== null && isSelected ? "✗ " : ""}
-              {renderMath(opt.text)}
+              {selected !== null && isCorrect ? <span style={{ marginRight: 6 }}>✓</span> : selected !== null && isSelected ? <span style={{ marginRight: 6 }}>✗</span> : null}
+              {parseText(opt.text, currentQ.source_location, currentQ.source_chunk_text, setBlinkTarget)}
             </button>
           )
         })}
       </div>
       {selected !== null && (
-        <div style={{ color: "#6B7280", fontSize: 13, fontStyle: "italic", fontFamily: "var(--font-serif)" }}>
-          {renderMath(currentQ.explanation)}
+        <div style={{ marginTop: 12, padding: 12, background: "#EEF3F8", borderRadius: 8, fontSize: 13, color: "#1A3557" }}>
+          <strong>Explanation:</strong> {parseText(currentQ.explanation, currentQ.source_location, currentQ.source_chunk_text, setBlinkTarget)}
         </div>
       )}
       {selected !== null && currentQ.source_location && (

@@ -43,11 +43,24 @@ function applyDagreLayout(
   // Only use parent_id edges for the dagre layout — these define the hierarchy.
   // Cross-links (edges) are drawn but don't influence rank placement.
   const parentEdgeIds = new Set<string>()
+  const allEdges = [...edges]
+
   nodes.forEach((n) => {
     if (n.data.parent_id) {
       const edgeId = `${n.data.parent_id}-${n.id}`
       parentEdgeIds.add(edgeId)
       g.setEdge(n.data.parent_id, n.id)
+      
+      // Explicitly synthesize a React Flow edge for the hierarchy if one doesn't exist
+      if (!allEdges.some(e => e.id === edgeId)) {
+        allEdges.push({
+          id: edgeId,
+          source: n.data.parent_id,
+          target: n.id,
+          type: "smoothstep",
+          data: { relationship: "hierarchical" }
+        })
+      }
     }
   })
 
@@ -58,7 +71,7 @@ function applyDagreLayout(
     const { w, h } = getNodeDimensions(n.data)
     return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 } }
   })
-  return { nodes: laid, edges }
+  return { nodes: laid, edges: allEdges }
 }
 
 // Re-fit the viewport only after the graph build is complete.
@@ -89,6 +102,7 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
     // Style edges by relationship type
     const styled = laidEdges.map((e) => {
       const rel = (e.data as Record<string, string> | undefined)?.relationship
+      if (rel === "hierarchical") return { ...e, style: { stroke: "#D1C9C0", strokeWidth: 2 }, animated: false }
       if (rel === "related") return { ...e, style: { stroke: "#4A7FB5", strokeWidth: 1.5, strokeDasharray: "5 4" }, animated: false }
       if (rel === "builds-on") return { ...e, style: { stroke: "#2D6A4F", strokeWidth: 2 }, animated: false }
       return { ...e, style: { stroke: "#D1C9C0", strokeWidth: 1.5 } }  // prerequisite / default
@@ -98,7 +112,19 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
   }, [storeNodes, storeEdges])
 
   return (
-    <div style={{ width: "100%", height: "100%" }}>
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      {storeNodes.length === 0 && (
+        <div style={{
+          position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          background: "#FAF7F2", zIndex: 10, color: "#475569"
+        }}>
+          <div style={{ width: 40, height: 40, borderRadius: "50%", border: "3px solid #E2E8F0", borderTopColor: "#3B82F6", animation: "spin 1s linear infinite", marginBottom: 16 }} />
+          <h3 style={{ margin: 0, fontSize: 18, color: "#1E293B" }}>Analyzing Document...</h3>
+          <p style={{ margin: "8px 0 0", fontSize: 14 }}>Building knowledge curriculum</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        </div>
+      )}
 
       <ReactFlow
         nodes={nodes}

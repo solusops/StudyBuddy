@@ -54,6 +54,8 @@ export interface HTML5VisualPayload {
 export interface Flashcard {
   front: string
   back: string
+  source_location?: any
+  source_chunk_text?: string
 }
 
 export interface MCQOption {
@@ -65,6 +67,8 @@ export interface MCQ {
   question: string
   options: MCQOption[]
   explanation: string
+  source_location?: any
+  source_chunk_text?: string
 }
 
 export interface ChatMessage {

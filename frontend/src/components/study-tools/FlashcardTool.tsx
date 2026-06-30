@@ -4,18 +4,38 @@ import { useInteractionStore } from "../../store/interactionStore"
 import katex from "katex"
 import "katex/dist/katex.min.css"
 
-function renderMath(text: string) {
-  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$)/g)
+function parseText(text: string, sourceLocation: any, sourceChunkText: string | undefined, setBlinkTarget: any) {
+  const parts = text.split(/(\$\$[\s\S]*?\$\$|\$[\s\S]*?\$|\[?chunk\s*\d+\]?)/gi)
   return parts.map((part, i) => {
     if (part.startsWith("$$") && part.endsWith("$$")) {
       const math = part.slice(2, -2)
-      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} /> }
-      catch { return <div key={i}>{part}</div> }
+      try { return <div key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: true }) }} style={{ margin: "12px 0" }} /> }
+      catch { return <div key={i} style={{ margin: "12px 0" }}>{part}</div> }
     }
     if (part.startsWith("$") && part.endsWith("$")) {
       const math = part.slice(1, -1)
       try { return <span key={i} dangerouslySetInnerHTML={{ __html: katex.renderToString(math, { displayMode: false }) }} /> }
       catch { return <span key={i}>{part}</span> }
+    }
+    if (/^\[?chunk\s*\d+\]?$/i.test(part)) {
+      return (
+        <button
+          key={i}
+          onClick={(e) => { 
+            e.stopPropagation(); 
+            if (sourceLocation) setBlinkTarget(sourceLocation); 
+          }}
+          style={{
+            background: "none", border: "none", padding: 0, margin: "0 4px",
+            color: sourceLocation ? "#3B82F6" : "#94A3B8", 
+            cursor: sourceLocation ? "pointer" : "help", 
+            display: "inline-flex", alignItems: "center", verticalAlign: "middle"
+          }}
+          title={sourceChunkText || "Source chunk text unavailable"}
+        >
+          <ViewSourceIcon />
+        </button>
+      )
     }
     return <span key={i}>{part}</span>
   })
@@ -110,19 +130,16 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
           padding: 32,
           cursor: "pointer",
           color: "#0F172A",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
+          display: "block",
           fontSize: 18,
-          lineHeight: 1.5,
-          textAlign: "center",
-          userSelect: "none",
+          lineHeight: 1.6,
+          textAlign: "left",
           fontFamily: "var(--font-serif)",
           boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
           transition: "border 0.2s, box-shadow 0.2s",
         }}
       >
-        {renderMath(flipped ? card.back : card.front)}
+        {parseText(flipped ? card.back : card.front, card.source_location, card.source_chunk_text, setBlinkTarget)}
       </div>
       <div style={{ fontSize: 13, color: "#6B7280", fontFamily: "var(--font-hand)", display: "flex", alignItems: "center", gap: 16 }}>
         {flipped ? "Tap to see question" : "Tap to reveal answer"}
@@ -130,6 +147,7 @@ export function FlashcardTool({ sendEvent, nodeId, familiarity }: Props) {
         {flipped && card.source_location && (
           <button 
             onClick={(e) => { e.stopPropagation(); setBlinkTarget(card.source_location!) }} 
+            title={card.source_chunk_text || "Source chunk text unavailable"}
             style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", color: "#3B82F6", cursor: "pointer", fontSize: 13, fontWeight: 600, padding: 0 }}
           >
             <ViewSourceIcon />

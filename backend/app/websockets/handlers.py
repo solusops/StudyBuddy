@@ -732,6 +732,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 idxs = card.get("source_chunk_indexes", [])
                 c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
                 card["source_location"] = _resolve_chunk_location(doc_id, c_texts)
+                card["source_chunk_text"] = "\n\n".join(c_texts)
                 
             payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
@@ -771,6 +772,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 idxs = q.get("source_chunk_indexes", [])
                 c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
                 q["source_location"] = _resolve_chunk_location(doc_id, c_texts)
+                q["source_chunk_text"] = "\n\n".join(c_texts)
                 
             payload["context_images"] = images_base64
             _cache.put(cache_key, payload)
@@ -808,8 +810,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         familiarity_level = data.get("familiarity", familiarity)
         full = ""
         try:
-            chunks = _get_db().get_chunks_for_node(document_id, node_id)
-            async for token in _get_study_buddy().generate_initial_question(node, chunks, familiarity_level):
+            node_label = data.get("node_label", node_id)
+            chunks = await _get_chunks(session_id, node_label, n=5)
+            async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
         except Exception as e:
@@ -835,9 +838,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         
         full = ""
         try:
-            chunks = _get_db().get_chunks_for_node(document_id, node_id)
+            node_label = data.get("node_label", node_id)
+            chunks = await _get_chunks(session_id, node_label, n=5)
             async for token in _get_study_buddy().evaluate_and_ask_next(
-                node=node,
+                node_label=node_label,
                 chunks=chunks,
                 familiarity=familiarity_level,
                 history=history,
@@ -883,9 +887,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 
                 full = ""
                 try:
-                    chunks = _get_db().get_chunks_for_node(document_id, node_id)
+                    node_label = data.get("node_label", node_id)
+                    chunks = await _get_chunks(session_id, node_label, n=5)
                     async for token in _get_study_buddy().evaluate_and_ask_next(
-                        node=node,
+                        node_label=node_label,
                         chunks=chunks,
                         familiarity=familiarity_level,
                         history=history,
