@@ -60,7 +60,11 @@ class CommitRequest(BaseModel):
 
 
 @router.post("/commit")
-def commit_session(req: CommitRequest):
+async def commit_session(req: CommitRequest):
+    import shutil
+    import asyncio
+    import cognee
+
     save_dir = os.path.expanduser("~/.studybuddy/sessions")
     os.makedirs(save_dir, exist_ok=True)
     payload = req.model_dump()
@@ -72,6 +76,23 @@ def commit_session(req: CommitRequest):
     for path in paths:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
+            
+    # Stage memory in Cognee's session cache
+    payload_str = json.dumps(payload)
+    await cognee.remember(payload_str, session_id=req.session_id, temporal_cognify=True)
+    
+    # Execute memory snapshot using shutil.copytree for Memory Versioning
+    try:
+        data_root = cognee.config.data_root_directory()
+        if data_root and os.path.exists(data_root):
+            snapshot_dir = f"{data_root}_snapshot_{req.session_id}"
+            if os.path.exists(snapshot_dir):
+                shutil.rmtree(snapshot_dir)
+            shutil.copytree(data_root, snapshot_dir)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Failed to create memory snapshot: %s", e)
+
     return {"status": "committed", "paths": paths}
 
 

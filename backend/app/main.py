@@ -14,6 +14,13 @@ from app.websockets.handlers import get_connection_manager, get_db, handle_event
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import os
+    os.environ["LLM_API_KEY"] = os.environ.get("CEREBRAS_API_KEY", "")
+    os.environ["LLM_API_BASE"] = "https://api.cerebras.ai/v1"
+    os.environ["LLM_MODEL"] = "gemma-4-31b"
+    
+    import cognee
+    await cognee.setup()
     yield
 
 

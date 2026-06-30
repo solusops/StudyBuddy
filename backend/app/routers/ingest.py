@@ -94,6 +94,11 @@ async def finalize_ingest(body: FinalizeRequest):
         if not chunks:
             raise HTTPException(400, "No content indexed. Upload at least one content file.")
 
+        import cognee
+        # Background task for Angle 2: Inject PDF content into the global curriculum graph
+        sample = "\n\n".join(f"[{c.get('source', '?')}]: {c.get('text', '')[:300]}" for c in chunks[:20])
+        asyncio.create_task(cognee.remember(sample, dataset_name="global_curriculum"))
+
         nodes = _get_brain().extract_curriculum(chunks, body.familiarity.value, memory_context=prior)
         get_graph_manager().set_graph(body.session_id, nodes)
         set_ingest_status(body.session_id, "ready")
