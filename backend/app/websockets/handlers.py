@@ -722,6 +722,12 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         cache_key = _cache.make_key("FLASHCARDS_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
         if cached:
+            doc_id = chunks[0].get("document_id") if chunks else None
+            for card in cached.get("cards", []):
+                if "source_chunk_text" not in card:
+                    idxs = card.get("source_chunk_indexes", [])
+                    c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
+                    card["source_chunk_text"] = "\n\n".join(c_texts)
             await _cm.send(session_id, "FLASHCARDS_READY", cached)
         else:
             result = _get_tutor().generate_flashcards(label, chunks, familiarity, images_base64=images_base64)
@@ -762,6 +768,12 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         cache_key = _cache.make_key("QUIZ_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
         if cached:
+            doc_id = chunks[0].get("document_id") if chunks else None
+            for q in cached.get("questions", []):
+                if "source_chunk_text" not in q:
+                    idxs = q.get("source_chunk_indexes", [])
+                    c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
+                    q["source_chunk_text"] = "\n\n".join(c_texts)
             await _cm.send(session_id, "QUIZ_READY", cached)
         else:
             result = _get_tutor().generate_quiz(label, chunks, familiarity, images_base64=images_base64)
