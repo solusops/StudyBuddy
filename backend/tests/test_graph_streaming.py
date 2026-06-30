@@ -8,6 +8,34 @@ from app.agents.brain_agent import (
 )
 
 
+class _CapturingClient:
+    """Captures the messages passed for the multi-doc prompt assertion."""
+
+    def __init__(self):
+        self.messages = None
+
+    def structured_complete(self, messages, output_model, model=None):
+        self.messages = messages
+        return _RootAndSections(root_label="X", sections=[_SectionItem(label="S", source_doc=1)])
+
+
+def test_multi_doc_prompt_lists_documents_and_section_tagging():
+    cap = _CapturingClient()
+    brain = BrainAgent(client=cap)
+    rs = brain.derive_root_and_sections("structure", "high_school", "", "", ["paperA.pdf", "paperB.pdf"])
+    blob = " ".join(m["content"] for m in cap.messages)
+    assert "paperA.pdf" in blob and "paperB.pdf" in blob
+    assert "source_doc" in blob
+    assert rs.sections[0].source_doc == 1
+
+
+def test_single_doc_prompt_omits_doc_listing():
+    cap = _CapturingClient()
+    BrainAgent(client=cap).derive_root_and_sections("structure", "high_school", "", "", ["only.pdf"])
+    blob = " ".join(m["content"] for m in cap.messages)
+    assert "source_doc" not in blob  # no multi-doc tagging instruction for a single paper
+
+
 class _FakeClient:
     """Returns canned structured output based on the requested model."""
 

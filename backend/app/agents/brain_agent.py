@@ -90,6 +90,7 @@ class _SectionItem(BaseModel):
     label: str = Field(description="≤6 word section title")
     description: str = Field("", description="≤80 char summary")
     complexity: int = Field(3, ge=1, le=5)
+    source_doc: int = Field(0, description="Index of the document this section comes from (0-based)")
 
 
 class _RootAndSections(BaseModel):
@@ -125,13 +126,26 @@ class BrainAgent:
         familiarity: str,
         topic_hint: str = "",
         memory_context: str = "",
+        doc_names: Optional[List[str]] = None,
     ) -> _RootAndSections:
-        """One fast call: the root subject + its top-level sections (no children yet)."""
+        """One fast call: the root subject + its top-level sections (no children yet).
+
+        When multiple documents are provided, each section is tagged with the index of
+        the document it belongs to (source_doc), so the graph routes nodes to papers.
+        """
         tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
         topic_note = f"The student wants to study: {topic_hint}\n" if topic_hint else ""
         memory_note = f"Prior student knowledge:\n{memory_context}\n" if memory_context else ""
-        # Aim for roughly half the node budget as top-level sections.
+
+        multi = doc_names and len(doc_names) > 1
+        doc_note = ""
+        if multi:
+            listing = "\n".join(f"  [{i}] {n}" for i, n in enumerate(doc_names))
+            doc_note = (
+                f"\nThere are {len(doc_names)} source documents:\n{listing}\n"
+                "Set each section's source_doc to the 0-based index of the document it comes from.\n"
+            )
         messages = [
             {
                 "role": "system",
@@ -140,7 +154,7 @@ class BrainAgent:
                     "Identify the overall subject (root) and its top-level sections ONLY — "
                     "do not list sub-concepts yet. "
                     f"GRANULARITY:\n{tree_shape['guidance']}\n"
-                    "Use ONLY topics evidenced in the material. Provide 4-8 sections."
+                    f"Use ONLY topics evidenced in the material. Provide 4-8 sections.{doc_note}"
                 ),
             },
             {
@@ -149,6 +163,7 @@ class BrainAgent:
                     f"Document structure:\n{structure_text[:10000]}\n\n"
                     f"root_label should be '{topic_hint}' if provided, else the subject name. "
                     "List the top-level sections (each ≤6 words)."
+                    + (" Tag each with its source_doc index." if multi else "")
                 ),
             },
         ]

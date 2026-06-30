@@ -269,13 +269,16 @@ async def upload_and_start(
         with open(dest, "wb") as fh:
             fh.write(content)
 
-    # Cache the first file for layout/regions segmentation under its document_id hash
+    # Cache EVERY uploaded file for layout/regions segmentation under its document_id hash
+    # (multi-paper: each paper must be resolvable, not just the first).
     if file_store:
         pdf_dir = os.path.expanduser("~/.studybuddy/pdfs")
         os.makedirs(pdf_dir, exist_ok=True)
-        pdf_cache_dest = os.path.join(pdf_dir, f"{hashlib.sha256(file_store[0][0]).hexdigest()}.pdf")
-        with open(pdf_cache_dest, "wb") as fh:
-            fh.write(file_store[0][0])
+        for content, _fn in file_store:
+            dest = os.path.join(pdf_dir, f"{hashlib.sha256(content).hexdigest()}.pdf")
+            if not os.path.exists(dest):
+                with open(dest, "wb") as fh:
+                    fh.write(content)
     # Register uploads dir as the content folder so /library/status sees the files
     save_settings({"content_folder": uploads_dir})
 

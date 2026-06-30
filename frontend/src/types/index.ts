@@ -22,6 +22,7 @@ export interface NodeData {
   scores: NodeScores
   parent_id: string | null
   children_ids: string[]
+  document_ids?: string[]
 }
 
 export interface KnowledgeEdge {

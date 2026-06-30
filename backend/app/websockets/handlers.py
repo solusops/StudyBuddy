@@ -132,18 +132,51 @@ def get_graph_manager() -> GraphStateManager:
 # Helpers                                                             #
 # ------------------------------------------------------------------ #
 
-async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str | None = None):
+async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str | None = None,
+                      document_ids: list[str] | None = None):
     db = _get_db()
     loop = asyncio.get_event_loop()
     embedding = await loop.run_in_executor(None, db.embedder.embed, [query])
-    
-    # Scope query to exactly this session_id so content from other sessions doesn't bleed.
-    filters = [{"session_id": session_id}]
+
+    # Scope to this session, and (multi-paper) to the node's source paper(s) when given.
+    filters: list = [{"session_id": session_id}]
     if chunk_type:
         filters.append({"type": chunk_type})
+    if document_ids:
+        filters.append({"document_id": {"$in": document_ids}})
     where = {"$and": filters} if len(filters) > 1 else filters[0]
-    
+
     return db.query(LIBRARY_COLLECTION, embedding[0], n_results=n, where=where)
+
+
+def _session_documents() -> list[dict]:
+    """List the session's uploaded documents with their content-hash id + structure.
+
+    document_id here is ChromaDBClient.file_hash (matches chunk metadata) so node
+    tagging lines up with RAG retrieval.
+    """
+    import os
+    from app.rag.ingestion import extract_document_structure
+    from app.services.settings_service import get_content_folder
+
+    folder = get_content_folder() or os.path.expanduser("~/.studybuddy/uploads")
+    docs: list[dict] = []
+    if not os.path.isdir(folder):
+        return docs
+    for name in sorted(os.listdir(folder)):
+        if not name.lower().endswith((".pdf", ".docx", ".txt")):
+            continue
+        try:
+            with open(os.path.join(folder, name), "rb") as f:
+                content = f.read()
+            docs.append({
+                "filename": name,
+                "document_id": ChromaDBClient.file_hash(content),
+                "structure": extract_document_structure(content, name)[:3000],
+            })
+        except Exception:
+            continue
+    return docs
 
 
 def _safe_get_node(session_id: str, node_id: str) -> NodeData:
@@ -316,14 +349,17 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         await _replay_doc_graph(session_id, cached[0], cached[1])
         return
 
-    structure = await loop.run_in_executor(None, _read_session_structure)
+    docs = await loop.run_in_executor(None, _session_documents)
+    doc_ids = [d["document_id"] for d in docs]
+    doc_names = [d["filename"] for d in docs]
+    structure = "\n\n---\n\n".join(f"Document: {d['filename']}\n{d['structure']}" for d in docs)[:10000]
     if not structure:
         await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
         return
 
     try:
         rs = await loop.run_in_executor(
-            None, _get_brain().derive_root_and_sections, structure, familiarity, topic, ""
+            None, _get_brain().derive_root_and_sections, structure, familiarity, topic, "", doc_names
         )
         nodes: list[NodeData] = []
         edges: list = []
@@ -332,18 +368,24 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             id="n0", label=rs.root_label or (topic or "Topic"),
             description=rs.root_description, depth=0, complexity=3,
             parent_id=None, status="ACTIVE",
+            document_ids=doc_ids,  # root spans all papers
         )
         nodes.append(root)
         _graph_mgr.add_node(session_id, root)
         await _cm.send(session_id, "GRAPH_NODE_ADDED", root.model_dump())
 
         section_nodes: list[NodeData] = []
+        section_struct: dict[str, str] = {}  # section id → its source-doc structure (for expansion)
         for i, s in enumerate(rs.sections):
             sid = f"s{i + 1}"
+            src = max(0, min(s.source_doc, len(docs) - 1)) if docs else 0
+            sec_doc_ids = [doc_ids[src]] if docs else []
             sn = NodeData(
                 id=sid, label=s.label, description=s.description, depth=1,
                 complexity=s.complexity, parent_id="n0", status="ACTIVE",
+                document_ids=sec_doc_ids,
             )
+            section_struct[sid] = docs[src]["structure"] if docs else structure
             section_nodes.append(sn)
             nodes.append(sn)
             _graph_mgr.add_node(session_id, sn)
@@ -355,7 +397,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         async def expand(sn: NodeData) -> tuple:
             try:
                 exp = await loop.run_in_executor(
-                    None, _get_brain().expand_section, sn.label, structure, familiarity
+                    None, _get_brain().expand_section, sn.label, section_struct.get(sn.id, structure), familiarity
                 )
                 children = exp.children
             except Exception as e:
@@ -368,6 +410,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
                 cn = NodeData(
                     id=cid, label=ch.label, description=ch.description, depth=sn.depth + 1,
                     complexity=ch.complexity, parent_id=sn.id, status="ACTIVE",
+                    document_ids=sn.document_ids,  # inherit the section's paper
                 )
                 out_nodes.append(cn)
                 _graph_mgr.add_node(session_id, cn)
@@ -413,7 +456,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     if event_type == "LEARN_NODE":
         node = _safe_get_node(session_id, node_id)
         query = _get_brain().build_rag_query(data.get("node_label", node.label), familiarity)
-        chunks = await _get_chunks(session_id, query, n=5)
+        # Multi-paper: scope retrieval to this node's source paper(s).
+        chunks = await _get_chunks(session_id, query, n=5, document_ids=node.document_ids or None)
         selection_text = data.get("selection_text", "")
         anchor_id = data.get("anchor_id") or node_id
         knowledge_mode = data.get("knowledge_mode", "content_only")
