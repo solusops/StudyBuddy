@@ -445,7 +445,7 @@ export function SetupModal({ onSessionReady }: Props) {
             display: "flex", alignItems: "center", gap: 8,
           }}
         >
-          <span style={{ fontSize: 14 }}>🔑</span>
+          <span style={{ fontSize: 14 }}></span>
           API KEYS
           <span style={{
             fontSize: 10, transform: keysOpen ? "rotate(180deg)" : "rotate(0deg)",

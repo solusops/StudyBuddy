@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(uv run --directory backend python -c ' *)",
-      "Bash(rtk uv *)"
+      "Bash(rtk uv *)",
+      "Bash(rtk vitest *)"
     ]
   }
 }
