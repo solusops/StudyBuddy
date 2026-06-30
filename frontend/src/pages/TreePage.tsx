@@ -3,6 +3,7 @@ import katex from "katex"
 import "katex/dist/katex.min.css"
 import { KnowledgeGraph } from "../components/graph/KnowledgeGraph"
 import { ReportView } from "../components/panel/ReportView"
+import { EvaluationView } from "../components/panel/EvaluationView"
 import { useTokenRate } from "../lib/useTokenRate"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
@@ -29,6 +30,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   const [pushDone, setPushDone] = useState(false)
   const [commitDone, setCommitDone] = useState(false)
   const [showReport, setShowReport] = useState(false)
+  const [showEval, setShowEval] = useState(false)
 
   const selectedNode = nodes.find((n) => n.id === selectedId)
   const lessonRate = useTokenRate(streamingLesson, lessonStreaming)
@@ -77,7 +79,11 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-
+  // Refresh deterministic node progress (activity tally) on every visit to the graph.
+  useEffect(() => {
+    if (session?.sessionId) sendEvent("PROGRESS_REQUEST", {})
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const handleNodeClick = useCallback(
     (id: string, label: string) => {
@@ -206,6 +212,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         familiarity: session?.familiarity ?? "high_school",
         nodes: nodes.map((n) => n.data),
         content_files: session?.contentFiles ?? [],
+        document_id: session?.documentId ?? "",
       }),
     })
     // Persist full session state — nodes, edges, lessonCache — to localStorage
@@ -227,9 +234,14 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     if (isPushing || !session) return
     setIsPushing(true)
     setPushDone(false)
+    setShowEval(true)  // open the Evaluation window to show reasoned scores + trajectory
     const onDone = () => { setIsPushing(false); setPushDone(true) }
     window.addEventListener("evaluation-done", onDone, { once: true })
-    sendEvent("EVALUATE_SESSION", { topic: session.topic, familiarity: session.familiarity })
+    sendEvent("EVALUATE_SESSION", {
+      topic: session.topic,
+      familiarity: session.familiarity,
+      document_id: session.documentId ?? "",
+    })
   }
 
   const clearSession = async () => {
@@ -284,6 +296,24 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           }}
         >
           Compile Report
+        </button>
+
+        {/* Evaluation — reasoned scores + learning trajectory */}
+        <button
+          onClick={() => setShowEval(true)}
+          title="See reasoned mastery scores and your learning trajectory"
+          style={{
+            background: "transparent",
+            color: "#1A3557",
+            border: "1px solid #1A3557",
+            borderRadius: 6,
+            padding: "4px 12px",
+            fontSize: 14,
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          Evaluation
         </button>
 
         {/* Commit */}
@@ -476,6 +506,9 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
       {showReport && (
         <ReportView session={session} sendEvent={sendEvent} onClose={() => setShowReport(false)} />
+      )}
+      {showEval && (
+        <EvaluationView session={session} sendEvent={sendEvent} onClose={() => setShowEval(false)} />
       )}
     </div>
   )
