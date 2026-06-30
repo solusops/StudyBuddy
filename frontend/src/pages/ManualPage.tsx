@@ -4,6 +4,7 @@ import { ScientificFigurePanel } from "../components/reader/ScientificFigurePane
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
 import { useInteractionStore } from "../store/interactionStore"
+import { useContextStore } from "../store/contextStore"
 import { saveMarkdownFile, sanitizeFilename } from "../lib/fileSystem"
 import type { AppSession } from "../App"
 import type { NodeData } from "../types"
@@ -18,7 +19,7 @@ interface Props {
 
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph } = useGraphStore()
-  const { setSession, resetNodeData, activeNodeId, activeNodeLabel, setActiveNode } = useSessionStore()
+  const { setSession, activeNodeId, activeNodeLabel, setActiveNode } = useSessionStore()
   const { documentId, setDocumentId } = useInteractionStore()
 
   // -- Session bootstrap ------------------------------------------------
@@ -192,25 +193,20 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const handleConceptClick = useCallback(
     (concept: string) => {
       setActiveConcept(concept)
-      // Find matching node or use a synthetic ID
+      // Pick a node id so node-scoped tools (Chat) stay usable.
       const { nodes } = useGraphStore.getState()
-      const { familiarity, knowledgeMode } = useSessionStore.getState()
       const match = nodes.find((n) =>
         n.data.label.toLowerCase().includes(concept.toLowerCase()) ||
         concept.toLowerCase().includes(n.data.label.toLowerCase())
       )
       const nodeId = match?.id ?? `concept-${concept.toLowerCase().replace(/\s+/g, "-")}`
       setActiveNode(nodeId, concept)
-      resetNodeData()
-      // Request lesson for this concept
-      sendEvent("LEARN_NODE", {
-        node_id: nodeId,
-        node_label: concept,
-        familiarity: familiarity ?? "high_school",
-        knowledge_mode: knowledgeMode ?? "content_only",
-      })
+      // Transfer context exactly like a manual text selection, then open Infinite Wiki
+      // (it auto-fires on the new selection; Chat also picks up the context chip).
+      useContextStore.getState().setSelection([], concept, "")
+      window.dispatchEvent(new CustomEvent("studybuddy-open-tool", { detail: { tool: "Infinite Wiki" } }))
     },
-    [sendEvent, setActiveNode, resetNodeData]
+    [setActiveNode]
   )
 
   const [isPushing, setIsPushing] = useState(false)

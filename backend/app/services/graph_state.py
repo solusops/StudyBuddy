@@ -82,3 +82,31 @@ class GraphStateManager:
         p = self._path(session_id)
         if os.path.exists(p):
             os.remove(p)
+
+    # ------------------------------------------------------------------ #
+    # Document-keyed cache — reuse a built graph across sessions per PDF  #
+    # ------------------------------------------------------------------ #
+
+    def _doc_path(self, document_id: str) -> str:
+        return os.path.join(_GRAPH_DIR, f"doc_{document_id}.json")
+
+    def save_doc_graph(self, document_id: str, nodes: list[NodeData], edges: list) -> None:
+        if not document_id:
+            return
+        with open(self._doc_path(document_id), "w", encoding="utf-8") as f:
+            json.dump({"nodes": [n.model_dump() for n in nodes], "edges": edges}, f)
+
+    def load_doc_graph(self, document_id: str):
+        """Return (nodes, edges) for a previously built document, or None."""
+        if not document_id:
+            return None
+        p = self._doc_path(document_id)
+        if not os.path.exists(p):
+            return None
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            nodes = [NodeData(**n) for n in data.get("nodes", [])]
+            return nodes, data.get("edges", [])
+        except Exception:
+            return None

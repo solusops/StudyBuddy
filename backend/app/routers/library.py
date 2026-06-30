@@ -335,6 +335,7 @@ class RefineTreeRequest(BaseModel):
     session_id: str
     user_feedback: str
     familiarity: str = "high_school"
+    document_id: str = ""
     current_nodes: Optional[List[_RefineNodeInfo]] = None
     current_edges: Optional[List[_RefineEdgeInfo]] = None
 
@@ -389,6 +390,8 @@ async def refine_tree(req: RefineTreeRequest):
         )
 
     get_graph_manager().set_graph(req.session_id, nodes)
+    # Persist the refined graph for this PDF so reloads reuse the refinement.
+    get_graph_manager().save_doc_graph(req.document_id, nodes, edges)
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],

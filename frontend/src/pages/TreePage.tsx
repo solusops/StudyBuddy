@@ -16,7 +16,7 @@ interface Props {
 }
 
 export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
-  const { nodes, setGraph, reset } = useGraphStore()
+  const { nodes, setGraph } = useGraphStore()
   const { streamingLesson, lessonStreaming, lesson, lessonCache, setLesson, knowledgeMode } = useSessionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -56,15 +56,18 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     setGraph(flowNodes, flowEdges)
   }
 
-  // On first mount: restored session → seed nodes; fresh upload → stream via BUILD_GRAPH.
+  // On first mount: restored session → seed nodes. Otherwise stream via BUILD_GRAPH,
+  // but ONLY when the store is empty — so navigating back to the tree doesn't wipe and
+  // regenerate it. The backend reuses (replays) a graph already built for this PDF.
   useEffect(() => {
+    if (useGraphStore.getState().nodes.length > 0) return  // already populated — keep it
     if (session?.nodes?.length) {
       applyGraph(session.nodes, session.edges)
     } else if (session?.sessionId) {
-      reset()
       sendEvent("BUILD_GRAPH", {
         familiarity: session.familiarity ?? "high_school",
         topic: session.topic ?? "",
+        document_id: session.documentId ?? "",
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -107,6 +110,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           session_id: session.sessionId,
           user_feedback: refinementText,
           familiarity: session.familiarity,
+          document_id: session.documentId ?? "",
           current_nodes: currentNodes.map((n) => ({
             id: n.data.id,
             label: n.data.label,

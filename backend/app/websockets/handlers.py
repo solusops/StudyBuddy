@@ -160,13 +160,32 @@ def _read_session_structure() -> str:
     return "\n\n---\n\n".join(parts)[:10000]
 
 
-async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) -> None:
+async def _replay_doc_graph(session_id: str, nodes: list, edges: list) -> None:
+    """Stream a previously-built graph from cache (keeps the pop-in animation, no LLM calls)."""
+    _graph_mgr.set_graph(session_id, nodes)
+    # Order root → sections → deeper so children always attach to an existing parent.
+    for n in sorted(nodes, key=lambda x: x.depth):
+        await _cm.send(session_id, "GRAPH_NODE_ADDED", n.model_dump())
+        await asyncio.sleep(0.05)  # small stagger so the cascade still reads as "fireworks"
+    for e in edges:
+        await _cm.send(session_id, "GRAPH_EDGE_ADDED", e)
+    await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": len(nodes), "reused": True})
+
+
+async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, document_id: str = "") -> None:
     """Root-first, then parallel section expansion. Streams each node/edge as it resolves.
 
-    Falls back to a single-call tree if the streaming path fails, so the graph always
-    populates.
+    If a graph was already built for this document, it is REPLAYED from cache (no LLM
+    calls). Falls back to a single-call tree if the streaming path fails.
     """
     loop = asyncio.get_event_loop()
+
+    # Reuse: a graph already exists for this PDF → replay it instead of regenerating.
+    cached = _graph_mgr.load_doc_graph(document_id)
+    if cached:
+        await _replay_doc_graph(session_id, cached[0], cached[1])
+        return
+
     structure = await loop.run_in_executor(None, _read_session_structure)
     if not structure:
         await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
@@ -177,6 +196,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) 
             None, _get_brain().derive_root_and_sections, structure, familiarity, topic, ""
         )
         nodes: list[NodeData] = []
+        edges: list = []
 
         root = NodeData(
             id="n0", label=rs.root_label or (topic or "Topic"),
@@ -198,10 +218,11 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) 
             nodes.append(sn)
             _graph_mgr.add_node(session_id, sn)
             await _cm.send(session_id, "GRAPH_NODE_ADDED", sn.model_dump())
-            await _cm.send(session_id, "GRAPH_EDGE_ADDED",
-                           {"source": "n0", "target": sid, "relationship": "prerequisite"})
+            edge = {"source": "n0", "target": sid, "relationship": "prerequisite"}
+            edges.append(edge)
+            await _cm.send(session_id, "GRAPH_EDGE_ADDED", edge)
 
-        async def expand(sn: NodeData) -> list[NodeData]:
+        async def expand(sn: NodeData) -> tuple:
             try:
                 exp = await loop.run_in_executor(
                     None, _get_brain().expand_section, sn.label, structure, familiarity
@@ -210,25 +231,29 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) 
             except Exception as e:
                 print("expand_section error:", e)
                 children = []
-            out: list[NodeData] = []
+            out_nodes: list[NodeData] = []
+            out_edges: list = []
             for j, ch in enumerate(children):
                 cid = f"{sn.id}c{j + 1}"
                 cn = NodeData(
                     id=cid, label=ch.label, description=ch.description, depth=sn.depth + 1,
                     complexity=ch.complexity, parent_id=sn.id, status="ACTIVE",
                 )
-                out.append(cn)
+                out_nodes.append(cn)
                 _graph_mgr.add_node(session_id, cn)
                 await _cm.send(session_id, "GRAPH_NODE_ADDED", cn.model_dump())
-                await _cm.send(session_id, "GRAPH_EDGE_ADDED",
-                               {"source": sn.id, "target": cid, "relationship": ch.relationship})
-            return out
+                e = {"source": sn.id, "target": cid, "relationship": ch.relationship}
+                out_edges.append(e)
+                await _cm.send(session_id, "GRAPH_EDGE_ADDED", e)
+            return out_nodes, out_edges
 
         results = await asyncio.gather(*(expand(sn) for sn in section_nodes))
-        for child_list in results:
-            nodes.extend(child_list)
+        for child_nodes, child_edges in results:
+            nodes.extend(child_nodes)
+            edges.extend(child_edges)
 
         _graph_mgr.set_graph(session_id, nodes)
+        _graph_mgr.save_doc_graph(document_id, nodes, edges)  # persist for reuse across sessions
         await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": len(nodes)})
     except Exception as e:
         print("BUILD_GRAPH streaming failed, falling back to single-call:", e)
@@ -238,6 +263,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str) 
                 None, _get_brain().extract_curriculum_from_documents, overviews, familiarity, topic, ""
             )
             _graph_mgr.set_graph(session_id, nodes)
+            _graph_mgr.save_doc_graph(document_id, nodes, edges)
             for n in nodes:
                 await _cm.send(session_id, "GRAPH_NODE_ADDED", n.model_dump())
             for e2 in edges:
@@ -306,6 +332,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             session_id,
             familiarity,
             data.get("topic", ""),
+            data.get("document_id", ""),
         )
 
     # ---- REPORT_REQUEST / REPORT_EDIT (Live-Compiling Report Canvas) ----
