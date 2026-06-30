@@ -17,7 +17,7 @@ An **agentic AI study companion** that teaches exclusively from your uploaded ma
 
 ## Features
 
-### 📖 Intelligent PDF Reader
+### Intelligent PDF Reader
 - **Discontinuous text selection** -> hold Shift to accumulate multiple passages across pages; custom yellow highlight overlays persist until cleared with Escape
 - **Margin gutter notes** -> switch to Annotate mode, select text, and write draggable sticky notes that pin to the page margin. Click to edit, clear to delete
 - **Interactive figure regions** -> toggle Regions mode to auto-detect figures, tables, plots, and diagrams. Click any detected region to send it to Infinite Wiki or Chat, or pin it as a note

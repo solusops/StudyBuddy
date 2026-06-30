@@ -882,12 +882,27 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
 
     # ---- EVALUATE_SESSION (Push) --------------------------------
     elif event_type == "EVALUATE_SESSION":
+        document_id = data.get("document_id", "")
         evaluator = EvaluatorAgent(journal_service=_journal)
-        patches, _ = evaluator.evaluate_session(session_id)
+        loop = asyncio.get_event_loop()
+        patches, assessments, _ = await loop.run_in_executor(
+            None, evaluator.evaluate_session, session_id
+        )
         for patch in patches:
             _graph_mgr.apply_node_patch(session_id, patch)
             await _cm.send(session_id, "SCORE_PATCH", patch.model_dump())
+        for a in assessments:
+            payload = a.model_dump()
+            await _cm.send(session_id, "NODE_ASSESSMENT", payload)
+            # Persist the reasoned snapshot to the long-running trajectory memory.
+            _local_mem.append_trajectory(document_id, payload)
         await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
+
+    # ---- PROGRESS_REQUEST (deterministic activity tally) -----------------
+    elif event_type == "PROGRESS_REQUEST":
+        from app.services.progress_service import compute_progress
+        progress = compute_progress(_journal.get_session(session_id))
+        await _cm.send(session_id, "PROGRESS_UPDATE", {"nodes": list(progress.values())})
 
     # ---- CACHE_CLEAR (dev) -----------------------------------------------
     elif event_type == "CACHE_CLEAR":
@@ -996,7 +1011,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     # ---- END_SESSION --------------------------------------------
     elif event_type == "END_SESSION":
         evaluator = EvaluatorAgent(journal_service=_journal)
-        patches, session_summary = evaluator.evaluate_session(session_id)
+        patches, _assessments, session_summary = evaluator.evaluate_session(session_id)
 
         patched_nodes = []
         for patch in patches:

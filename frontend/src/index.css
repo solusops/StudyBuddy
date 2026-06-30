@@ -92,6 +92,13 @@ body::after {
   50%       { opacity: 0; }
 }
 
+/* Knowledge-graph node entrance — defined globally so the @keyframes are parsed
+   before any ConceptNode mounts (prevents the same-frame animation skip bug). */
+@keyframes nodePop {
+  0%   { opacity: 0; transform: scale(0.4); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
 /* Hand-drawn highlighter marker — animates a left-to-right swipe, scrolls with the page */
 @keyframes markerSwipe {
   from { background-size: 0% 100%; }

@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
 import type { NodeData } from "../../types"
+import { useGraphStore } from "../../store/graphStore"
 
 type ConceptNodeType = Node<NodeData, "concept">
 
@@ -37,11 +39,22 @@ const ROOT_COLORS = {
 }
 
 export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) {
-  const avg = Math.round(
-    (data.scores.memory + data.scores.comprehension + data.scores.structure + data.scores.application) / 4
-  )
+  // Defer animation to next frame so the browser has a "no-animation" frame first.
+  // Prevents the same-frame keyframe skip that leaves nodes invisible on first mount.
+  const [animate, setAnimate] = useState(false)
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setAnimate(true))
+    return () => cancelAnimationFrame(raf)
+  }, [])
+
+  // Deterministic activity-tally progress (auto, from PROGRESS_UPDATE) drives the fill.
+  const progress = useGraphStore((s) => s.nodeProgress[id])
+  const percent = progress?.percent ?? 0
+  const complete = !!progress?.complete
   const isRoot = data.depth === 0
   const complexity = data.complexity ?? 3
+  const animIndex = (data as Record<string, unknown>)._animIndex as number | undefined
+  const animDelay = (animIndex ?? 0) * 0.04  // stagger 40ms per node for fireworks
   const { minWidth, maxWidth, padV, padH, opacity } = getComplexityStyle(complexity)
 
   // Color selection: root gets accent, others get status-based
@@ -66,32 +79,49 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
       <div
         data-testid={`node-${id}`}
         style={{
+          position: "relative",
+          overflow: "hidden",
           background: bgColor,
           padding: `${padV}px ${padH}px`,
           borderRadius: isRoot ? 14 : 10,
           minWidth,
           maxWidth,
-          border: `${borderWidth}px solid ${baseColors.border}`,
+          border: `${borderWidth}px solid ${complete ? "#2D6A4F" : baseColors.border}`,
           color: baseColors.text,
           cursor: "pointer",
           userSelect: "none",
-          boxShadow: isRoot
-            ? "0 4px 16px rgba(26,53,87,0.25)"
-            : selected
-              ? `0 0 0 3px ${baseColors.border}33`
-              : "0 1px 4px rgba(26,53,87,0.08)",
+          boxShadow: complete
+            ? "0 0 0 3px rgba(45,106,79,0.35), 0 0 14px rgba(45,106,79,0.45)"
+            : isRoot
+              ? "0 4px 16px rgba(26,53,87,0.25)"
+              : selected
+                ? `0 0 0 3px ${baseColors.border}33`
+                : "0 1px 4px rgba(26,53,87,0.08)",
           fontFamily: "'Libre Caslon Text', Georgia, serif",
           textAlign: "center",
-          transition: "box-shadow 0.2s, transform 0.15s",
-          animation: "nodePop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) both",
+          transition: "box-shadow 0.3s, transform 0.15s, border-color 0.3s",
+          animation: animate
+            ? `nodePop 0.38s cubic-bezier(0.34, 1.56, 0.64, 1) ${animDelay}s both`
+            : "none",
+          opacity: animate ? undefined : 1,
         }}
       >
-        <div style={{ fontWeight: isRoot ? 800 : 700, fontSize, lineHeight: 1.3 }}>
+        {/* Activity-tally fill — rises from the bottom, animated */}
+        {!isRoot && percent > 0 && (
+          <div style={{
+            position: "absolute", left: 0, right: 0, bottom: 0,
+            height: `${percent}%`,
+            background: complete ? "rgba(45,106,79,0.22)" : "rgba(74,127,181,0.16)",
+            transition: "height 0.7s cubic-bezier(0.22,1,0.36,1), background 0.3s",
+            zIndex: 0,
+          }} />
+        )}
+        <div style={{ position: "relative", zIndex: 1, fontWeight: isRoot ? 800 : 700, fontSize, lineHeight: 1.3 }}>
           {data.label}
         </div>
         {!isRoot && (
-          <div style={{ fontSize: 10, marginTop: 5, opacity: 0.8, textTransform: "uppercase", letterSpacing: "0.03em", fontWeight: 600 }}>
-            {data.status === "MASTERED" ? "COMPLETED" : `${avg}%`}
+          <div style={{ position: "relative", zIndex: 1, fontSize: 10, marginTop: 5, opacity: 0.85, textTransform: "uppercase", letterSpacing: "0.03em", fontWeight: 700, color: complete ? "#2D6A4F" : baseColors.text }}>
+            {complete ? "✓ COMPLETED" : `${percent}%`}
           </div>
         )}
       </div>

@@ -53,10 +53,10 @@ function applyDagreLayout(
 
   dagre.layout(g)
 
-  const laid = nodes.map((n) => {
+  const laid = nodes.map((n, i) => {
     const pos = g.node(n.id)
     const { w, h } = getNodeDimensions(n.data)
-    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 } }
+    return { ...n, position: { x: pos.x - w / 2, y: pos.y - h / 2 }, data: { ...n.data, _animIndex: i } }
   })
   return { nodes: laid, edges }
 }
@@ -97,7 +97,7 @@ export function KnowledgeGraph({ onNodeClick }: Props) {
 
   return (
     <div style={{ width: "100%", height: "100%" }}>
-      <style>{`@keyframes nodePop { 0% { opacity: 0; transform: scale(0.4); } 100% { opacity: 1; transform: scale(1); } }`}</style>
+
       <ReactFlow
         nodes={nodes}
         edges={edges}

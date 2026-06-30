@@ -56,6 +56,7 @@ class CommitRequest(BaseModel):
     familiarity: str
     nodes: List[Dict[str, Any]]
     content_files: List[str] = []
+    document_id: str = ""
 
 
 @router.post("/commit")
@@ -63,13 +64,22 @@ def commit_session(req: CommitRequest):
     save_dir = os.path.expanduser("~/.studybuddy/sessions")
     os.makedirs(save_dir, exist_ok=True)
     payload = req.model_dump()
-    path = os.path.join(save_dir, f"{req.session_id}.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    # Also write as latest.json for easy restore
-    with open(os.path.join(save_dir, "latest.json"), "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2)
-    return {"status": "committed", "path": path}
+    # Force-save in ONE place per paper (document_id) when known, plus the session file.
+    paths = [os.path.join(save_dir, f"{req.session_id}.json")]
+    if req.document_id:
+        paths.append(os.path.join(save_dir, f"doc_{req.document_id}.json"))
+    paths.append(os.path.join(save_dir, "latest.json"))
+    for path in paths:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, indent=2)
+    return {"status": "committed", "paths": paths}
+
+
+@router.get("/trajectory/{document_id}")
+def get_trajectory(document_id: str):
+    """Persistent learning trajectory for a paper (for the Evaluation window)."""
+    from app.services.memory_service import MemoryService
+    return {"trajectory": MemoryService().read_trajectory(document_id)}
 
 
 class ClearRequest(BaseModel):

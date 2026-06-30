@@ -11,7 +11,7 @@ const WS_BASE = window.location.protocol === "file:"
 export function useWebSocket(sessionId: string | null) {
   const ws = useRef<WebSocket | null>(null)
   const pending = useRef<string[]>([])
-  const { applyNodePatch, addNode, addEdge } = useGraphStore()
+  const { applyNodePatch, addNode, addEdge, setNodeProgress, setAssessment } = useGraphStore()
   const {
     setLesson,
     setVisual,
@@ -97,6 +97,13 @@ export function useWebSocket(sessionId: string | null) {
         }
         case "GRAPH_BUILD_DONE":
           window.dispatchEvent(new CustomEvent("graph-build-done", { detail: msg.data }))
+          break
+        case "PROGRESS_UPDATE":
+          setNodeProgress((msg.data as { nodes: Array<{ node_id: string; percent: number; complete: boolean }> }).nodes)
+          break
+        case "NODE_ASSESSMENT":
+          setAssessment(msg.data as unknown as Parameters<typeof setAssessment>[0])
+          window.dispatchEvent(new CustomEvent("node-assessment", { detail: msg.data }))
           break
         case "EVALUATION_DONE":
           window.dispatchEvent(new CustomEvent("evaluation-done", { detail: msg.data }))

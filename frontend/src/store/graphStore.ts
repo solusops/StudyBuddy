@@ -2,13 +2,29 @@ import { create } from "zustand"
 import type { Edge, Node } from "@xyflow/react"
 import type { NodeData, NodePatch, NodeScores } from "../types"
 
+export interface NodeProgress {
+  percent: number
+  complete: boolean
+}
+
+export interface NodeAssessment {
+  node_id: string
+  classification: "building_basics" | "foundational" | "comfortable" | "sophisticated"
+  reasoning: string
+  evidence: string[]
+}
+
 interface GraphStore {
   nodes: Node<NodeData>[]
   edges: Edge[]
+  nodeProgress: Record<string, NodeProgress>
+  assessments: Record<string, NodeAssessment>
   setGraph: (nodes: Node<NodeData>[], edges: Edge[]) => void
   addNode: (data: NodeData) => void
   addEdge: (source: string, target: string, relationship?: string) => void
   applyNodePatch: (patch: NodePatch) => void
+  setNodeProgress: (list: Array<{ node_id: string } & NodeProgress>) => void
+  setAssessment: (a: NodeAssessment) => void
   reset: () => void
 }
 
@@ -25,8 +41,20 @@ function clampScores(current: NodeScores, patch: Partial<NodeScores>): NodeScore
 export const useGraphStore = create<GraphStore>((set) => ({
   nodes: [],
   edges: [],
+  nodeProgress: {},
+  assessments: {},
 
   setGraph: (nodes, edges) => set({ nodes, edges }),
+
+  setNodeProgress: (list) =>
+    set(() => {
+      const map: Record<string, NodeProgress> = {}
+      for (const p of list) map[p.node_id] = { percent: p.percent, complete: p.complete }
+      return { nodeProgress: map }
+    }),
+
+  setAssessment: (a) =>
+    set((state) => ({ assessments: { ...state.assessments, [a.node_id]: a } })),
 
   // Incremental streaming (BUILD_GRAPH "fireworks") — append, ignoring duplicates.
   addNode: (data) =>
@@ -62,5 +90,5 @@ export const useGraphStore = create<GraphStore>((set) => ({
       }),
     })),
 
-  reset: () => set({ nodes: [], edges: [] }),
+  reset: () => set({ nodes: [], edges: [], nodeProgress: {}, assessments: {} }),
 }))

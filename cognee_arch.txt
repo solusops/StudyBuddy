@@ -1,0 +1,348 @@
+# COGNEE — Distilled Architecture & API Reference
+# Source: 60+ examples in cognee/ folder. Zero filler.
+
+================================================================================
+1. WHAT IT IS
+================================================================================
+Open-source AI memory system. Turns raw data → searchable knowledge.
+Triple storage: Relational (provenance) + Vector (semantic) + Graph (relationships).
+All async Python. Requires LLM_API_KEY in .env (OpenAI default).
+
+================================================================================
+2. V1.0 API — 4 CORE OPERATIONS
+================================================================================
+
+import cognee
+from cognee import SearchType
+
+# --- REMEMBER: ingest data into knowledge graph ---
+await cognee.remember(text, dataset_name="ds", self_improvement=False)
+# Accepts: str, list[str], file path, S3 URI, URL
+# Key params:
+#   dataset_name="name"          — group data
+#   session_id="sid"             — session-only memory (not in graph until improve())
+#   self_improvement=False       — skip auto-improvement pass
+#   importance_weight=0.7        — boost node retrieval ranking (0.0-1.0)
+#   node_set=["AI","FinTech"]    — tag nodes for filtered retrieval
+#   graph_model=MyDataPoint      — custom extraction schema
+#   custom_prompt="..."          — override LLM extraction prompt
+#   temporal_cognify=True        — extract temporal Event nodes
+#   config={"ontology_config":…} — supply RDF/OWL ontology
+#   incremental_loading=False    — for URLs
+#   preferred_loaders={...}      — e.g. beautiful_soup_loader with extraction_rules
+
+# --- RECALL: query stored memory ---
+result = await cognee.recall(query_text="question", datasets=["ds"])
+# Key params:
+#   query_type=SearchType.GRAPH_COMPLETION  — LLM-synthesized answer from graph
+#   query_type=SearchType.CHUNKS            — raw text chunks
+#   query_type=SearchType.TEMPORAL          — time-bounded queries
+#   datasets=["ds"]                         — scope to datasets
+#   session_id="sid"                        — include session context
+#   top_k=15                                — max results
+#   user=user_obj                           — for multi-tenant
+
+# --- IMPROVE: sync session memory → permanent graph ---
+await cognee.improve(dataset="ds", session_ids=["sid"])
+# Reads session cache entries, runs add+cognify, persists to graph
+
+# --- FORGET: delete memory ---
+await cognee.forget(everything=True)          # nuke all
+# Scoped: by item, dataset, or user
+
+================================================================================
+3. LEGACY LOW-LEVEL API (still works, used in pipeline internals)
+================================================================================
+await cognee.add(data, dataset_name="ds")     # ingest only (no cognify)
+await cognee.cognify(datasets=["ds"])          # build graph from ingested data
+await cognee.search(query_type=..., query_text="...", include_references=True)
+await cognee.prune.prune_data()               # delete data
+await cognee.prune.prune_system(metadata=True) # delete system metadata
+
+# search() supports include_references=True → appends Evidence section
+# SearchType.RAG_COMPLETION → chunk evidence
+# SearchType.GRAPH_COMPLETION → entity/graph evidence
+
+================================================================================
+4. SESSION MEMORY & CACHING
+================================================================================
+# Enable: os.environ["CACHING"] = "true"; os.environ["CACHE_BACKEND"] = "fs"
+# (also supports "redis")
+
+# Session memory pattern:
+await cognee.remember(text, session_id="ticket_001")        # cache only
+await cognee.recall(query, session_id="ticket_001")          # graph + session context
+await cognee.improve(dataset="ds", session_ids=["ticket_001"]) # flush to graph
+
+# Session persistence (low-level):
+from cognee.memify_pipelines.persist_sessions_in_knowledge_graph import (
+    persist_sessions_in_knowledge_graph_pipeline,
+)
+await persist_sessions_in_knowledge_graph_pipeline(user=user, session_ids=["s1","s2"])
+
+================================================================================
+5. SESSION FEEDBACK API
+================================================================================
+from cognee.modules.users.methods import get_default_user
+user = await get_default_user()
+
+# Query with session tracking:
+results = await cognee.recall(query_text=q, query_type=SearchType.GRAPH_COMPLETION,
+                              user=user, session_id="my_session")
+
+# Retrieve session history:
+all_qas = await cognee.session.get_session(session_id="my_session", user=user)
+recent  = await cognee.session.get_session(session_id="my_session", user=user, last_n=2)
+
+# Add/delete feedback:
+await cognee.session.add_feedback(session_id="my_session", qa_id=qa.qa_id,
+                                   feedback_text="Helpful!", feedback_score=5, user=user)
+await cognee.session.delete_feedback(session_id="my_session", qa_id=qa.qa_id, user=user)
+
+================================================================================
+6. BUILDING BLOCKS
+================================================================================
+
+--- DataPoint: structured data unit → becomes graph node ---
+from cognee.infrastructure.engine import DataPoint  # or cognee.low_level
+from cognee.infrastructure.engine.models.Edge import Edge
+
+class Person(DataPoint):
+    name: str
+    knows: List["Person"] = []
+    metadata: dict = {"index_fields": ["name"]}  # fields indexed in vector store
+
+# Weighted/typed edges:
+bob.knows = (Edge(weight=0.9, relationship_type="friend_of"), charlie)
+
+# Store manually:
+from cognee.tasks.storage import add_data_points
+await add_data_points([alice, bob, charlie])
+
+--- Task: single processing unit ---
+from cognee.modules.pipelines import Task
+task = Task(my_async_function, arg1, kwarg1=val)
+
+--- Pipeline: orchestrate tasks ---
+tasks = [Task(extract_fn), Task(add_data_points)]
+await cognee.run_custom_pipeline(tasks=tasks, data=input_data,
+                                  dataset="name", pipeline_name="my_pipe",
+                                  user=user)
+
+================================================================================
+7. CUSTOM GRAPH MODELS & PROMPTS
+================================================================================
+
+# Custom extraction schema — tell cognee what entities to extract:
+class Field(DataPoint):
+    name: str
+    metadata: dict = {"index_fields": ["name"]}
+
+class ProgrammingLanguage(DataPoint):
+    name: str
+    used_in: List[Field] = None
+    metadata: dict = {"index_fields": ["name"]}
+
+await cognee.remember(text, graph_model=ProgrammingLanguage,
+                       custom_prompt="Extract programming languages and fields.")
+
+# Custom prompt only (no schema):
+await cognee.remember(texts, custom_prompt="Extract only people and cities. "
+                      "Connect with 'lives_in'. Ignore all else.")
+
+================================================================================
+8. AGENT MEMORY DECORATOR
+================================================================================
+@cognee.agent_memory(
+    with_memory=False,              # read from knowledge graph
+    with_session_memory=True,       # read from session cache
+    save_session_traces=True,       # persist traces to graph
+    session_id="ticket_001",
+    session_memory_last_n=2,        # context window
+    persist_session_trace_after=3,  # auto-persist after N calls
+)
+async def support_agent(question: str, system_prompt: str) -> str:
+    return await LLMGateway.acreate_structured_output(question, system_prompt, str)
+
+# Graph-only agent (no session):
+@cognee.agent_memory(with_memory=True, with_session_memory=False,
+                      memory_query_from_method="question")
+async def faq_bot(question: str, system_prompt: str) -> str: ...
+
+================================================================================
+9. LLM GATEWAY — Direct LLM Access
+================================================================================
+from cognee.infrastructure.llm.LLMGateway import LLMGateway
+
+class MiniGraph(BaseModel):
+    nodes: List[MiniEntity]
+
+result = await LLMGateway.acreate_structured_output(
+    text_input="...", system_prompt="...", response_model=MiniGraph
+)
+# Returns parsed Pydantic model
+
+================================================================================
+10. TEMPORAL RECALL
+================================================================================
+await cognee.remember(text, temporal_cognify=True)
+
+result = await cognee.recall(query_type=SearchType.TEMPORAL,
+                              query_text="What happened before 2000?", top_k=15)
+# Supports: before/after/between natural language time queries
+# Can scope: datasets=["timeline_demo"]
+
+================================================================================
+11. ONTOLOGY SUPPORT
+================================================================================
+from cognee.modules.ontology.ontology_config import Config
+from cognee.modules.ontology.rdf_xml.RDFLibOntologyResolver import RDFLibOntologyResolver
+
+config: Config = {"ontology_config": {
+    "ontology_resolver": RDFLibOntologyResolver(ontology_file="path/to/ontology.owl")
+}}
+await cognee.remember(texts, config=config)
+
+================================================================================
+12. ENTITY CONSOLIDATION
+================================================================================
+from cognee.memify_pipelines.consolidate_entity_descriptions import (
+    consolidate_entity_descriptions_pipeline,
+)
+await consolidate_entity_descriptions_pipeline()  # merges near-duplicate entities
+
+================================================================================
+13. DATA SOURCES
+================================================================================
+# Text:        await cognee.remember("inline text")
+# List:        await cognee.remember(["text1", "text2"])
+# File:        await cognee.remember("/path/to/file.txt")
+# S3:          await cognee.remember("s3://bucket/key.txt")
+# S3 prefix:   await cognee.remember("s3://bucket/prefix/")
+# URL:         await cognee.remember("https://...", preferred_loaders={
+#                "beautiful_soup_loader": {"extraction_rules": {
+#                  "title": {"selector": "title"},
+#                  "paragraphs": {"selector": "p", "all": True}
+#                }}})
+# Mixed:       await cognee.remember(["s3://...", "inline text"])
+
+================================================================================
+14. VISUALIZATION
+================================================================================
+from cognee import visualize_graph
+await visualize_graph("/path/to/output.html")  # renders interactive graph HTML
+
+# Schema inventory (no LLM needed):
+from cognee.modules.visualization.preprocessor import preprocess
+from cognee.modules.visualization.cognee_network_visualization import cognee_network_visualization
+pre = preprocess(graph_data)  # → schema payload with type nodes, samples, relationships
+await cognee_network_visualization(graph_data, "output.html")
+
+================================================================================
+15. BACKEND CONFIGURATION
+================================================================================
+
+# Graph backends: ladybug(kuzu)/neo4j/neptune_analytics
+cognee.config.set_graph_db_config({
+    "graph_database_provider": "neo4j",    # or "kuzu", "neptune_analytics"
+    "graph_database_url": "bolt://localhost:7687",
+    "graph_database_name": "neo4j",
+    "graph_database_username": "neo4j",
+    "graph_database_password": "pass",
+})
+
+# Vector backends: lancedb/chromadb/pgvector
+cognee.config.set_vector_db_config({
+    "vector_db_provider": "lancedb",       # or "chromadb", "pgvector"
+    "vector_dataset_database_handler": "lancedb",
+})
+
+# Shorthand setters:
+cognee.config.set_graph_database_provider("kuzu")
+cognee.config.set_vector_db_provider("lancedb")
+
+# Data directories:
+cognee.config.data_root_directory("/path/to/data")
+cognee.config.system_root_directory("/path/to/system")
+
+# Multi-tenant: os.environ["ENABLE_BACKEND_ACCESS_CONTROL"] = "True"
+
+================================================================================
+16. MULTI-TENANT / PERMISSIONS
+================================================================================
+# Set ENABLE_BACKEND_ACCESS_CONTROL=True
+# APIs exist for:
+#   - Creating tenants and assigning roles
+#   - Constraining role permissions
+#   - Per-user dataset access control
+#   - ACL-filtered retrieval
+# See: configurations/permissions_example/*.py
+
+================================================================================
+17. NODE SETS (Tagging/Grouping)
+================================================================================
+await cognee.remember(text_a, node_set=["AI", "FinTech"])
+await cognee.remember(text_b, node_set=["AI"])
+# Nodes tagged; used for filtered retrieval and visualization grouping
+
+================================================================================
+18. CUSTOM PIPELINE COMPOSITION (Advanced)
+================================================================================
+
+# Recreate add pipeline:
+from cognee.tasks.ingestion import ingest_data, resolve_data_directories
+add_tasks = [
+    Task(resolve_data_directories, include_subdirectories=True),
+    Task(ingest_data, "dataset_name", user),
+]
+await cognee.run_custom_pipeline(tasks=add_tasks, data=text, user=user,
+                                  dataset="ds", pipeline_name="add_pipeline")
+
+# Recreate cognify pipeline:
+from cognee.api.v1.cognify.cognify import get_default_tasks
+cognify_tasks = await get_default_tasks(user=user)
+await cognee.run_custom_pipeline(tasks=cognify_tasks, user=user,
+                                  dataset="ds", pipeline_name="cognify_pipeline")
+
+# Custom extraction pipeline:
+async def extract_people(data: LightweightData) -> List[Person]:
+    people_llm = await LLMGateway.acreate_structured_output(text, prompt, PeopleLLM)
+    # ... resolve relationships ...
+    return list(person_map.values())
+
+tasks = [Task(extract_people), Task(add_data_points)]
+await cognee.run_custom_pipeline(tasks=tasks, data=input_obj, dataset="demo")
+
+================================================================================
+19. SEARCH TYPES ENUM
+================================================================================
+SearchType.GRAPH_COMPLETION   # LLM answer grounded in graph context
+SearchType.RAG_COMPLETION     # LLM answer grounded in vector chunks
+SearchType.CHUNKS             # raw retrieved text chunks
+SearchType.TEMPORAL           # time-bounded graph queries
+
+================================================================================
+20. SETUP & RUNNING
+================================================================================
+# Install:  uv sync --dev --all-extras --reinstall
+# Config:   cp .env.template .env → set LLM_API_KEY
+# Run:      uv run python examples/demos/simple_cognee_example.py
+# DB init:
+from cognee.infrastructure.databases.relational.create_db_and_tables import create_db_and_tables
+await create_db_and_tables()
+# Or:
+from cognee.modules.engine.operations.setup import setup
+await setup()
+
+================================================================================
+21. KEY IMPORTS CHEATSHEET
+================================================================================
+import cognee
+from cognee import SearchType, visualize_graph
+from cognee.low_level import DataPoint                    # or cognee.infrastructure.engine
+from cognee.infrastructure.engine.models.Edge import Edge
+from cognee.infrastructure.llm.LLMGateway import LLMGateway
+from cognee.modules.pipelines import Task
+from cognee.tasks.storage import add_data_points
+from cognee.modules.users.methods import get_default_user
+from cognee.shared.logging_utils import setup_logging, ERROR, INFO
