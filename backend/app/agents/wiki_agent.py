@@ -19,7 +19,7 @@ Structure your response exactly as:
 ## {term}
 
 **{level_label} Summary:** (One-sentence summary of the concept/passage using language suited for a {level} level student)
-
+{cross_doc_section}
 **Core Formulas & Facts:**
 * (core fact/formula 1 from the source chunks)
 * (core fact/formula 2 from the source chunks)
@@ -40,7 +40,7 @@ Structure your response exactly as:
 ## {term}
 
 **{level_label} Summary:** (One-sentence summary of the concept/passage using language suited for a {level} level student)
-
+{cross_doc_section}
 **Core Formulas & Facts:**
 * (core fact/formula 1 from the source chunks or web results)
 * (core fact/formula 2 from the source chunks or web results)
@@ -75,6 +75,21 @@ class WikiAgent:
             print("Tavily search error:", e)
         return []
 
+    async def query_cross_document_connections(self, term: str) -> str:
+        import cognee
+        from cognee import SearchType
+        try:
+            results = await cognee.search(
+                query_text=f"How does '{term}' relate to other subjects and concepts in the curriculum?", 
+                datasets=["global_curriculum"],
+                query_type=SearchType.GRAPH_COMPLETION
+            )
+            if isinstance(results, list):
+                return "\n".join(str(r) for r in results)
+            return str(results) if results else ""
+        except Exception:
+            return ""
+
     async def stream_card(
         self,
         selection_text: str,
@@ -85,24 +100,31 @@ class WikiAgent:
         knowledge_mode: str = "content_only",
     ):
         """Async generator — yields text tokens for the Infinite Wiki card."""
+        import asyncio
+        
         chunk_text = "\n\n".join(
             f"[Source: {c.get('source', '?')}, chunk {c.get('chunk_index', i)}]\n{c['text']}"
             for i, c in enumerate(chunks)
         )
         parent_note = f"\nDrill-down context: {parent_context[:300]}" if parent_context else ""
 
-        # Fetch Tavily results if Net Support is selected
-        web_text = ""
-        
         system_prompt = _WIKI_SYSTEM_NET_SUPPORT if knowledge_mode == "net_support" else _WIKI_SYSTEM_CONTENT_ONLY
 
+        # Fetch external context concurrently
+        tasks = [self.query_cross_document_connections(selection_text)]
         if knowledge_mode == "net_support":
-            tavily_results = await self.search_tavily(selection_text)
-            if tavily_results:
-                web_text = "\n\n".join(
-                    f"[Web Source: {r.get('title')}, URL: {r.get('url')}]\n{r.get('content')}"
-                    for r in tavily_results
-                )
+            tasks.append(self.search_tavily(selection_text))
+            
+        results = await asyncio.gather(*tasks)
+        cross_doc_context = results[0]
+        tavily_results = results[1] if len(results) > 1 else []
+
+        web_text = ""
+        if tavily_results:
+            web_text = "\n\n".join(
+                f"[Web Source: {r.get('title')}, URL: {r.get('url')}]\n{r.get('content')}"
+                for r in tavily_results
+            )
 
         # Resolve complexity level names and labels dynamically
         level_name = {
@@ -123,6 +145,12 @@ class WikiAgent:
         system_prompt = system_prompt.replace("{term}", selection_text)
         system_prompt = system_prompt.replace("{level}", level_name)
         system_prompt = system_prompt.replace("{level_label}", level_label)
+        
+        # Guard injection for cross-disciplinary context
+        cross_doc_section = ""
+        if cross_doc_context:
+            cross_doc_section = f"\n**Cross-Disciplinary Connections:**\n{cross_doc_context}\n"
+        system_prompt = system_prompt.replace("{cross_doc_section}", cross_doc_section)
 
         user_content = (
             f"Term/passage to explain: \"{selection_text}\"\n"

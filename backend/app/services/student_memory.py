@@ -19,7 +19,7 @@ class StudentMemoryService:
     ) -> None:
         import cognee
         try:
-            await cognee.improve(dataset="student_profile", session_ids=[session_id])
+            await cognee.cognify(datasets=[f"session_{session_id}"])
         except Exception as e:
             import logging
             logging.getLogger(__name__).error("Failed to improve memory graph: %s", e)
@@ -28,11 +28,11 @@ class StudentMemoryService:
         import cognee
         from cognee import SearchType
         try:
-            results = await cognee.recall(
+            results = await cognee.search(
                 query_text=f"What are the student's learning preferences, past struggles, and prior knowledge about {topic}?", 
                 query_type=SearchType.GRAPH_COMPLETION
             )
-            # recall returns either a list of results or a single synthesized response
+            # search returns either a list of results or a single synthesized response
             if isinstance(results, list):
                 return "\n".join(str(r) for r in results)
             return str(results) if results else ""

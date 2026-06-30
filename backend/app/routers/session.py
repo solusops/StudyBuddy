@@ -79,7 +79,7 @@ async def commit_session(req: CommitRequest):
             
     # Stage memory in Cognee's session cache
     payload_str = json.dumps(payload)
-    await cognee.remember(payload_str, session_id=req.session_id, temporal_cognify=True)
+    await cognee.add(payload_str, dataset_name=f"session_{req.session_id}")
     
     # Execute memory snapshot using shutil.copytree for Memory Versioning
     try:

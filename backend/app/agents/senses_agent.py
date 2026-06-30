@@ -36,6 +36,7 @@ class SensesAgent:
         region_text: str,
         anchor_label: str,
         familiarity: str,
+        document_id: str = "",
     ) -> InsightPayload:
         """Analyse a cropped PDF region image + surrounding text.
 
@@ -63,9 +64,19 @@ class SensesAgent:
                 ],
             }
         ]
-        return self._client.structured_complete(
+        
+        payload = self._client.structured_complete(
             messages, InsightPayload, model=VISION_MODEL_ID
         )
+        
+        if document_id:
+            import asyncio
+            import cognee
+            memory_text = f"Visual Region Analysis:\nSummary: {payload.summary}\nObservations: {', '.join(payload.observations)}"
+            dataset_name = f"visual_memory_{document_id}"
+            asyncio.create_task(cognee.add(memory_text, dataset_name=dataset_name))
+            
+        return payload
 
     def describe_region(self, image_base64: str, type_hint: str = "") -> RegionDescription:
         """Read a cropped page region and return its type, caption, and extracted content.

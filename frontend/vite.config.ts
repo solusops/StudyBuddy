@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => {
         '/library':     { target: backendUrl, changeOrigin: true },
         '/annotations': { target: backendUrl, changeOrigin: true },
         '/regions':     { target: backendUrl, changeOrigin: true },
+        '/review':      { target: backendUrl, changeOrigin: true },
         '/ws':          { target: backendWs,  changeOrigin: true, ws: true },
       },
     },
