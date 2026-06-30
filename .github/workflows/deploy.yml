@@ -37,16 +37,21 @@ jobs:
           vercel-args: '--prod'
 
   deploy-backend:
-    name: Backend → Railway
+    name: Backend → HF Spaces
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli
-
-      - name: Deploy
-        working-directory: backend
-        run: railway up --service studybuddy-backend --detach
+      - name: Push to HF Space
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_SPACE: ${{ secrets.HF_SPACE }}
+        run: |
+          git config --global user.email "ci@github.com"
+          git config --global user.name "GitHub Actions"
+          cp -r backend /tmp/hf-deploy
+          cd /tmp/hf-deploy
+          git init
+          git add -A
+          git commit -m "deploy ${{ github.sha }}"
+          git push https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_SPACE} HEAD:main --force
