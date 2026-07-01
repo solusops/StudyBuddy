@@ -23,7 +23,7 @@ interface Props {
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph, nodes } = useGraphStore()
   const { setSession, activeNodeId, activeNodeLabel, setActiveNode, familiarity } = useSessionStore()
-  const { documentId, setDocumentId } = useInteractionStore()
+  const { documentId, setDocumentId, isDemoMode } = useInteractionStore()
 
   // -- Session bootstrap ------------------------------------------------
   const [sessionId, setSessionId] = useState<string | null>(null)
@@ -164,7 +164,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const pushSession = async () => {
-    if (isPushing) return
+    if (isPushing || isDemoMode) return
     setIsPushing(true)
     setPushDone(false)
     const onDone = () => { setIsPushing(false); setPushDone(true) }
@@ -267,16 +267,16 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         {/* Push */}
         <button
           onClick={pushSession}
-          disabled={isPushing}
-          title="Evaluate work against skill tree"
+          disabled={isPushing || isDemoMode}
+          title={isDemoMode ? "Disabled in demo mode" : "Evaluate work against skill tree"}
           style={{
-            background: isPushing ? "#E8E0D5" : "#1A3557",
-            color: isPushing ? "#9CA3AF" : "#FAF7F2",
+            background: isPushing ? "#E8E0D5" : isDemoMode ? "#E8E0D5" : "#1A3557",
+            color: isPushing ? "#9CA3AF" : isDemoMode ? "#D1D5DB" : "#FAF7F2",
             border: "none",
             borderRadius: 8,
             padding: "5px 14px",
             fontSize: 14,
-            cursor: isPushing ? "not-allowed" : "pointer",
+            cursor: isPushing || isDemoMode ? "not-allowed" : "pointer",
             fontWeight: 600,
           }}
         >

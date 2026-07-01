@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useSessionStore } from "../../store/sessionStore"
+import { useInteractionStore } from "../../store/interactionStore"
 import { TabBar } from "../panel/TabBar"
 import { InfiniteWiki } from "../panel/InfiniteWiki"
 import { ScoreBar } from "../panel/ScoreBar"
@@ -20,6 +21,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
   const { familiarity } = useSessionStore()
   const { nodes } = useGraphStore()
   const { setSelection } = useContextStore()
+  const { isDemoMode } = useInteractionStore()
 
   // Unified tab controller for all 5 tabs
   const [activeTab, setActiveTab] = useState("Infinite Wiki")
@@ -81,6 +83,7 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
         tabs={["Infinite Wiki", "Chat", "Flashcards", "Quiz", "Study Buddy"]}
         active={activeTab}
         onChange={setActiveTab}
+        disabledTabs={isDemoMode ? ["Study Buddy"] : []}
       />
 
       {/* Tab contents */}
@@ -109,7 +112,9 @@ export function ScientificFigurePanel({ activeConcept, activeNodeId, sendEvent }
           )
         )}
         {activeTab === "Study Buddy" && (
-          activeNodeId ? (
+          isDemoMode ? (
+            <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Study Buddy is disabled in demo mode.</div>
+          ) : activeNodeId ? (
             <StudyBuddyTool key={activeNodeId} sendEvent={sendEvent} nodeId={activeNodeId} nodeLabel={node?.data.label || activeConcept || activeNodeId} familiarity={familiarity} />
           ) : (
             <div style={{ padding: 24, color: "#9CA3AF", fontSize: 13 }}>Select a concept to use Study Buddy.</div>

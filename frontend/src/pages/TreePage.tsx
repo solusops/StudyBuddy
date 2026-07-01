@@ -10,6 +10,7 @@ import { clearSessionEverywhere } from "../lib/clearSession"
 import { ConfirmDialog } from "../components/overlay/ConfirmDialog"
 import { useGraphStore } from "../store/graphStore"
 import { useSessionStore } from "../store/sessionStore"
+import { useInteractionStore } from "../store/interactionStore"
 import type { AppSession } from "../App"
 import type { NodeData } from "../types"
 import type { Edge, Node } from "@xyflow/react"
@@ -25,6 +26,7 @@ interface Props {
 export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
   const { streamingLesson, lessonStreaming, lesson, lessonCache, lessonWebSources, setLesson, knowledgeMode, setActiveNode } = useSessionStore()
+  const { isDemoMode } = useInteractionStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [refinementText, setRefinementText] = useState("")
@@ -206,7 +208,7 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
   }
 
   const pushSession = () => {
-    if (isPushing || !session) return
+    if (isPushing || isDemoMode || !session) return
     setIsPushing(true)
     setPushDone(false)
     setShowEval(true)  // open the Evaluation window to show reasoned scores + trajectory
@@ -292,17 +294,17 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
         {/* Push */}
         <button
           onClick={pushSession}
-          disabled={isPushing}
-          title="Evaluate work against skill tree"
+          disabled={isPushing || isDemoMode}
+          title={isDemoMode ? "Disabled in demo mode" : "Evaluate work against skill tree"}
           style={{
-            background: isPushing ? "#E8E0D5" : "#1A3557",
-            color: isPushing ? "#9CA3AF" : "#FAF7F2",
+            background: isPushing ? "#E8E0D5" : isDemoMode ? "#E8E0D5" : "#1A3557",
+            color: isPushing ? "#9CA3AF" : isDemoMode ? "#D1D5DB" : "#FAF7F2",
             border: "none",
             borderRadius: 6,
             padding: "4px 12px",
             fontSize: 14,
             fontWeight: 600,
-            cursor: isPushing ? "not-allowed" : "pointer",
+            cursor: isPushing || isDemoMode ? "not-allowed" : "pointer",
           }}
         >
           {isPushing ? "Evaluating…" : pushDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Pushed <Check size={14} /></span> : "Push"}

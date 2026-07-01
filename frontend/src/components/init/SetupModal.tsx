@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import type { AppSession } from "../../App"
 import type { FamiliarityLevel } from "../../types"
+import { useInteractionStore } from "../../store/interactionStore"
 
 const FAMILIARITY_OPTIONS: { value: FamiliarityLevel; label: string; desc: string }[] = [
   { value: "eli5", label: "ELI5", desc: "Sensory analogies, no math" },
@@ -42,6 +43,7 @@ interface Props {
 }
 
 export function SetupModal({ onSessionReady }: Props) {
+  const { isDemoMode, setDeploymentEnv } = useInteractionStore()
   const [activeTab, setActiveTab] = useState<"upload" | "history">("upload")
   const [topic, setTopic] = useState(() => localStorage.getItem("sb_topic") || "")
   const [familiarity, setFamiliarity] = useState<FamiliarityLevel>(() => (localStorage.getItem("sb_familiarity") as FamiliarityLevel) || "high_school")
@@ -87,7 +89,12 @@ export function SetupModal({ onSessionReady }: Props) {
       while (!cancelled) {
         try {
           const r = await fetch("/api/health", { signal: AbortSignal.timeout(2000) })
-          if (r.ok) { setBackendReady(true); return }
+          if (r.ok) {
+            const data = await r.json().catch(() => null)
+            if (data?.deployment_env) setDeploymentEnv(data.deployment_env)
+            setBackendReady(true)
+            return
+          }
         } catch { /* not ready yet */ }
         await new Promise((res) => setTimeout(res, 3000))
       }
@@ -271,26 +278,31 @@ export function SetupModal({ onSessionReady }: Props) {
           {([
             { id: "upload" as const, label: "New Upload" },
             { id: "history" as const, label: "Session History" },
-          ]).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              style={{
-                background: "transparent",
-                border: "none",
-                borderBottom: activeTab === t.id ? "2px solid #1A3557" : "2px solid transparent",
-                color: activeTab === t.id ? "#1A3557" : "#9CA3AF",
-                fontWeight: activeTab === t.id ? 700 : 500,
-                fontSize: 15,
-                padding: "8px 4px",
-                marginBottom: -1,
-                cursor: "pointer",
-                fontFamily: "'Libre Caslon Text', Georgia, serif",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
+          ]).map((t) => {
+            const disabled = t.id === "history" && isDemoMode
+            return (
+              <button
+                key={t.id}
+                onClick={() => !disabled && setActiveTab(t.id)}
+                disabled={disabled}
+                title={disabled ? "Disabled in demo mode" : undefined}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: activeTab === t.id ? "2px solid #1A3557" : "2px solid transparent",
+                  color: disabled ? "#D1D5DB" : activeTab === t.id ? "#1A3557" : "#9CA3AF",
+                  fontWeight: activeTab === t.id ? 700 : 500,
+                  fontSize: 15,
+                  padding: "8px 4px",
+                  marginBottom: -1,
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  fontFamily: "'Libre Caslon Text', Georgia, serif",
+                }}
+              >
+                {t.label}
+              </button>
+            )
+          })}
         </div>
 
         {activeTab === "history" ? (

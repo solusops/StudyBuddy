@@ -49,8 +49,13 @@ interface InteractionStore {
   committedAnnotations: CommittedAnnotation[]
   documentId: string | null
   blinkTarget: { page: number, boxes: BoundingBox[] } | null
+  // Set once from GET /api/health's deployment_env -> gates features that are
+  // known to be unstable/expensive on constrained demo hosts (see DEPLOYMENT_ENV
+  // in CLAUDE.md). Not session-scoped, so it survives resetDocument().
+  isDemoMode: boolean
 
   setCursorMode: (mode: CursorMode) => void
+  setDeploymentEnv: (env: string) => void
   toggleRegions: () => void
   pushSnippet: (snippet: SelectionSnippet) => void
   clearGroup: () => void
@@ -107,8 +112,10 @@ export const useInteractionStore = create<InteractionStore>((set) => ({
   documentId: null,
   blinkTarget: null,
   notePositions: initialPositions,
+  isDemoMode: false,
 
   setCursorMode: (mode) => set({ cursorMode: mode }),
+  setDeploymentEnv: (env) => set({ isDemoMode: env === "demo" }),
   toggleRegions: () => set((s) => ({ regionsOn: !s.regionsOn })),
   pushSnippet: (snippet) =>
     set((s) => ({ activeSelectionGroup: [...s.activeSelectionGroup, snippet] })),
