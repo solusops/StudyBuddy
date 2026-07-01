@@ -174,9 +174,26 @@ class BrainAgent:
         section_label: str,
         structure_text: str,
         familiarity: str,
+        sibling_sections: Optional[List[str]] = None,
     ) -> _SectionExpansion:
-        """Expand one section into 1-3 specific child concepts (one parallel call per section)."""
+        """Expand one section into 1-3 specific child concepts (one parallel call per section).
+
+        sibling_sections lists the OTHER top-level sections in this same tree (generated
+        together, before any of them were expanded). Each section is still expanded by its
+        own independent call — scales to many documents, unlike folding everything into one
+        call — but naming the siblings lets the model steer away from topics that plainly
+        belong to one of them (e.g. don't put "AdaMax" under this section if "Adaptive
+        Variants" is a sibling), cutting down cross-section overlap that exact-label
+        deduplication alone can't catch.
+        """
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
+        sibling_note = ""
+        if sibling_sections:
+            sibling_note = (
+                "\nOther sections in this same curriculum (do NOT repeat their topics — "
+                "if a concept clearly belongs to one of these instead, leave it out):\n"
+                + "\n".join(f"- {s}" for s in sibling_sections) + "\n"
+            )
         messages = [
             {
                 "role": "system",
@@ -184,6 +201,7 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}\n"
                     "Given ONE section of a subject, list 1-3 specific concepts a student must learn "
                     "within it. Use ONLY topics evidenced in the material. Keep labels ≤6 words."
+                    f"{sibling_note}"
                 ),
             },
             {
@@ -191,7 +209,8 @@ class BrainAgent:
                 "content": (
                     f"Section: {section_label}\n\n"
                     f"Document structure (for grounding):\n{structure_text[:4000]}\n\n"
-                    "List 1-3 child concepts for this section."
+                    "List 1-3 child concepts for this section — concepts that belong specifically "
+                    "here, not to one of the other sections listed above."
                 ),
             },
         ]
@@ -220,6 +239,63 @@ class BrainAgent:
             if e.source in node_ids and e.target in node_ids
         ]
         return nodes, edges
+
+    def cleanup_curriculum(
+        self,
+        nodes: List[NodeData],
+        edges: List[Dict],
+    ) -> Tuple[List[NodeData], List[Dict]]:
+        """Run a post-generation cleanup pass on the graph to merge semantic duplicates
+        and fix any structural issues introduced by parallel expansion.
+        """
+        nodes_desc = "\n".join(
+            f"- {n.id}: \"{n.label}\" (depth={n.depth}, parent={n.parent_id or 'none'})"
+            for n in nodes
+        )
+        edges_desc = "\n".join(
+            f"- {e['source']} → {e['target']} ({e.get('relationship', 'related')})"
+            for e in edges
+        )
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a curriculum organiser. Your job is to CLEAN UP a newly generated topic graph.\n"
+                    "Because this graph was generated in parallel, it may contain semantic duplicates "
+                    "(e.g., 'Math' and 'Mathematics', or 'Neural Networks' and 'Artificial Neural Networks').\n"
+                    "RULES:\n"
+                    "1. Merge nodes that mean the exact same thing. Keep the broader/better name.\n"
+                    "2. Do NOT merge distinct sub-topics (e.g. 'Deep Learning' is distinct from 'Neural Networks').\n"
+                    "3. Ensure the root node (n0) remains at depth=0 with parent_id=null.\n"
+                    "4. Every other node MUST have a valid parent_id.\n"
+                    "5. If you remove/merge a node, you MUST re-assign any edges or children that pointed to it.\n"
+                    "6. Return the finalized list of nodes and edges."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"CURRENT NODES:\n{nodes_desc}\n\n"
+                    f"CURRENT EDGES:\n{edges_desc}\n\n"
+                    "Return the clean graph. Nodes: id, label, description, depth, complexity (1-5), parent_id.\n"
+                    "Edges: source, target, relationship."
+                ),
+            },
+        ]
+        blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        
+        # When merging, we need to preserve document_ids.
+        # The LLM doesn't output document_ids in _SyllabusBlueprint (it doesn't know about them).
+        # We can map them back based on the node IDs that were kept.
+        doc_map = {n.id: getattr(n, "document_ids", []) for n in nodes}
+        
+        clean_nodes, clean_edges = self._build_nodes_and_edges(blueprint)
+        for cn in clean_nodes:
+            if cn.id in doc_map:
+                cn.document_ids = doc_map[cn.id]
+                
+        return clean_nodes, clean_edges
 
     def extract_curriculum(
         self,

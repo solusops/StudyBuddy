@@ -70,8 +70,11 @@ async def fetch_top_papers(query: str, n: int = 3) -> List[Dict[str, Any]]:
 
     papers: List[Dict[str, Any]] = []
     for w in top_relevant[:n]:
+        title = w.get("display_name") or "Untitled"
+        if len(title) > 150:
+            title = title[:147] + "..."
         papers.append({
-            "title": w.get("display_name") or "Untitled",
+            "title": title,
             "authors": _authors(w),
             "year": w.get("publication_year"),
             "cited_by": w.get("cited_by_count", 0),

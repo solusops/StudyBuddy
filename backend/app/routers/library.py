@@ -7,10 +7,15 @@ There is no folder-configuration concept — the uploads directory under
 """
 import asyncio
 import hashlib
+import json
 import os
+import shutil
+import uuid
 
 # Cap concurrent highlight-concepts LLM calls to avoid token-burst 429s
-_highlight_sem = asyncio.Semaphore(2)
+_deployment_env = os.getenv("DEPLOYMENT_ENV", "desktop")
+_highlight_concurrency = 2 if _deployment_env == "demo" else 20
+_highlight_sem = asyncio.Semaphore(_highlight_concurrency)
 from typing import List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -24,12 +29,15 @@ from app.rag.ingestion import (
     ingest_file,
 )
 from app.routers.session import set_ingest_status
+from app.schemas.graph import NodeData
 from app.websockets.handlers import get_db, get_graph_manager
 
 router = APIRouter(prefix="/library", tags=["library"])
 
 _SUPPORTED_EXTS = {".pdf", ".docx", ".txt"}
 _UPLOADS_DIR = os.path.expanduser("~/.studybuddy/uploads")
+_SESSIONS_DIR = os.path.expanduser("~/.studybuddy/sessions")
+_PDF_CACHE_DIR = os.path.expanduser("~/.studybuddy/pdfs")
 
 _brain: BrainAgent | None = None
 
@@ -261,10 +269,121 @@ async def upload_and_start(
 @router.post("/clear")
 def clear_library():
     """Wipe the uploaded document so /library/status reports unconfigured."""
-    import shutil
     if os.path.isdir(_UPLOADS_DIR):
         shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
     return {"status": "cleared"}
+
+
+# ------------------------------------------------------------------ #
+# History — past learning materials, resumable from the start window #
+# ------------------------------------------------------------------ #
+
+
+@router.get("/history")
+def list_history():
+    """One entry per document the student has committed progress on, most recent first.
+
+    A document only shows up here if its source PDF/DOCX/TXT bytes are still cached
+    (~/.studybuddy/pdfs/{document_id}.*) — otherwise there'd be nothing to resume.
+    """
+    if not os.path.isdir(_SESSIONS_DIR):
+        return {"items": []}
+
+    items = []
+    for name in os.listdir(_SESSIONS_DIR):
+        if not (name.startswith("doc_") and name.endswith(".json")):
+            continue
+        document_id = name[len("doc_"):-len(".json")]
+        if not os.path.exists(os.path.join(_PDF_CACHE_DIR, f"{document_id}.pdf")):
+            continue
+        path = os.path.join(_SESSIONS_DIR, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                saved = json.load(f)
+        except Exception:
+            continue
+        items.append({
+            "document_id": document_id,
+            "topic": saved.get("topic") or "Untitled",
+            "familiarity": saved.get("familiarity", "high_school"),
+            "content_files": saved.get("content_files", []),
+            "node_count": len(saved.get("nodes", [])),
+            "updated_at": os.path.getmtime(path),
+        })
+    items.sort(key=lambda x: x["updated_at"], reverse=True)
+    return {"items": items}
+
+
+class ResumeHistoryRequest(BaseModel):
+    document_id: str
+
+
+@router.post("/history/resume")
+async def resume_history(req: ResumeHistoryRequest, background_tasks: BackgroundTasks):
+    """Restore a past document as the active upload, re-chunk it under a fresh session,
+    and hand back its already-known curriculum tree — no LLM tree regeneration needed.
+    """
+    doc_json_path = os.path.join(_SESSIONS_DIR, f"doc_{req.document_id}.json")
+    pdf_path = os.path.join(_PDF_CACHE_DIR, f"{req.document_id}.pdf")
+    if not os.path.exists(doc_json_path) or not os.path.exists(pdf_path):
+        raise HTTPException(404, "That session's material is no longer available.")
+
+    with open(doc_json_path, encoding="utf-8") as f:
+        saved = json.load(f)
+    with open(pdf_path, "rb") as f:
+        content = f.read()
+    filename = (saved.get("content_files") or [f"{req.document_id}.pdf"])[0]
+
+    # Single-document-per-session model: resuming replaces whatever is currently active.
+    if os.path.isdir(_UPLOADS_DIR):
+        shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
+    os.makedirs(_UPLOADS_DIR, exist_ok=True)
+    with open(os.path.join(_UPLOADS_DIR, filename), "wb") as fh:
+        fh.write(content)
+
+    session_id = str(uuid.uuid4())
+    set_ingest_status(session_id, "chunking")
+    db = get_db()
+
+    def _chunk_all():
+        try:
+            total = ingest_file(
+                content, filename, LIBRARY_COLLECTION, db=db,
+                skip_if_indexed=False, session_id=session_id,
+            )
+            set_ingest_status(session_id, "ready" if total > 0 else "error")
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception(
+                "Resume chunking failed for session %s", session_id
+            )
+            set_ingest_status(session_id, "error")
+
+    background_tasks.add_task(_chunk_all)
+
+    # Prefer the graph cache (has real edges); fall back to synthesizing edges from
+    # parent_id on the committed nodes if that cache is somehow missing.
+    graph_cache = get_graph_manager().load_doc_graph(req.document_id)
+    if graph_cache:
+        nodes, edges = graph_cache
+    else:
+        nodes = [NodeData(**n) for n in saved.get("nodes", [])]
+        edges = [
+            {"source": n.parent_id, "target": n.id, "relationship": "prerequisite"}
+            for n in nodes if n.parent_id
+        ]
+    get_graph_manager().set_graph(session_id, nodes)
+
+    return {
+        "status": "ready",
+        "session_id": session_id,
+        "topic": saved.get("topic") or "Study Session",
+        "familiarity": saved.get("familiarity", "high_school"),
+        "nodes": [n.model_dump() for n in nodes],
+        "edges": edges,
+        "filenames": [filename],
+        "document_id": req.document_id,
+    }
 
 
 @router.get("/file/{filename}")

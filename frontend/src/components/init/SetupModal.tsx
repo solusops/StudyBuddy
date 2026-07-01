@@ -15,11 +15,33 @@ const KEY_FIELDS: { env: string; label: string; hint: string; required: boolean 
   { env: "YOUTUBE_API_KEY",  label: "YouTube",  hint: "AIza… (enables Deep Dive)", required: false },
 ]
 
+interface HistoryItem {
+  document_id: string
+  topic: string
+  familiarity: FamiliarityLevel
+  content_files: string[]
+  node_count: number
+  updated_at: number
+}
+
+function formatRelativeTime(unixSeconds: number): string {
+  const diffMs = Date.now() - unixSeconds * 1000
+  const mins = Math.floor(diffMs / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hours = Math.floor(mins / 60)
+  if (hours < 24) return `${hours}h ago`
+  const days = Math.floor(hours / 24)
+  if (days < 30) return `${days}d ago`
+  return new Date(unixSeconds * 1000).toLocaleDateString()
+}
+
 interface Props {
   onSessionReady: (session: AppSession) => void
 }
 
 export function SetupModal({ onSessionReady }: Props) {
+  const [activeTab, setActiveTab] = useState<"upload" | "history">("upload")
   const [topic, setTopic] = useState(() => localStorage.getItem("sb_topic") || "")
   const [familiarity, setFamiliarity] = useState<FamiliarityLevel>(() => (localStorage.getItem("sb_familiarity") as FamiliarityLevel) || "high_school")
   const [knowledgeMode, setKnowledgeMode] = useState<"content_only" | "net_support">(() => (localStorage.getItem("sb_knowledgeMode") as "content_only" | "net_support") || "content_only")
@@ -30,6 +52,12 @@ export function SetupModal({ onSessionReady }: Props) {
   const [error, setError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [existingFiles, setExistingFiles] = useState<string[]>([])
+
+  // ── Session history state ────────────────────────────────────────────
+  const [history, setHistory] = useState<HistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState("")
+  const [resumingId, setResumingId] = useState<string | null>(null)
 
   // ── API Keys state ──────────────────────────────────────────────────
   const [keysOpen, setKeysOpen] = useState(false)
@@ -78,6 +106,49 @@ export function SetupModal({ onSessionReady }: Props) {
       })
       .catch(() => {})
   }, [backendReady])
+
+  // Load session history when the tab opens (backend must be up).
+  useEffect(() => {
+    if (activeTab !== "history" || !backendReady) return
+    setHistoryLoading(true)
+    setHistoryError("")
+    fetch("/library/history")
+      .then((r) => r.json())
+      .then((data) => setHistory(data.items || []))
+      .catch(() => setHistoryError("Couldn't load past sessions."))
+      .finally(() => setHistoryLoading(false))
+  }, [activeTab, backendReady])
+
+  const resumeFromHistory = async (documentId: string) => {
+    setResumingId(documentId)
+    setHistoryError("")
+    try {
+      const resp = await fetch("/library/history/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document_id: documentId }),
+      })
+      if (!resp.ok) {
+        const e = await resp.json()
+        throw new Error(e.detail || "Failed to resume that session")
+      }
+      const { session_id, topic: resumedTopic, familiarity: resumedFamiliarity, nodes, edges, filenames, document_id } = await resp.json()
+      onSessionReady({
+        sessionId: session_id,
+        topic: resumedTopic,
+        familiarity: resumedFamiliarity,
+        knowledgeMode,
+        nodes,
+        edges: edges ?? [],
+        contentFiles: filenames || [],
+        documentId: document_id,
+      })
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setResumingId(null)
+    }
+  }
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return
@@ -230,6 +301,89 @@ export function SetupModal({ onSessionReady }: Props) {
           </p>
         </div>
 
+        {/* Tabs */}
+        <div style={{ display: "flex", gap: 4, borderBottom: "1px solid #E8E0D5" }}>
+          {([
+            { id: "upload" as const, label: "New Upload" },
+            { id: "history" as const, label: "Session History" },
+          ]).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setActiveTab(t.id)}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom: activeTab === t.id ? "2px solid #1A3557" : "2px solid transparent",
+                color: activeTab === t.id ? "#1A3557" : "#9CA3AF",
+                fontWeight: activeTab === t.id ? 700 : 500,
+                fontSize: 15,
+                padding: "8px 4px",
+                marginBottom: -1,
+                cursor: "pointer",
+                fontFamily: "'Libre Caslon Text', Georgia, serif",
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "history" ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, minHeight: 200 }}>
+            {historyLoading && (
+              <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>Loading your past sessions…</p>
+            )}
+            {historyError && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{historyError}</p>}
+            {!historyLoading && !historyError && history.length === 0 && (
+              <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>
+                No past sessions yet — study something and hit Commit to save your progress here.
+              </p>
+            )}
+            {history.map((item) => (
+              <button
+                key={item.document_id}
+                onClick={() => resumeFromHistory(item.document_id)}
+                disabled={resumingId !== null}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                  textAlign: "left",
+                  background: "#FDFCFA",
+                  border: "1px solid #E8E0D5",
+                  borderRadius: 12,
+                  padding: "14px 16px",
+                  cursor: resumingId !== null ? "wait" : "pointer",
+                  opacity: resumingId !== null && resumingId !== item.document_id ? 0.5 : 1,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                  <span style={{ fontSize: 16, fontWeight: 700, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
+                    {resumingId === item.document_id ? "Resuming…" : item.topic}
+                  </span>
+                  <span style={{ fontSize: 12, color: "#9CA3AF", flexShrink: 0, whiteSpace: "nowrap" }}>
+                    {formatRelativeTime(item.updated_at)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, color: "#1A3557", background: "#EEF3F8",
+                    borderRadius: 20, padding: "2px 10px",
+                  }}>
+                    {FAMILIARITY_OPTIONS.find((o) => o.value === item.familiarity)?.label ?? item.familiarity}
+                  </span>
+                  <span style={{ fontSize: 13, color: "#6B7280" }}>{item.node_count} concepts</span>
+                </div>
+                {item.content_files.length > 0 && (
+                  <span style={{ fontSize: 13, color: "#9CA3AF", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    📄 {item.content_files.join(", ")}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        ) : (
+        <>
         {/* Existing library — quick continue */}
         {existingFiles.length > 0 && files.length === 0 && (
           <div style={{
@@ -437,6 +591,8 @@ export function SetupModal({ onSessionReady }: Props) {
               ? "Connecting to backend…"
               : "Start Studying →"}
         </button>
+        </>
+        )}
       </div>
 
       {/* ── API Keys — bottom center toggle ──────────────────────────── */}

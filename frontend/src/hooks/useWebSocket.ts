@@ -14,7 +14,7 @@ const WS_BASE = window.location.protocol === "file:"
 export function useWebSocket(sessionId: string | null) {
   const ws = useRef<WebSocket | null>(null)
   const pending = useRef<string[]>([])
-  const { applyNodePatch, addNode, addEdge, setNodeProgress, setAssessment } = useGraphStore()
+  const { applyNodePatch, addNode, addEdge, setNodeProgress, setAssessment, replaceGraphData } = useGraphStore()
   const {
     setLesson,
     setVisual,
@@ -109,6 +109,11 @@ export function useWebSocket(sessionId: string | null) {
         case "GRAPH_EDGE_ADDED": {
           const e = msg.data as { source: string; target: string; relationship?: string }
           addEdge(e.source, e.target, e.relationship)
+          break
+        }
+        case "GRAPH_CLEANUP_DONE": {
+          const payload = msg.data as { nodes: NodeData[]; edges: { source: string; target: string; relationship?: string }[] }
+          replaceGraphData(payload.nodes, payload.edges)
           break
         }
         case "GRAPH_BUILD_DONE":

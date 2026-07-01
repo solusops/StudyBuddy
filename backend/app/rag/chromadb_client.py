@@ -11,12 +11,15 @@ _FILE_INDEX_COLLECTION = "file-index"
 class ChromaDBClient:
     """In-memory ChromaDB wrapper for the web demo deployment.
 
-    State is ephemeral — lost on process restart. Files are deduplicated by
-    SHA-256 content hash within a single process lifetime.
+    State is persistent across process restarts. Files are deduplicated by
+    SHA-256 content hash.
     """
 
     def __init__(self, embedder: Optional[Embedder] = None) -> None:
-        self._client = chromadb.EphemeralClient()
+        import os
+        db_path = os.path.expanduser("~/.studybuddy/chroma")
+        os.makedirs(db_path, exist_ok=True)
+        self._client = chromadb.PersistentClient(path=db_path)
         self.embedder = embedder or Embedder()
 
     # ------------------------------------------------------------------ #

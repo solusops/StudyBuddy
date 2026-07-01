@@ -20,6 +20,7 @@ interface GraphStore {
   nodeProgress: Record<string, NodeProgress>
   assessments: Record<string, NodeAssessment>
   setGraph: (nodes: Node<NodeData>[], edges: Edge[]) => void
+  replaceGraphData: (nodes: NodeData[], edges: { source: string; target: string; relationship?: string }[]) => void
   addNode: (data: NodeData) => void
   addEdge: (source: string, target: string, relationship?: string) => void
   applyNodePatch: (patch: NodePatch) => void
@@ -45,6 +46,24 @@ export const useGraphStore = create<GraphStore>((set) => ({
   assessments: {},
 
   setGraph: (nodes, edges) => set({ nodes, edges }),
+
+  replaceGraphData: (rawNodes, rawEdges) =>
+    set(() => {
+      const nodes = rawNodes.map((data, i) => ({
+        id: data.id,
+        type: "concept",
+        position: { x: 0, y: 0 },
+        data: { ...data, _animIndex: i },
+      }))
+      const edges = rawEdges.map((e) => ({
+        id: `${e.source}-${e.target}`,
+        source: e.source,
+        target: e.target,
+        type: "smoothstep",
+        data: { relationship: e.relationship || "prerequisite" },
+      }))
+      return { nodes, edges }
+    }),
 
   setNodeProgress: (list) =>
     set(() => {

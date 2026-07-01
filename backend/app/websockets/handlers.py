@@ -365,8 +365,13 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
 async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, document_id: str = "") -> None:
     """Root-first, then parallel section expansion. Streams each node/edge as it resolves.
 
-    If a graph was already built for this document, it is REPLAYED from cache (no LLM
-    calls). Falls back to a single-call tree if the streaming path fails.
+    Deliberately NOT a single call over all documents' full structure: with many uploaded
+    PDFs that concatenated context would blow past the prompt budget and produce a shallow,
+    lossy tree. Each section's expand call instead gets its own document's full structure,
+    scaling with document count. To stop that parallelism from inventing the same subtopic
+    under two different sections, each section is told what its siblings already cover.
+
+    Falls back to a single-call tree if the streaming path fails.
     """
     loop = asyncio.get_event_loop()
 
@@ -421,10 +426,25 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             edges.append(edge)
             await _cm.send(session_id, "GRAPH_EDGE_ADDED", edge)
 
+        # All section labels, so expand_section can tell the model what its siblings
+        # already own (semantic overlap, e.g. "AdaMax" vs "AdaMax Variant" — not just
+        # exact-string dupes) — WITHOUT concatenating every section's full document
+        # context into one call, which is what makes this still scale to many PDFs.
+        all_section_labels = [s.label for s in rs.sections]
+
+        # Sections still expand concurrently (asyncio.gather) — sibling-awareness reduces
+        # overlap but can't fully eliminate it, since a section can't see its siblings'
+        # ACTUAL children (not yet generated) while it runs. Exact-label dedup below is a
+        # last-resort safety net for the case sibling-awareness misses.
+        seen_labels: set[str] = {root.label.strip().lower()}
+        seen_labels.update(s.label.strip().lower() for s in rs.sections)
+
         async def expand(sn: NodeData) -> tuple:
+            siblings = [lbl for lbl in all_section_labels if lbl != sn.label]
             try:
                 exp = await loop.run_in_executor(
-                    None, _get_brain().expand_section, sn.label, section_struct.get(sn.id, structure), familiarity
+                    None, _get_brain().expand_section, sn.label, section_struct.get(sn.id, structure),
+                    familiarity, siblings,
                 )
                 children = exp.children
             except Exception as e:
@@ -432,8 +452,14 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
                 children = []
             out_nodes: list[NodeData] = []
             out_edges: list = []
-            for j, ch in enumerate(children):
-                cid = f"{sn.id}c{j + 1}"
+            next_idx = 1
+            for ch in children:
+                norm_label = ch.label.strip().lower()
+                if norm_label in seen_labels:
+                    continue  # already covered under another section — don't duplicate
+                seen_labels.add(norm_label)
+                cid = f"{sn.id}c{next_idx}"
+                next_idx += 1
                 cn = NodeData(
                     id=cid, label=ch.label, description=ch.description, depth=sn.depth + 1,
                     complexity=ch.complexity, parent_id=sn.id, status="ACTIVE",
@@ -451,6 +477,18 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         for child_nodes, child_edges in results:
             nodes.extend(child_nodes)
             edges.extend(child_edges)
+
+        # Run post-generation cleanup pass to merge semantic duplicates
+        try:
+            nodes, edges = await loop.run_in_executor(
+                None, _get_brain().cleanup_curriculum, nodes, edges
+            )
+            await _cm.send(session_id, "GRAPH_CLEANUP_DONE", {
+                "nodes": [n.model_dump() for n in nodes],
+                "edges": edges
+            })
+        except Exception as cleanup_err:
+            print("GRAPH_CLEANUP failed, falling back to raw streamed graph:", cleanup_err)
 
         _graph_mgr.set_graph(session_id, nodes)
         _graph_mgr.save_doc_graph(document_id, nodes, edges)  # persist for reuse across sessions
@@ -640,6 +678,13 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 selection_prefix += f"Surrounding context:\n{surrounding_context[:4000]}\n"
             selection_prefix += "\n"
 
+        # The model's training data has a stale cutoff and will confidently hallucinate
+        # "today's date" (and reason about relative time — "this year", "recently") from
+        # it unless told the truth directly. The backend knows the real date for free —
+        # no need to burn a web_search call or leave it to the model's guesswork.
+        import datetime as _dt
+        _today_note = f"Today's date is {_dt.date.today().strftime('%A, %B %d, %Y')}.\n\n"
+
         _CHAT_FORMATTING = (
             "Formatting:\n"
             "- Write math in LaTeX: inline $...$ and display $$...$$.\n"
@@ -665,6 +710,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 "they uploaded. Be genuinely helpful and substantive — explain, define, give intuition, "
                 "analogies, and worked reasoning. Tailor the depth to the "
                 f"{familiarity} level.\n\n"
+                f"{_today_note}"
                 f"{selection_prefix}"
                 "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. When the "
                 "student's question involves a fact, definition, dataset, statistic, or claim that is "
@@ -740,6 +786,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             system_msg = (
                 "You are Study Buddy, helping a student understand a paper they uploaded, at the "
                 f"{familiarity} level.\n\n"
+                f"{_today_note}"
                 f"{selection_prefix}"
                 "Answer using ONLY the SOURCE MATERIAL below. Cite inline like [Source: <label>]. "
                 "If the material does not contain the answer, say so plainly and point to the nearest "

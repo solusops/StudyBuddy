@@ -20,7 +20,9 @@ from pydantic import BaseModel, ValidationError
 from app.agents.cerebras_errors import CerebrasError, CerebrasErrorKind, classify_error
 
 MODEL_ID = "gemma-4-31b"
-_cerebras_semaphore = threading.Semaphore(5)
+_deployment_env = os.getenv("DEPLOYMENT_ENV", "desktop")
+_cerebras_concurrency = 5 if _deployment_env == "demo" else 50
+_cerebras_semaphore = threading.Semaphore(_cerebras_concurrency)
 
 
 class CerebrasClient:

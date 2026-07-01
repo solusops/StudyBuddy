@@ -33,7 +33,7 @@ Adopt a complexity level appropriate for a {level} student.
 
 First, check if the term/passage is discussed in the provided Source material.
 - If it IS discussed in the Source material, explain it using the Source material, citing inline with [Source: X, chunk N].
-- If it IS NOT discussed or lacks key details in the Source material, use the Web Source material to explain it, citing inline with [Web: Source Title](url).
+- If it IS NOT discussed or lacks key details in the Source material, use the Web Source material to explain it. You MUST use proper markdown hypertext links for web citations, formatted exactly as: [Source Title](url). Do NOT use brackets like [Web: Title, url].
 If both contain useful info, synthesize them, keeping citations clear.
 
 Structure your response exactly as:
