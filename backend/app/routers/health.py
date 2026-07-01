@@ -25,7 +25,9 @@ def _get_client() -> CerebrasClient:
 
 @router.get("/health")
 def health():
-    return _get_client().get_health()
+    health_data = _get_client().get_health()
+    health_data["deployment_env"] = os.getenv("DEPLOYMENT_ENV", "desktop")
+    return health_data
 
 
 @router.get("/keys")
