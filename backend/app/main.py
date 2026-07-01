@@ -47,6 +47,15 @@ async def lifespan(app: FastAPI):
         cognee.config.system_root_directory(f"{root}/system")
         from cognee.infrastructure.databases.relational.create_db_and_tables import create_db_and_tables
         await create_db_and_tables()
+
+        # cognee.remember(..., session_id=...) only ever writes to the session
+        # cache -> it never creates the target dataset, and cognee.improve()
+        # requires the dataset to already exist. Bootstrap it once so the very
+        # first push_session()/flush_session() call in student_memory.py has
+        # somewhere to land instead of failing with "Dataset not found".
+        existing = await cognee.datasets.list_datasets()
+        if not any(d.name == "student_memory" for d in existing):
+            await cognee.add("Student memory dataset initialized.", dataset_name="student_memory")
     except Exception as e:
         print("Cognee setup error:", e)
     yield

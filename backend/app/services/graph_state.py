@@ -110,3 +110,11 @@ class GraphStateManager:
             return nodes, data.get("edges", [])
         except Exception:
             return None
+
+    def clear_all_doc_graphs(self) -> None:
+        """Wipe every cached doc_*.json graph -> used by 'Start Fresh' so a
+        re-uploaded PDF regenerates its curriculum tree instead of replaying
+        whatever was cached for that file's content hash."""
+        for name in os.listdir(_GRAPH_DIR):
+            if name.startswith("doc_") and name.endswith(".json"):
+                os.remove(os.path.join(_GRAPH_DIR, name))

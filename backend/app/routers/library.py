@@ -293,9 +293,21 @@ async def upload_and_start(
 
 @router.post("/clear")
 def clear_library():
-    """Wipe the uploaded document so /library/status reports unconfigured."""
+    """Wipe the uploaded document so /library/status reports unconfigured.
+
+    Also wipes every cached doc_*.json curriculum graph. The graph cache is
+    keyed by a content hash of the uploaded file(s) (see document_id in
+    upload_and_start below), so re-uploading the same PDF after "Start Fresh"
+    would otherwise silently replay the old graph and topic name instead of
+    regenerating -> "fresh" has to mean no cached curriculum tree survives.
+    """
     if os.path.isdir(_UPLOADS_DIR):
         shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
+    get_graph_manager().clear_all_doc_graphs()
+    if os.path.isdir(_SESSIONS_DIR):
+        for name in os.listdir(_SESSIONS_DIR):
+            if name.startswith("doc_") and name.endswith(".json"):
+                os.remove(os.path.join(_SESSIONS_DIR, name))
     return {"status": "cleared"}
 
 

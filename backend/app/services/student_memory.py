@@ -1,9 +1,10 @@
 """Cross-session student memory backed by Cognee + LanceDB.
 
-Write path: push_session() → cognee.remember() with session_id (cache) →
-            cognee.improve() at END_SESSION (flush to graph, fire-and-forget).
-Read path:  query_prior_knowledge() → cognee.search(CHUNKS) -> pure vector
-            search, no LLM call, returns raw text for BrainAgent context.
+Write path: push_session() → cognee.remember() with session_id (cache, no
+            graph build) → flush_session() → cognee.improve() at END_SESSION
+            (flush session cache to permanent graph, fire-and-forget).
+Read path:  query_prior_knowledge() → cognee.recall(CHUNKS) with session_id,
+            so it also sees the current session's not-yet-flushed cache.
 """
 from typing import List
 
@@ -90,30 +91,42 @@ class StudentMemoryService:
 
             summary = "\n".join(lines)
 
-            # Cache to Cognee session (no graph build yet)
-            await cognee.add(
+            # Cache to Cognee's session store only -> cheap, no graph build.
+            # self_improvement=False since flush_session() does the (expensive)
+            # graph build explicitly, once, at END_SESSION.
+            await cognee.remember(
                 summary,
-                dataset_name="student_memory"
+                dataset_name="student_memory",
+                session_id=session_id,
+                self_improvement=False,
             )
-            # Flush session cache to permanent graph
-            await cognee.cognify(datasets=["student_memory"])
         except Exception as exc:
             import logging
             logging.getLogger(__name__).error("push_session failed: %s", exc)
 
-    async def query_prior_knowledge(self, topic: str) -> str:
+    async def flush_session(self, session_id: str) -> None:
+        import cognee
+        try:
+            await cognee.improve(dataset="student_memory", session_ids=[session_id])
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("flush_session failed: %s", exc)
+
+    async def query_prior_knowledge(self, topic: str, session_id: str = "") -> str:
         import cognee
         from cognee import SearchType
         try:
-            results = await cognee.search(
+            results = await cognee.recall(
                 query_text=f"student name personal details struggles weaknesses mastery {topic}",
                 query_type=SearchType.CHUNKS,
                 datasets=["student_memory"],
+                session_id=session_id or None,
                 top_k=8,
             )
             if not results:
                 return ""
-            chunks = [str(r) for r in results if r]
+            chunks = [_extract_text(r) for r in results if r]
+            chunks = [c for c in chunks if c]
             if not chunks:
                 return ""
             return f'Prior learning context for "{topic}":\n' + "\n".join(chunks[:5])
@@ -125,6 +138,10 @@ class StudentMemoryService:
             import logging
             logging.getLogger(__name__).warning("query_prior_knowledge failed: %s", exc)
             return ""
+
+
+def _extract_text(item) -> str:
+    return getattr(item, "text", None) or getattr(item, "content", None) or getattr(item, "answer", None) or str(item)
 
 
 def _infer_classification(score_patch: dict) -> str:

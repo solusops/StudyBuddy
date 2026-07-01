@@ -3,7 +3,18 @@
     "allow": [
       "Bash(uv run --directory backend python -c ' *)",
       "Bash(rtk uv *)",
-      "Bash(rtk vitest *)"
+      "Bash(rtk vitest *)",
+      "Bash(grep -v \"^\\\\[2m\\\\|^$\")",
+      "Bash(grep -v \"^\\\\[2m\\\\|Uninstalled\\\\|Installed\\\\|warning:\\\\|^$\")",
+      "Bash(uv run *)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(rtk curl *)",
+      "Bash(rtk find *)",
+      "Bash(rtk ps *)",
+      "Read(//c/Users/SystemSu/AppData/Local/Temp/**)",
+      "Bash(python -c ' *)",
+      "Bash(grep -v \"^\\\\[2m\\\\|Uninstalled\\\\|Installed\\\\|warning:\\\\|different filesystems\\\\|link-mode\\\\|^$\")",
+      "Bash(powershell -NoProfile -Command \"Get-NetTCPConnection -LocalPort 8765,8766,8767 -ErrorAction SilentlyContinue | Select-Object -Property LocalPort,OwningProcess\")"
     ]
   }
 }

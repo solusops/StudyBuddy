@@ -41,6 +41,12 @@ _memory = StudentMemoryService()
 # Ephemeral in-memory cache to bridge the gap while Cognee embeds summaries in the background
 _recent_session_summaries: Dict[str, List[str]] = {}
 
+
+async def _push_and_flush_memory(session_id, topic, journal, patches, session_summary) -> None:
+    """Cache the session summary, then flush the session's cache into the permanent graph."""
+    await _memory.push_session(session_id, topic, journal, patches, session_summary)
+    await _memory.flush_session(session_id)
+
 _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
 _tutor: TutorAgent | None = None
@@ -955,8 +961,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         try:
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
-            student_profile = await _memory.query_prior_knowledge(node_label)
-            
+            student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
+
             recent_summaries = _recent_session_summaries.get(session_id, [])
             if recent_summaries:
                 student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
@@ -989,7 +995,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         try:
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
-            student_profile = await _memory.query_prior_knowledge(node_label)
+            student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
             recent_summaries = _recent_session_summaries.get(session_id, [])
             if recent_summaries:
                 student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
@@ -1043,7 +1049,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 try:
                     node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
                     chunks = await _get_chunks(session_id, node_label, n=5)
-                    student_profile = await _memory.query_prior_knowledge(node_label)
+                    student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
                     recent_summaries = _recent_session_summaries.get(session_id, [])
                     if recent_summaries:
                         student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
@@ -1109,9 +1115,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             # Persist the reasoned snapshot to the long-running trajectory memory.
             _local_mem.append_trajectory(document_id, payload)
         
-        # Push to Cognee (await so UI shows 'processing' until it completes)
+        # Push to Cognee, cache + flush to the permanent graph (await so UI
+        # shows 'processing' until it completes -> this is the only student
+        # save action wired up in the frontend, so it must fully persist).
         journal = _journal.get_session(session_id)
-        await _memory.push_session(session_id, data.get("topic", ""), journal, patches, session_summary)
+        await _push_and_flush_memory(session_id, data.get("topic", ""), journal, patches, session_summary)
         _recent_session_summaries.setdefault(session_id, []).append(session_summary)
 
         await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
@@ -1251,10 +1259,10 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             "SESSION_COMPLETE",
             {"markdown": markdown, "patches": [p.model_dump() for p in patches]},
         )
-        # Fire-and-forget Cognee push
+        # Fire-and-forget Cognee push: cache the summary, then flush to the permanent graph
         asyncio.create_task(
-            _memory.push_session(session_id, data.get("topic", ""), journal, patches, session_summary)
+            _push_and_flush_memory(session_id, data.get("topic", ""), journal, patches, session_summary)
         )
-        
+
         # Bridge the background processing gap for the current session
         _recent_session_summaries.setdefault(session_id, []).append(session_summary)

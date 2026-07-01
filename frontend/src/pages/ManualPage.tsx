@@ -219,6 +219,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         session_id: sessionId,
+        document_id: documentId || "",
         topic,
         familiarity: "high_school",
         nodes: nodes.map((n) => n.data),
