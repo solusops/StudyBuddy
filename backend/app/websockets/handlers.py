@@ -206,6 +206,21 @@ def _session_documents() -> list[dict]:
     return docs
 
 
+def _is_valid_graph(nodes: list[NodeData]) -> bool:
+    """A well-formed curriculum tree has exactly one root (depth=0, parent_id=None) and
+    every other node's parent_id resolves to another node in the same set. Guards against
+    replaying/serving a malformed graph — e.g. a stale cache from an older extraction bug,
+    or an LLM fallback response that didn't follow the parent_id instructions — which would
+    otherwise render as disconnected, unlinked boxes with no tree structure.
+    """
+    if not nodes:
+        return False
+    ids = {n.id for n in nodes}
+    if not any(n.depth == 0 and not n.parent_id for n in nodes):
+        return False
+    return all(n.depth == 0 or n.parent_id in ids for n in nodes)
+
+
 def _safe_get_node(session_id: str, node_id: str) -> NodeData:
     try:
         return _graph_mgr.get_node(session_id, node_id)
@@ -357,7 +372,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
 
     # Reuse: a graph already exists for this PDF → replay it instead of regenerating.
     cached = _graph_mgr.load_doc_graph(document_id)
-    if cached:
+    if cached and _is_valid_graph(cached[0]):
         await _replay_doc_graph(session_id, cached[0], cached[1])
         return
 
@@ -447,6 +462,11 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             nodes, edges = await loop.run_in_executor(
                 None, _get_brain().extract_curriculum_from_documents, overviews, familiarity, topic, ""
             )
+            if not _is_valid_graph(nodes):
+                print("BUILD_GRAPH fallback produced a malformed tree (bad parent_id refs), discarding:",
+                      [(n.id, n.depth, n.parent_id) for n in nodes])
+                await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
+                return
             _graph_mgr.set_graph(session_id, nodes)
             _graph_mgr.save_doc_graph(document_id, nodes, edges)
             for n in nodes:

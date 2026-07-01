@@ -83,9 +83,20 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
     try:
         while True:
             msg = await ws.receive_json()
-            await handle_event(session_id, msg.get("type", ""), msg.get("data", {}))
+            event_type = msg.get("type", "")
+            try:
+                await handle_event(session_id, event_type, msg.get("data", {}))
+            except Exception:
+                # A single bad event (e.g. a transient LLM/web-search failure) must not kill
+                # the whole connection — the student would see chat/lesson generation just
+                # silently stop with no way to retry without reloading.
+                import logging
+                logging.getLogger(__name__).exception(
+                    "handle_event failed for session %s event %s", session_id, event_type
+                )
+                await cm.send(session_id, "ERROR", {
+                    "event_type": event_type,
+                    "message": "Something went wrong processing that — please try again.",
+                })
     except (WebSocketDisconnect, RuntimeError):
         cm.disconnect(session_id)
-    except Exception:
-        cm.disconnect(session_id)
-        raise

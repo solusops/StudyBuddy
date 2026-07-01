@@ -167,6 +167,9 @@ export function useWebSocket(sessionId: string | null) {
         case "REPORT_SECTION_VISUAL":
           window.dispatchEvent(new CustomEvent("report-section-visual", { detail: msg.data }))
           break
+        case "ERROR":
+          window.dispatchEvent(new CustomEvent("ws-error", { detail: msg.data }))
+          break
       }
     }
 

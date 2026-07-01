@@ -56,6 +56,23 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
     return () => window.removeEventListener("chat-tool", onTool)
   }, [])
 
+  // A backend hiccup (e.g. a transient web-search/LLM failure) no longer kills the
+  // connection, but this tool's local "searching" indicator and any in-flight turn
+  // still need to be unstuck and the student told what happened.
+  useEffect(() => {
+    const onError = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { event_type?: string; message?: string }
+      if (detail?.event_type !== "CHAT_TURN") return
+      setWebSearching(false)
+      addChatMessage({
+        role: "assistant",
+        content: `_${detail.message || "Something went wrong — please try again."}_`,
+      })
+    }
+    window.addEventListener("ws-error", onError)
+    return () => window.removeEventListener("ws-error", onError)
+  }, [addChatMessage])
+
   // Clear the indicator once the answer starts streaming or a new message commits.
   useEffect(() => {
     if (streamingChat || chatHistory.length) setWebSearching(false)
