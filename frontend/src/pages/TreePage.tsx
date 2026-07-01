@@ -18,10 +18,11 @@ interface Props {
   session: AppSession | null
   sendEvent: (type: string, data?: Record<string, unknown>) => void
   onBack: () => void
+  onStartStudying: () => void
   onNeedSetup: () => void
 }
 
-export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
+export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSetup }: Props) {
   const { nodes, setGraph } = useGraphStore()
   const { streamingLesson, lessonStreaming, lesson, lessonCache, lessonWebSources, setLesson, knowledgeMode, setActiveNode } = useSessionStore()
 
@@ -49,28 +50,28 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
     // Use explicit AI-generated edges if provided; fall back to children_ids
     const flowEdges: Edge[] = rawEdges?.length
       ? rawEdges.map((e) => ({
-          id: `${e.source}-${e.target}`,
-          source: e.source,
-          target: e.target,
-          type: "smoothstep",
-          data: { relationship: e.relationship },
-        }))
+        id: `${e.source}-${e.target}`,
+        source: e.source,
+        target: e.target,
+        type: "smoothstep",
+        data: { relationship: e.relationship },
+      }))
       : rawNodes.flatMap((n) =>
-          (n.children_ids ?? []).map((cid) => ({
-            id: `${n.id}-${cid}`,
-            source: n.id,
-            target: cid,
-            type: "smoothstep",
-          }))
-        )
+        (n.children_ids ?? []).map((cid) => ({
+          id: `${n.id}-${cid}`,
+          source: n.id,
+          target: cid,
+          type: "smoothstep",
+        }))
+      )
     setGraph(flowNodes, flowEdges)
   }
 
   // On first mount: restored session → seed nodes. Otherwise stream via BUILD_GRAPH,
-  // but ONLY when the store is empty — so navigating back to the tree doesn't wipe and
+  // but ONLY when the store is empty -> so navigating back to the tree doesn't wipe and
   // regenerate it. The backend reuses (replays) a graph already built for this PDF.
   useEffect(() => {
-    if (useGraphStore.getState().nodes.length > 0) return  // already populated — keep it
+    if (useGraphStore.getState().nodes.length > 0) return  // already populated -> keep it
     if (session?.nodes?.length) {
       applyGraph(session.nodes, session.edges)
     } else if (session?.sessionId) {
@@ -80,13 +81,13 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         document_id: session.documentId ?? "",
       })
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Refresh deterministic node progress (activity tally) on every visit to the graph.
   useEffect(() => {
     if (session?.sessionId) sendEvent("PROGRESS_REQUEST", {})
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleNodeClick = useCallback(
@@ -95,7 +96,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
       setActiveNode(id, label)
       const cached = lessonCache[id]
       if (cached) {
-        // Restore from cache — no WS round-trip, no token cost
+        // Restore from cache -> no WS round-trip, no token cost
         setLesson({ anchor: "", grounded_truth: cached, citations: [], visual_suggestion: "canvas" })
       } else {
         sendEvent("LEARN_NODE", {
@@ -111,7 +112,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
 
 
-  // Refine tree with student guidance — sends current graph as context
+  // Refine tree with student guidance -> sends current graph as context
   const refineTree = async () => {
     if (!refinementText.trim() || !session) return
     setRefineError("")
@@ -160,7 +161,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
   // Render lesson text with KaTeX math, bold, bullets, and citation stripping
   const renderLesson = (text: string) => {
-    // Strip [Source: X, chunk N] citations — internal metadata, not student-facing
+    // Strip [Source: X, chunk N] citations -> internal metadata, not student-facing
     const cleaned = text.replace(/\[Source:\s*[^\]]*\]/gi, "")
 
     return cleaned.split(/\n\n+/).map((para, pi) => {
@@ -181,7 +182,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
 
       return (
         <p key={pi} style={{ margin: "0 0 12px", lineHeight: 1.75 }}
-           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
+          dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
       )
     })
   }
@@ -220,7 +221,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         document_id: session?.documentId ?? "",
       }),
     })
-    // Persist full session state — nodes, edges, lessonCache — to localStorage
+    // Persist full session state -> nodes, edges, lessonCache -> to localStorage
     const toSave = {
       sessionId: session?.sessionId,
       topic: session?.topic ?? "Study Session",
@@ -271,7 +272,8 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         <button
           onClick={onBack}
           style={{ background: "transparent", color: "#1A3557", border: "none", cursor: "pointer", fontSize: 20, padding: "0 8px 0 0", lineHeight: 1 }}
-          aria-label="Back to reading"
+          aria-label="Back to Start"
+          title="Back to Start"
         >
           <ArrowLeft size={16} />
         </button>
@@ -281,7 +283,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
         <span style={{ color: "#9CA3AF", fontSize: 14 }}>
           Click a node to explore · edit its description · refine the whole tree below
         </span>
-        {/* Compile Report — amalgamates your notes across the paper into one document */}
+        {/* Compile Report -> amalgamates your notes across the paper into one document */}
         <button
           onClick={() => setShowReport(true)}
           title="Compile a report from your notes on this paper"
@@ -299,7 +301,7 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
           Compile Report
         </button>
 
-        {/* Evaluation — reasoned scores + learning trajectory */}
+        {/* Evaluation -> reasoned scores + learning trajectory */}
         <button
           onClick={() => setShowEval(true)}
           title="See reasoned mastery scores and your learning trajectory"
@@ -462,9 +464,9 @@ export function TreePage({ session, sendEvent, onBack, onNeedSetup }: Props) {
                 )}
               </div>
 
-              {/* Study tools shortcut — dynamic text based on progress */}
+              {/* Study tools shortcut -> dynamic text based on progress */}
               <button
-                onClick={onBack}
+                onClick={onStartStudying}
                 style={{
                   background: "transparent",
                   color: "#1A3557",

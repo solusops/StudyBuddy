@@ -7,6 +7,8 @@ import type { FamiliarityLevel, NodeData, KnowledgeEdge } from "./types"
 import { FloatingToolbar } from "./components/overlay/FloatingToolbar"
 import { useInteractionStore } from "./store/interactionStore"
 import { useSelectionGrow } from "./lib/growWords"
+import { useGraphStore } from "./store/graphStore"
+import { useSessionStore } from "./store/sessionStore"
 
 export type AppView = "setup" | "manual" | "tree"
 
@@ -27,7 +29,7 @@ export default function App() {
   const [session, setSession] = useState<AppSession | null>(null)
   const [checking, setChecking] = useState(true)
 
-  // Single WebSocket at App level — persists across view transitions
+  // Single WebSocket at App level -> persists across view transitions
   const { sendEvent } = useWebSocket(session?.sessionId ?? null)
   const setDocumentId = useInteractionStore((s) => s.setDocumentId)
   useSelectionGrow()  // word-grow feedback on selected text (chat + notes)
@@ -40,6 +42,10 @@ export default function App() {
   }, [])
 
   const handleSessionReady = (s: AppSession) => {
+    if (session?.sessionId !== s.sessionId) {
+      useGraphStore.getState().reset()
+      useSessionStore.getState().reset()
+    }
     setSession(s)
     localStorage.setItem("studybuddy_session", JSON.stringify(s))
     if (s.documentId) setDocumentId(s.documentId)
@@ -63,7 +69,8 @@ export default function App() {
       <TreePage
         session={session}
         sendEvent={sendEvent}
-        onBack={() => setView("manual")}
+        onBack={() => setView("setup")}
+        onStartStudying={() => setView("manual")}
         onNeedSetup={() => setView("setup")}
       />
     )

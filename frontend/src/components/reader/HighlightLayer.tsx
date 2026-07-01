@@ -71,7 +71,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
         zIndex: 10,
       }}
     >
-      {/* Committed annotations — pink and dashed */}
+      {/* Committed annotations -> pink and dashed */}
       {committedAnnotations.map((ann: CommittedAnnotation) =>
         ann.target_snippets
           .filter((s) => s.page_number === pageNumber)
@@ -127,7 +127,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
             ))
           )
       )}
-      {/* Live selection — hand-drawn yellow marker */}
+      {/* Live selection -> hand-drawn yellow marker */}
       {liveBoxes.map((box, i) => (
         <div
           key={`live-${i}`}
@@ -141,7 +141,7 @@ export function HighlightLayer({ pageNumber, pageRef }: Props) {
           }}
         />
       ))}
-      
+
       {/* Blinking Target overlay */}
       {blinkTarget && blinkTarget.page === pageNumber && blinkTarget.boxes.map((box, i) => (
         <div

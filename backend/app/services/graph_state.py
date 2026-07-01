@@ -1,4 +1,4 @@
-"""GraphStateManager — single source of truth for node state per session.
+"""GraphStateManager -> single source of truth for node state per session.
 
 The monotone non-decreasing score invariant is enforced HERE on the backend.
 The frontend enforces the same rule in graphStore.ts. Both must stay in sync.
@@ -84,7 +84,7 @@ class GraphStateManager:
             os.remove(p)
 
     # ------------------------------------------------------------------ #
-    # Document-keyed cache — reuse a built graph across sessions per PDF  #
+    # Document-keyed cache -> reuse a built graph across sessions per PDF  #
     # ------------------------------------------------------------------ #
 
     def _doc_path(self, document_id: str) -> str:

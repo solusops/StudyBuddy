@@ -2,7 +2,7 @@ from typing import List
 
 from chromadb.utils.embedding_functions.onnx_mini_lm_l6_v2 import ONNXMiniLM_L6_V2
 
-# ~40MB, loads in <1s, runs in C/ONNX — no Python GIL pressure
+# ~40MB, loads in <1s, runs in C/ONNX -> no Python GIL pressure
 _onnx_ef = ONNXMiniLM_L6_V2()
 
 

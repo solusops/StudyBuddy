@@ -1,14 +1,14 @@
 """WebSocket event dispatch table.
 
 Each event branch is self-contained. Adding a new event type means adding
-one elif block here — nothing else needs to change.
+one elif block here -> nothing else needs to change.
 
 Singletons (agents, services, db) are module-level so they survive across
 requests within one process lifetime.
 """
 import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from app.agents.brain_agent import BrainAgent
 from app.services.output_cache import OutputCache
@@ -31,12 +31,15 @@ from app.services.summary_writer import build_summary_markdown
 from app.services.scholar_service import fetch_top_papers
 from app.websockets.connection_manager import ConnectionManager
 
-# All singletons are lazy — nothing loads at import time so uvicorn binds
+# All singletons are lazy -> nothing loads at import time so uvicorn binds
 # to the port immediately. Models and clients initialise on first request.
 _cm = ConnectionManager()
 _graph_mgr = GraphStateManager()
 _journal = JournalService()
 _memory = StudentMemoryService()
+
+# Ephemeral in-memory cache to bridge the gap while Cognee embeds summaries in the background
+_recent_session_summaries: Dict[str, List[str]] = {}
 
 _db: ChromaDBClient | None = None
 _brain: BrainAgent | None = None
@@ -209,8 +212,8 @@ def _session_documents() -> list[dict]:
 def _is_valid_graph(nodes: list[NodeData]) -> bool:
     """A well-formed curriculum tree has exactly one root (depth=0, parent_id=None) and
     every other node's parent_id resolves to another node in the same set. Guards against
-    replaying/serving a malformed graph — e.g. a stale cache from an older extraction bug,
-    or an LLM fallback response that didn't follow the parent_id instructions — which would
+    replaying/serving a malformed graph -> e.g. a stale cache from an older extraction bug,
+    or an LLM fallback response that didn't follow the parent_id instructions -> which would
     otherwise render as disconnected, unlinked boxes with no tree structure.
     """
     if not nodes:
@@ -287,7 +290,7 @@ async def _compile_report(session_id: str, data: Dict[str, Any]) -> None:
     if edit_instruction and _local_mem.read_cluster(document_id):
         insights = [NoteInsight(**d) for d in _local_mem.read_cluster(document_id)]
     else:
-        # Fresh compile — clear any stale cluster for this PDF first.
+        # Fresh compile -> clear any stale cluster for this PDF first.
         _local_mem.flush_cluster(document_id)
         notes = _annotations.get_for_document(document_id) if document_id else []
         if not notes:
@@ -427,12 +430,12 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             await _cm.send(session_id, "GRAPH_EDGE_ADDED", edge)
 
         # All section labels, so expand_section can tell the model what its siblings
-        # already own (semantic overlap, e.g. "AdaMax" vs "AdaMax Variant" — not just
-        # exact-string dupes) — WITHOUT concatenating every section's full document
+        # already own (semantic overlap, e.g. "AdaMax" vs "AdaMax Variant" -> not just
+        # exact-string dupes) -> WITHOUT concatenating every section's full document
         # context into one call, which is what makes this still scale to many PDFs.
         all_section_labels = [s.label for s in rs.sections]
 
-        # Sections still expand concurrently (asyncio.gather) — sibling-awareness reduces
+        # Sections still expand concurrently (asyncio.gather) -> sibling-awareness reduces
         # overlap but can't fully eliminate it, since a section can't see its siblings'
         # ACTUAL children (not yet generated) while it runs. Exact-label dedup below is a
         # last-resort safety net for the case sibling-awareness misses.
@@ -456,7 +459,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             for ch in children:
                 norm_label = ch.label.strip().lower()
                 if norm_label in seen_labels:
-                    continue  # already covered under another section — don't duplicate
+                    continue  # already covered under another section -> don't duplicate
                 seen_labels.add(norm_label)
                 cid = f"{sn.id}c{next_idx}"
                 next_idx += 1
@@ -529,7 +532,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         # Multi-paper: scope retrieval to this node's source paper(s).
         chunks = await _get_chunks(session_id, query, n=5, document_ids=node.document_ids or None)
 
-        # If chunks are empty the background indexer may still be running — poll while it's
+        # If chunks are empty the background indexer may still be running -> poll while it's
         # genuinely in progress, but stop immediately once we know it finished (success or error)
         # rather than repeating a "still indexing" message that will never become true.
         if not chunks:
@@ -551,7 +554,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             status = _ingest_status.get(session_id, "unknown")
             if status == "error":
                 msg = (
-                    "_We couldn't index your document — it may be a scanned/image-only PDF "
+                    "_We couldn't index your document -> it may be a scanned/image-only PDF "
                     "with no readable text, or an unsupported format. Try re-uploading a "
                     "text-based PDF, DOCX, or TXT file._"
                 )
@@ -578,7 +581,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             tavily_results = await _wiki.search_tavily(data.get("node_label", node.label))
             if tavily_results:
                 web_context = "\n\n".join(
-                    f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}"
+                    f"[Web: {r.get('title')} -> {r.get('url')}]\n{r.get('content')}"
                     for r in tavily_results
                 )
         web_sources = []
@@ -617,7 +620,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _cache.put(cache_key, full_lesson)
             await _cm.send(session_id, "LESSON_DONE", {"visual_suggestion": "canvas", "web_sources": web_sources})
 
-    # ---- BUILD_GRAPH (parallel curriculum streaming — "fireworks") ------
+    # ---- BUILD_GRAPH (parallel curriculum streaming -> "fireworks") ------
     elif event_type == "BUILD_GRAPH":
         await _build_graph_streaming(
             session_id,
@@ -630,7 +633,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
     elif event_type == "REPORT_COMPILE":
         await _compile_report(session_id, data)
 
-    # ---- REPORT_CLOSE — flush the ephemeral per-PDF report memory cluster ----
+    # ---- REPORT_CLOSE -> flush the ephemeral per-PDF report memory cluster ----
     elif event_type == "REPORT_CLOSE":
         _local_mem.flush_cluster(data.get("document_id", ""))
 
@@ -679,8 +682,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             selection_prefix += "\n"
 
         # The model's training data has a stale cutoff and will confidently hallucinate
-        # "today's date" (and reason about relative time — "this year", "recently") from
-        # it unless told the truth directly. The backend knows the real date for free —
+        # "today's date" (and reason about relative time -> "this year", "recently") from
+        # it unless told the truth directly. The backend knows the real date for free ->
         # no need to burn a web_search call or leave it to the model's guesswork.
         import datetime as _dt
         _today_note = f"Today's date is {_dt.date.today().strftime('%A, %B %d, %Y')}.\n\n"
@@ -690,31 +693,31 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             "- Write math in LaTeX: inline $...$ and display $$...$$.\n"
             "- Use GitHub-style Markdown tables (a header row, then a |---|---| separator row).\n"
             "- For structural concepts you MAY add a ```mermaid fenced diagram. IMPORTANT: Mermaid "
-            "does NOT render math — use PLAIN-TEXT node labels only, with no $...$ and no backslash "
-            "commands (write 'theta', 'gradient of loss', 'nabla L' — never '$\\nabla \\ell$'). "
+            "does NOT render math -> use PLAIN-TEXT node labels only, with no $...$ and no backslash "
+            "commands (write 'theta', 'gradient of loss', 'nabla L' -> never '$\\nabla \\ell$'). "
             "ALWAYS wrap a node label in double quotes if it contains parentheses or symbols, "
             "e.g. B[\"Low Memory Cost: O(n)\"].\n"
             "- For concrete numeric data you MAY add a ```plotly fenced JSON spec "
-            "{\"data\":[...],\"layout\":{...}} (real numbers only — never invent data).\n\n"
+            "{\"data\":[...],\"layout\":{...}} (real numbers only -> never invent data).\n\n"
         )
 
         loop = asyncio.get_event_loop()
         full_response = ""
 
         if knowledge_mode == "net_support":
-            # Hybrid tutor: grounded in the source material OR the live web — never raw model
+            # Hybrid tutor: grounded in the source material OR the live web -> never raw model
             # weights for factual claims. Net Support widens the grounding to the web; it does
             # NOT license answering from memorized/parametric knowledge.
             system_msg = (
                 "You are Study Buddy, an expert research tutor helping a student understand a paper "
-                "they uploaded. Be genuinely helpful and substantive — explain, define, give intuition, "
+                "they uploaded. Be genuinely helpful and substantive -> explain, define, give intuition, "
                 "analogies, and worked reasoning. Tailor the depth to the "
                 f"{familiarity} level.\n\n"
                 f"{_today_note}"
                 f"{selection_prefix}"
                 "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. When the "
                 "student's question involves a fact, definition, dataset, statistic, or claim that is "
-                "NOT covered by the SOURCE MATERIAL, you MUST call the web_search tool to find it — "
+                "NOT covered by the SOURCE MATERIAL, you MUST call the web_search tool to find it -> "
                 "do NOT answer factual questions from your own training data. The only things you may "
                 "explain directly without a source are pure reasoning, intuition, analogies, or "
                 "restating/clarifying material that IS already in the SOURCE MATERIAL.\n\n"
@@ -770,14 +773,14 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                         args = {}
                     results = await _wiki.search_tavily(args.get("query", query or selection_text))
                     web_text = "\n\n".join(
-                        f"[Web: {r.get('title')} — {r.get('url')}]\n{r.get('content')}" for r in results
+                        f"[Web: {r.get('title')} -> {r.get('url')}]\n{r.get('content')}" for r in results
                     ) or "No web results found."
                     messages.append({"role": "tool", "tool_call_id": tc.id, "content": web_text})
                 async for token in _get_tutor()._client.stream_complete(messages):
                     full_response += token
                     await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
             else:
-                # No tool needed — the decision call already produced the full answer; replay as tokens.
+                # No tool needed -> the decision call already produced the full answer; replay as tokens.
                 full_response = decision.content or ""
                 for word in full_response.split(" "):
                     await _cm.send(session_id, "CHAT_TOKEN", {"token": word + " "})
@@ -790,7 +793,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 f"{selection_prefix}"
                 "Answer using ONLY the SOURCE MATERIAL below. Cite inline like [Source: <label>]. "
                 "If the material does not contain the answer, say so plainly and point to the nearest "
-                "relevant part — never fabricate facts or pull from outside knowledge.\n\n"
+                "relevant part -> never fabricate facts or pull from outside knowledge.\n\n"
                 f"{_CHAT_FORMATTING}"
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
@@ -953,6 +956,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
             student_profile = await _memory.query_prior_knowledge(node_label)
+            
+            recent_summaries = _recent_session_summaries.get(session_id, [])
+            if recent_summaries:
+                student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
+
             async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level, student_profile):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
@@ -1133,7 +1141,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             _cache.put(cache_key, full)
             await _cm.send(session_id, "WIKI_DONE", {})
 
-        # ---- Further Reading (OpenAlex) — only in net_support mode ----
+        # ---- Further Reading (OpenAlex) -> only in net_support mode ----
         if knowledge_mode == "net_support":
             try:
                 papers = await fetch_top_papers(selection_text, n=3)
@@ -1169,7 +1177,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         except Exception as e:
             print("Error classifying wiki visual:", e)
 
-    # ---- WIKI_VISUAL_GENERATE (Infinite Wiki — generate the offered visual on demand) ----
+    # ---- WIKI_VISUAL_GENERATE (Infinite Wiki -> generate the offered visual on demand) ----
     elif event_type == "WIKI_VISUAL_GENERATE":
         selection_text = data.get("selection_text", "")
         familiarity = data.get("familiarity", "high_school")
@@ -1233,5 +1241,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         )
         # Fire-and-forget Cognee push
         asyncio.create_task(
-            _memory.push_session(session_id, data.get("topic", ""), journal, patches)
+            _memory.push_session(session_id, data.get("topic", ""), journal, patches, session_summary)
         )
+        
+        # Bridge the background processing gap for the current session
+        _recent_session_summaries.setdefault(session_id, []).append(session_summary)

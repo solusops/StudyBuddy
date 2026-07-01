@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-Study Buddy is a **local-first Electron desktop app** — an agentic study partner. Gemma 4 on Cerebras acts as a Cognitive Translator: it organises and rephrases student-uploaded content, never generates facts from its own weights. Students must upload their own material. The app ships as a native desktop executable; Python FastAPI runs as a child process spawned by Electron.
+Study Buddy is a **local-first Electron desktop app** -> an agentic study partner. Gemma 4 on Cerebras acts as a Cognitive Translator: it organises and rephrases student-uploaded content, never generates facts from its own weights. Students must upload their own material. The app ships as a native desktop executable; Python FastAPI runs as a child process spawned by Electron.
 
 ---
 
@@ -44,27 +44,27 @@ cd frontend && npx vitest run src/store/__tests__/       # single dir
 
 Three processes at runtime:
 
-- **Electron main** (`electron/main.js`) — spawns Python on port 8765, owns the BrowserWindow, exposes file-system IPC via `contextBridge`
-- **Vite/React renderer** — `http://localhost:5173` in dev, `dist/index.html` in prod. Connects to backend at hardcoded `http://127.0.0.1:8765` / `ws://127.0.0.1:8765` (no env var in prod)
-- **FastAPI backend** — all agents, RAG, WebSocket dispatch
+- **Electron main** (`electron/main.js`) -> spawns Python on port 8765, owns the BrowserWindow, exposes file-system IPC via `contextBridge`
+- **Vite/React renderer** -> `http://localhost:5173` in dev, `dist/index.html` in prod. Connects to backend at hardcoded `http://127.0.0.1:8765` / `ws://127.0.0.1:8765` (no env var in prod)
+- **FastAPI backend** -> all agents, RAG, WebSocket dispatch
 
-### Two Memory Layers — the most important design decision
+### Two Memory Layers -> the most important design decision
 
 | Layer | Tool | Scope | Location |
 |---|---|---|---|
 | Content RAG | ChromaDB | Per-session, ephemeral | In-memory |
 | Student memory | Cognee | Cross-session, persistent | `~/.studybuddy/cognee/` (LanceDB) |
 
-ChromaDB holds **what the uploaded material says**. Cognee holds **how this student learns** — quiz failures, Feynman quality, mastery deltas — and accumulates across sessions on disk. The Brain Agent queries Cognee before building any curriculum tree; the Evaluator pushes to Cognee after scoring (fire-and-forget `asyncio.create_task`).
+ChromaDB holds **what the uploaded material says**. Cognee holds **how this student learns** -> quiz failures, Feynman quality, mastery deltas -> and accumulates across sessions on disk. The Brain Agent queries Cognee before building any curriculum tree; the Evaluator pushes to Cognee after scoring (fire-and-forget `asyncio.create_task`).
 
 ### Upload Flow
 
 Two dropboxes per session:
 
-- **Content** (required): PDFs/DOCX/TXT — the student's textbook or notes
+- **Content** (required): PDFs/DOCX/TXT -> the student's textbook or notes
 - **Questions** (optional): past exam papers, Q&A sheets
 
-Both are chunked (LangChain `RecursiveCharacterTextSplitter`, 512 tokens, 64 overlap) and indexed into the same ChromaDB collection. Question chunks get `metadata.type = "question"` so the Tutor Agent preferentially uses them for quiz/flashcard generation. After all files upload, `POST /ingest/finalize` triggers `BrainAgent.extract_curriculum()` which reads sample chunks to derive the topic tree — never invents topics from model weights.
+Both are chunked (LangChain `RecursiveCharacterTextSplitter`, 512 tokens, 64 overlap) and indexed into the same ChromaDB collection. Question chunks get `metadata.type = "question"` so the Tutor Agent preferentially uses them for quiz/flashcard generation. After all files upload, `POST /ingest/finalize` triggers `BrainAgent.extract_curriculum()` which reads sample chunks to derive the topic tree -> never invents topics from model weights.
 
 ### Agent Roster
 
@@ -75,35 +75,35 @@ All agents call `CerebrasClient.structured_complete()` with `strict=True` Pydant
 | **Brain Agent** | Derives curriculum tree from RAG chunks (`extract_curriculum`), builds RAG queries, incorporates Cognee prior knowledge |
 | **Tutor Agent** | 3-part grounded lessons (Anchor + cited Grounded Truth + lazy HTML5 visual), server-side syntax pre-flight before sending visuals, sandbox repair |
 | **Evaluator Agent** | Reads full session journal on `END_SESSION`, emits score patches (monotone non-decreasing), triggers Cognee push |
-| **Infinity Wiki Agent** | YouTube search + transcript selection — only fires on explicit "Deep Dive" button click |
-| **Wiki Agent** (`wiki_agent.py`) | Streams grounded 3-section Markdown cards for Infinite Wiki tab — auto-fires on text selection, recursive drill-down |
-| **Senses Agent** | Multimodal ingestion (images, audio) via Gemma 4 vision (base64 data URIs only). Vision model MUST be `gemma-4-31b` — not `llama-4-scout` |
+| **Infinity Wiki Agent** | YouTube search + transcript selection -> only fires on explicit "Deep Dive" button click |
+| **Wiki Agent** (`wiki_agent.py`) | Streams grounded 3-section Markdown cards for Infinite Wiki tab -> auto-fires on text selection, recursive drill-down |
+| **Senses Agent** | Multimodal ingestion (images, audio) via Gemma 4 vision (base64 data URIs only). Vision model MUST be `gemma-4-31b` -> not `llama-4-scout` |
 
 ### Familiarity Profiles
 
 Student-selected level changes prompt vocabulary throughout the session:
 
-- `eli5` — sensory analogies, zero math, ≤2-syllable vocabulary
-- `high_school` — standard terminology defined inline, real-world examples
-- `graduate` — assume domain competence, focus on edge cases
-- `expert` — pure synthesis, proofs, no analogies
+- `eli5` -> sensory analogies, zero math, ≤2-syllable vocabulary
+- `high_school` -> standard terminology defined inline, real-world examples
+- `graduate` -> assume domain competence, focus on edge cases
+- `expert` -> pure synthesis, proofs, no analogies
 
 ### Knowledge Graph
 
 React Flow canvas. 6–25 concept nodes derived from uploaded content. Nodes: typed edges, sized by average mastery score, coloured by status (`LOCKED` grey / `ACTIVE` blue / `MASTERED` green). Four scores per node: **Memory, Comprehension, Structure, Application** (0–100).
 
-**Node score invariant — monotone non-decreasing.** Scores can only increase. Enforced in two places — both must stay correct or student progress is permanently corrupted:
+**Node score invariant -> monotone non-decreasing.** Scores can only increase. Enforced in two places -> both must stay correct or student progress is permanently corrupted:
 
 - `backend/app/services/graph_state.py` → `GraphStateManager.apply_node_patch()`
 - `frontend/src/store/graphStore.ts` → `applyNodePatch()`
 
-### Study Panel — Flat Tab Layout
+### Study Panel -> Flat Tab Layout
 
 The right-side panel (`ScientificFigurePanel.tsx`) uses a flat single-row `TabBar` component. Tabs: **Chat · Infinite Wiki · Flashcards · Quiz · Feynman**. No nested tab groups.
 
 ### Margin-Gutter Annotations
 
-When in Read mode, each PDF page is wrapped in `display:flex` with a 272px `MarginGutter` column beside it. Notes are positioned with `position:absolute; top: anchorYNorm * pageHeightPx` inside the gutter — they scroll with the page and never drift.
+When in Read mode, each PDF page is wrapped in `display:flex` with a 272px `MarginGutter` column beside it. Notes are positioned with `position:absolute; top: anchorYNorm * pageHeightPx` inside the gutter -> they scroll with the page and never drift.
 
 - Draft note state: `"idle" | "draft" | "saving" | "error"`. Retry button shown on error.
 - Saves locally (in-memory via `interactionStore`) when `documentId`/`sessionId` are missing; otherwise POSTs to `POST /annotations`.
@@ -119,13 +119,13 @@ setSelection(snippets, text, surrounding) / clearSelection()
 ```
 
 - `PDFReader` pushes to contextStore on text selection in DEFAULT (Read) mode.
-- `clearSelection()` is called when the browser selection collapses in Read mode — prevents ghost chips.
+- `clearSelection()` is called when the browser selection collapses in Read mode -> prevents ghost chips.
 - `ChatTool` shows a `↳ "quoted text" ×` chip inline above the textarea when context is present.
 - `InfiniteWiki` auto-fires on `selectionText` change (400ms debounce) when its tab is active.
 
 ### Infinite Wiki
 
-Page stack (`WikiPage[]`) with `currentIdx`. **Off-by-one fix** — when stack is empty, new page lands at index 0:
+Page stack (`WikiPage[]`) with `currentIdx`. **Off-by-one fix** -> when stack is empty, new page lands at index 0:
 
 ```typescript
 setCurrentIdx(stack.length === 0 ? 0 : currentIdx + 1)
@@ -135,14 +135,14 @@ setCurrentIdx(stack.length === 0 ? 0 : currentIdx + 1)
 
 ### Study Tools (4 tabs per node)
 
-- **Chat** — multi-turn, RAG-grounded, citations inline, streamed via `CHAT_TOKEN` WS events. Accepts `selection_text` + `surrounding_context` from contextStore.
-- **Flashcards** — open-recall, self-graded (Again / Hard / Good / Easy), preferentially sourced from question chunks
-- **Quiz** — forced-choice MCQ (1 correct + 3 distractors), generated from question chunks
-- **Feynman** — agent plays curious 8-year-old "Clara"; student teaches, agent asks follow-ups
+- **Chat** -> multi-turn, RAG-grounded, citations inline, streamed via `CHAT_TOKEN` WS events. Accepts `selection_text` + `surrounding_context` from contextStore.
+- **Flashcards** -> open-recall, self-graded (Again / Hard / Good / Easy), preferentially sourced from question chunks
+- **Quiz** -> forced-choice MCQ (1 correct + 3 distractors), generated from question chunks
+- **Feynman** -> agent plays curious 8-year-old "Clara"; student teaches, agent asks follow-ups
 
 ### Visual Sandbox
 
-**Lazy by default** — `LEARN_NODE` returns lesson text only. The visual is generated only when the student opens the Visual tab (`GENERATE_VISUAL` WS event). Eager mode is opt-in.
+**Lazy by default** -> `LEARN_NODE` returns lesson text only. The visual is generated only when the student opens the Visual tab (`GENERATE_VISUAL` WS event). Eager mode is opt-in.
 
 Five visual types: `three.js` (anatomy/molecules, Three.js r128 CDN), `canvas` (physics/chem animations, vanilla `requestAnimationFrame`), `katex` (formulas, KaTeX CDN), `plot` (functions/distributions, inline SVG/Canvas), `quote` (legal articles/named papers, styled `<blockquote>`).
 
@@ -150,7 +150,7 @@ Server-side syntax pre-flight (`compile(script, '<visual>', 'exec')`) catches tr
 
 ### WebSocket Protocol
 
-All messages: `{ "type": str, "data": dict }` — never bare strings. Dispatch table in `backend/app/websockets/handlers.py`:
+All messages: `{ "type": str, "data": dict }` -> never bare strings. Dispatch table in `backend/app/websockets/handlers.py`:
 
 | Event | Action |
 |---|---|
@@ -168,7 +168,7 @@ All messages: `{ "type": str, "data": dict }` — never bare strings. Dispatch t
 
 ### Error Handling
 
-`cerebras_errors.py` (no SDK import — independently unit-testable) defines `CerebrasErrorKind`: `auth_lost / rate_limited / model_unsupported / generic`. `CerebrasClient` tracks rate-limit cooldown windows and short-circuits future calls without hitting the API. Health state exposed at `GET /api/health`; frontend polls on mount and shows a banner.
+`cerebras_errors.py` (no SDK import -> independently unit-testable) defines `CerebrasErrorKind`: `auth_lost / rate_limited / model_unsupported / generic`. `CerebrasClient` tracks rate-limit cooldown windows and short-circuits future calls without hitting the API. Health state exposed at `GET /api/health`; frontend polls on mount and shows a banner.
 
 `CerebrasClient.structured_complete()` catches both `json.JSONDecodeError` AND `pydantic.ValidationError` (Cerebras can return truncated JSON / EOF) and retries once. `BrainAgent.extract_curriculum()` caps each document's `structure_text` to 3000 chars and total to 10000 chars to prevent context overflow.
 
@@ -178,11 +178,17 @@ Python startup takes ~10–15s (embedding model warmup). `SetupModal` polls `GET
 
 ### File System
 
-Electron IPC handles all writes — `window.electronAPI.saveFile(path, content)` via `contextBridge`. Session summaries land at `~/.studybuddy/summaries/[Topic]_Summary.md`. Falls back to browser download anchor when `window.electronAPI` is undefined (browser dev mode without Electron).
+Electron IPC handles all writes -> `window.electronAPI.saveFile(path, content)` via `contextBridge`. Session summaries land at `~/.studybuddy/summaries/[Topic]_Summary.md`. Falls back to browser download anchor when `window.electronAPI` is undefined (browser dev mode without Electron).
+
+### Deployment Environment / Rate Limits
+
+To allow StudyBuddy to be deployed as a demo on platforms with tight resource constraints (e.g. Hugging Face Spaces) without being killed, the app supports a `DEPLOYMENT_ENV` environment variable:
+- If `DEPLOYMENT_ENV=demo`: Internal semaphores throttle concurrent LLM and pipeline calls severely (e.g. max 5 concurrent Cerebras calls, max 2 highlight processes) to prevent 429s or container OOM kills.
+- If `DEPLOYMENT_ENV=desktop` (the default): Concurrency limits are uncapped / significantly expanded (e.g. 50 concurrent Cerebras calls) to run at full speed on local hardware.
 
 ---
 
-## Vite Proxy — All Backend Routes Must Be Listed
+## Vite Proxy -> All Backend Routes Must Be Listed
 
 `frontend/vite.config.ts` proxies specific path prefixes to `http://127.0.0.1:8765`. If you add a new FastAPI router with a new prefix, you **must** add it to the proxy config or all frontend fetch calls to that prefix will 404 in dev.
 
@@ -192,7 +198,7 @@ Current proxied prefixes: `/api`, `/ingest`, `/session`, `/sandbox`, `/library`,
 
 ## Pydantic Core Schemas
 
-These are locked — agents must output exactly to these shapes:
+These are locked -> agents must output exactly to these shapes:
 
 ```python
 class NodePatch(BaseModel):
@@ -220,10 +226,10 @@ Structured outputs always use `strict=True` + `additionalProperties: false` at e
 
 ## Cerebras API Reference
 
-- **Model ID:** `gemma-4-31b` — always pinned explicitly; never omit or the SDK may resolve a retired default
+- **Model ID:** `gemma-4-31b` -> always pinned explicitly; never omit or the SDK may resolve a retired default
 - **Context:** 32K MCL (message context limit) / 65K MSL
 - **Structured outputs:** `response_format.type = "json_schema"`, `strict: true`
-- **Image input:** multimodal via `image_url` content type, **base64 data URIs only** — hosted URLs not supported
+- **Image input:** multimodal via `image_url` content type, **base64 data URIs only** -> hosted URLs not supported
 - **Reasoning:** off by default; enable with `reasoning_effort: "low"|"medium"|"high"`
 - **Tool calling:** `parallel_tool_calls=True` supported
 
@@ -231,7 +237,7 @@ Structured outputs always use `strict=True` + `additionalProperties: false` at e
 
 ## Key Constraints
 
-- Gemma 4 generates **structure** (topic tree) and **translation** (rephrasing) only — never factual content from its own weights
+- Gemma 4 generates **structure** (topic tree) and **translation** (rephrasing) only -> never factual content from its own weights
 - Every AI answer in chat must cite its RAG source: `[Source: <label>, chunk <n>]`
 - Out-of-scope questions: answer from the nearest relevant chunk and note it is not directly covered, never fabricate
 - Sandbox iframe: `sandbox="allow-scripts"` only, `srcdoc` only, HTML fully self-contained (no external `src`)

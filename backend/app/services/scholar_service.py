@@ -1,6 +1,6 @@
 """Scholarly paper lookup via the OpenAlex REST API.
 
-Used by the Infinite Wiki to append "Further Reading" — the top most-cited papers
+Used by the Infinite Wiki to append "Further Reading" -> the top most-cited papers
 for a concept. Best-effort: any error or missing key yields an empty list so the
 wiki card still renders.
 """
@@ -42,7 +42,7 @@ async def fetch_top_papers(query: str, n: int = 3) -> List[Dict[str, Any]]:
 
     params: Dict[str, Any] = {
         "search": query,
-        # Default relevance ranking — sorting purely by citations returns famous but
+        # Default relevance ranking -> sorting purely by citations returns famous but
         # off-topic papers. Fetch a few extra and keep the most-cited among the relevant.
         "per-page": max(n * 3, 10),
     }

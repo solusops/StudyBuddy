@@ -1,4 +1,4 @@
-"""Pure error model — no SDK import so this module is independently unit-testable.
+"""Pure error model -> no SDK import so this module is independently unit-testable.
 
 Import nothing from cerebras here. Other modules catch SDK exceptions and pass
 them to classify_error() which returns a typed CerebrasError.

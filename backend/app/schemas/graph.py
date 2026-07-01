@@ -22,7 +22,7 @@ class NodeData(BaseModel):
     scores: NodeScores = Field(default_factory=NodeScores)
     parent_id: Optional[str] = None
     children_ids: List[str] = Field(default_factory=list)
-    # Which uploaded paper(s) this node draws from — scopes its lessons/RAG. Empty = all.
+    # Which uploaded paper(s) this node draws from -> scopes its lessons/RAG. Empty = all.
     document_ids: List[str] = Field(default_factory=list)
 
 

@@ -25,7 +25,7 @@ class SelectionSnippet(BaseModel):
 
 class StudentAnnotation(BaseModel):
     annotation_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    document_id: str        # SHA-256 content hash — stable across re-uploads
+    document_id: str        # SHA-256 content hash -> stable across re-uploads
     session_id: str
     target_snippets: List[SelectionSnippet]
     note_text: Optional[str] = None

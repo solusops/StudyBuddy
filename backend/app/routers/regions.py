@@ -1,4 +1,4 @@
-"""Interactive paper regions — segment a PDF page into clickable figures/tables/formulas.
+"""Interactive paper regions -> segment a PDF page into clickable figures/tables/formulas.
 
 Pipeline: PyMuPDF locates regions (exact geometry) → Gemma vision describes each
 crop concurrently (caption / LaTeX / markdown table). Results are cached per page.

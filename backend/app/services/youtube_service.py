@@ -22,7 +22,7 @@ async def search_videos(query: str, api_key: str, max_results: int = 3) -> List[
             },
         )
         if resp.status_code != 200:
-            return []  # bad key, quota exceeded, etc. — degrade silently
+            return []  # bad key, quota exceeded, etc. -> degrade silently
     return resp.json().get("items", [])
 
 

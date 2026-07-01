@@ -74,7 +74,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
 
         let resp = await post()
         if (resp.status === 409) {
-          // Server hasn't cached the PDF yet — upload the bytes once, then retry.
+          // Server hasn't cached the PDF yet -> upload the bytes once, then retry.
           if (!_pdfB64Cache.has(documentId!)) _pdfB64Cache.set(documentId!, pdfToBase64(fileUrl))
           const b64 = await _pdfB64Cache.get(documentId!)!
           resp = await post(b64)
@@ -133,7 +133,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
 
     const bbox_norm = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
     const snipId = `snip_temp_${Date.now()}`
-    
+
     // Show a loading temporary region
     setTempSnip({
       id: snipId,
@@ -159,7 +159,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
         const b64 = await _pdfB64Cache.get(documentId!)!
         resp = await post(b64)
       }
-      
+
       if (resp.ok) {
         const finalSnip = await resp.json()
         setRegions((prev) => [...(prev || []), finalSnip])
@@ -219,16 +219,16 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
   }
 
   return (
-    <div 
+    <div
       ref={containerRef}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
-      style={{ 
-        position: "absolute", 
-        inset: 0, 
-        pointerEvents: regionsOn ? "auto" : "none", 
+      style={{
+        position: "absolute",
+        inset: 0,
+        pointerEvents: regionsOn ? "auto" : "none",
         zIndex: 5,
         cursor: regionsOn ? "crosshair" : "default",
         touchAction: regionsOn ? "none" : "auto"
@@ -243,7 +243,7 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
           Finding figures & tables…
         </div>
       )}
-      
+
       {/* Dragging Selection Box */}
       {isDragging && dragStart && dragCurrent && (
         <div style={{
@@ -291,22 +291,22 @@ export function RegionLayer({ pageNumber, pageIndex, documentId, sessionId, file
             </button>
 
             {isSel && (
-              <div 
+              <div
                 onPointerDown={(e) => e.stopPropagation()}
                 style={{
                   position: "absolute",
-                left: `${x * 100}%`,
-                top: `calc(${(y + h) * 100}% + 4px)`,
-                pointerEvents: "auto",
-                background: "#FFFFFF",
-                border: "1px solid #E8E0D5",
-                borderRadius: 10,
-                boxShadow: "0 4px 16px rgba(26,53,87,0.18)",
-                padding: 10,
-                width: 260,
-                zIndex: 10,
-                fontFamily: "system-ui, sans-serif",
-              }}>
+                  left: `${x * 100}%`,
+                  top: `calc(${(y + h) * 100}% + 4px)`,
+                  pointerEvents: "auto",
+                  background: "#FFFFFF",
+                  border: "1px solid #E8E0D5",
+                  borderRadius: 10,
+                  boxShadow: "0 4px 16px rgba(26,53,87,0.18)",
+                  padding: 10,
+                  width: 260,
+                  zIndex: 10,
+                  fontFamily: "system-ui, sans-serif",
+                }}>
                 {r.caption && (
                   <p style={{ margin: "0 0 8px", fontSize: 12.5, color: "#1A1A2E", lineHeight: 1.4 }}>
                     {r.caption}

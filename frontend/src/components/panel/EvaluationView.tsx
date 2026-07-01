@@ -45,7 +45,7 @@ export function EvaluationView({ session, sendEvent, onClose }: Props) {
     fetch(`/session/trajectory/${session.documentId}`)
       .then((r) => r.json())
       .then((d) => setTrajectory(d.trajectory || []))
-      .catch(() => {})
+      .catch(() => { })
   }
 
   useEffect(() => {
@@ -106,7 +106,7 @@ export function EvaluationView({ session, sendEvent, onClose }: Props) {
           {/* Trajectory timeline */}
           <h3 style={{ fontFamily: "var(--font-serif)", color: "#1A3557", fontSize: 17, margin: "20px 0 12px" }}>Learning trajectory</h3>
           {trajectory.length === 0 ? (
-            <p style={{ color: "#9CA3AF", fontSize: 14 }}>No history yet — Push / Re-evaluate to record a snapshot.</p>
+            <p style={{ color: "#9CA3AF", fontSize: 14 }}>No history yet -> Push / Re-evaluate to record a snapshot.</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {trajectory.map((t, i) => (

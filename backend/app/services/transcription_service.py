@@ -1,4 +1,4 @@
-"""Canary-Qwen 2.5B transcription service — lazy loaded, language-agnostic.
+"""Canary-Qwen 2.5B transcription service -> lazy loaded, language-agnostic.
 
 Outputs English text regardless of input language (multilingual → English).
 Heavy model (~5GB); loads in background at first use, not at startup.

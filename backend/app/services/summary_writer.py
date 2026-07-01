@@ -21,7 +21,7 @@ def build_summary_markdown(
         {e.data["citation"] for e in journal if e.data.get("citation")}
     )
 
-    lines = [f"# {topic} — Session Summary ({familiarity})\n"]
+    lines = [f"# {topic} -> Session Summary ({familiarity})\n"]
 
     if session_summary:
         lines.append(f"## Overview\n\n{session_summary}\n")
@@ -30,7 +30,7 @@ def build_summary_markdown(
     for node in nodes:
         if node.status in ("ACTIVE", "MASTERED"):
             avg = sum(node.scores.model_dump().values()) // 4
-            lines.append(f"- **{node.label}** — Mastery: {avg}%\n  {node.description}\n")
+            lines.append(f"- **{node.label}** -> Mastery: {avg}%\n  {node.description}\n")
 
     if citations:
         lines.append("\n## Source Citations\n" + "\n".join(f"- {c}" for c in citations))

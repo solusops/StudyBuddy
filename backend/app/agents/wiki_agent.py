@@ -1,4 +1,4 @@
-"""Wiki Agent — streams grounded context cards for Infinite Wiki drill-downs.
+"""Wiki Agent -> streams grounded context cards for Infinite Wiki drill-downs.
 
 Card format (streamed Markdown):
   ## [Term]
@@ -33,7 +33,7 @@ Adopt a complexity level appropriate for a {level} student.
 
 First, check if the term/passage is discussed in the provided Source material.
 - If it IS discussed in the Source material, explain it using the Source material, citing inline with [Source: X, chunk N].
-- If it IS NOT discussed or lacks key details in the Source material, use the Web Source material to explain it. You MUST use proper markdown hypertext links for web citations, formatted exactly as: [Source Title](url). Do NOT use brackets like [Web: Title, url].
+- If it IS NOT discussed or lacks key details in the Source material, use the Web Source material to explain it. You MUST use proper markdown hypertext links for web citations, formatted exactly as: [Source Title](url). Use a SINGLE WORD for the Source Title (e.g. [Wikipedia](url)). Do NOT use brackets like [Web: Title, url].
 If both contain useful info, synthesize them, keeping citations clear.
 
 Structure your response exactly as:
@@ -99,11 +99,17 @@ class WikiAgent:
         parent_context: str = "",
         knowledge_mode: str = "content_only",
     ):
-        """Async generator — yields text tokens for the Infinite Wiki card."""
+        """Async generator -> yields text tokens for the Infinite Wiki card."""
         import asyncio
-        
+        import re
+
+        def _short_source(src: str) -> str:
+            if not src or src == "?": return "?"
+            parts = [p for p in re.split(r'[_\-\s\.]', src) if p]
+            return parts[0] if parts else src
+
         chunk_text = "\n\n".join(
-            f"[Source: {c.get('source', '?')}, chunk {c.get('chunk_index', i)}]\n{c['text']}"
+            f"[Source: {_short_source(c.get('source', '?'))}, chunk {c.get('chunk_index', i)}]\n{c['text']}"
             for i, c in enumerate(chunks)
         )
         parent_note = f"\nDrill-down context: {parent_context[:300]}" if parent_context else ""

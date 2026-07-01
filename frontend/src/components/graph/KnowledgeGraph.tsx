@@ -40,7 +40,7 @@ function applyDagreLayout(
     g.setNode(n.id, { width: w, height: h })
   })
 
-  // Only use parent_id edges for the dagre layout — these define the hierarchy.
+  // Only use parent_id edges for the dagre layout -> these define the hierarchy.
   // Cross-links (edges) are drawn but don't influence rank placement.
   const parentEdgeIds = new Set<string>()
   const allEdges = [...edges]
@@ -50,7 +50,7 @@ function applyDagreLayout(
       const edgeId = `${n.data.parent_id}-${n.id}`
       parentEdgeIds.add(edgeId)
       g.setEdge(n.data.parent_id, n.id)
-      
+
       // Explicitly synthesize a React Flow edge for the hierarchy if one doesn't exist
       if (!allEdges.some(e => e.id === edgeId)) {
         allEdges.push({

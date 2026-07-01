@@ -29,7 +29,7 @@ interface GraphStore {
   reset: () => void
 }
 
-// Monotone clamp — scores can only increase. Mirrors backend GraphStateManager.
+// Monotone clamp -> scores can only increase. Mirrors backend GraphStateManager.
 function clampScores(current: NodeScores, patch: Partial<NodeScores>): NodeScores {
   return {
     memory: Math.max(current.memory, patch.memory ?? 0),
@@ -75,7 +75,7 @@ export const useGraphStore = create<GraphStore>((set) => ({
   setAssessment: (a) =>
     set((state) => ({ assessments: { ...state.assessments, [a.node_id]: a } })),
 
-  // Incremental streaming (BUILD_GRAPH "fireworks") — append, ignoring duplicates.
+  // Incremental streaming (BUILD_GRAPH "fireworks") -> append, ignoring duplicates.
   addNode: (data) =>
     set((state) => {
       if (state.nodes.some((n) => n.id === data.id)) return state

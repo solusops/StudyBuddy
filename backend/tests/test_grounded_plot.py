@@ -1,4 +1,4 @@
-"""Tests for TutorAgent.generate_plot — verifies grounded, hallucination-free Plotly output."""
+"""Tests for TutorAgent.generate_plot -> verifies grounded, hallucination-free Plotly output."""
 import re
 from unittest.mock import MagicMock
 
@@ -62,7 +62,7 @@ def test_generate_plot_explanation_cites_source():
 
 
 def test_generate_plot_html_no_fabricated_js():
-    """HTML is built deterministically — no <script> that could contain hallucinated code."""
+    """HTML is built deterministically -> no <script> that could contain hallucinated code."""
     tutor = _make_tutor_returning_spec(SPEC)
     result = tutor.generate_plot("GDP growth", CHUNKS, "high_school")
     # Only one script block for Plotly.newPlot; no other JS functions

@@ -1,4 +1,4 @@
-"""Brain Agent — derives the curriculum tree from student-uploaded chunks.
+"""Brain Agent -> derives the curriculum tree from student-uploaded chunks.
 
 IMPORTANT: extract_curriculum reads RAG content to find topics.
 It NEVER invents topics from model weights.
@@ -17,7 +17,7 @@ FAMILIARITY_NOTES: Dict[str, str] = {
     "expert": "Pure synthesis. Focus on literature gaps, proofs, and algorithmic details. Zero analogies.",
 }
 
-# Familiarity-specific tree shape — controls how many nodes and how deep the tree goes
+# Familiarity-specific tree shape -> controls how many nodes and how deep the tree goes
 FAMILIARITY_TREE_SHAPE: Dict[str, Dict[str, Any]] = {
     "eli5": {
         "node_range": "4-8",
@@ -117,7 +117,7 @@ class BrainAgent:
         self._client = client or CerebrasClient()
 
     # ------------------------------------------------------------------ #
-    # Streaming curriculum — root-first, then parallel section expansion  #
+    # Streaming curriculum -> root-first, then parallel section expansion  #
     # ------------------------------------------------------------------ #
 
     def derive_root_and_sections(
@@ -151,7 +151,7 @@ class BrainAgent:
                 "role": "system",
                 "content": (
                     f"You are a curriculum organiser. {familiarity_note}\n{topic_note}{memory_note}\n"
-                    "Identify the overall subject (root) and its top-level sections ONLY — "
+                    "Identify the overall subject (root) and its top-level sections ONLY -> "
                     "do not list sub-concepts yet. "
                     f"GRANULARITY:\n{tree_shape['guidance']}\n"
                     f"Use ONLY topics evidenced in the material. Provide 4-8 sections.{doc_note}"
@@ -180,8 +180,8 @@ class BrainAgent:
 
         sibling_sections lists the OTHER top-level sections in this same tree (generated
         together, before any of them were expanded). Each section is still expanded by its
-        own independent call — scales to many documents, unlike folding everything into one
-        call — but naming the siblings lets the model steer away from topics that plainly
+        own independent call -> scales to many documents, unlike folding everything into one
+        call -> but naming the siblings lets the model steer away from topics that plainly
         belong to one of them (e.g. don't put "AdaMax" under this section if "Adaptive
         Variants" is a sibling), cutting down cross-section overlap that exact-label
         deduplication alone can't catch.
@@ -190,7 +190,7 @@ class BrainAgent:
         sibling_note = ""
         if sibling_sections:
             sibling_note = (
-                "\nOther sections in this same curriculum (do NOT repeat their topics — "
+                "\nOther sections in this same curriculum (do NOT repeat their topics -> "
                 "if a concept clearly belongs to one of these instead, leave it out):\n"
                 + "\n".join(f"- {s}" for s in sibling_sections) + "\n"
             )
@@ -209,7 +209,7 @@ class BrainAgent:
                 "content": (
                     f"Section: {section_label}\n\n"
                     f"Document structure (for grounding):\n{structure_text[:4000]}\n\n"
-                    "List 1-3 child concepts for this section — concepts that belong specifically "
+                    "List 1-3 child concepts for this section -> concepts that belong specifically "
                     "here, not to one of the other sections listed above."
                 ),
             },
@@ -305,7 +305,7 @@ class BrainAgent:
     ) -> Tuple[List[NodeData], List[Dict]]:
         """Derive topic graph from the student's uploaded content chunks.
 
-        Returns (nodes, edges) — edges capture prerequisite and related-topic
+        Returns (nodes, edges) -> edges capture prerequisite and related-topic
         relationships between nodes. All nodes start as ACTIVE (no locking).
         """
         sample = "\n\n".join(
@@ -327,7 +327,7 @@ class BrainAgent:
                     "1. The FIRST node (id=n0, depth=0) MUST be the overall topic/subject as a root node with parent_id=null.\n"
                     "2. Every other node MUST have a parent_id pointing to its parent in the hierarchy.\n"
                     "3. The tree flows top-down: root → major subtopics → specific concepts.\n"
-                    "4. Edges capture cross-connections BETWEEN nodes (prerequisite, related, builds-on) — these are IN ADDITION to the parent-child hierarchy.\n"
+                    "4. Edges capture cross-connections BETWEEN nodes (prerequisite, related, builds-on) -> these are IN ADDITION to the parent-child hierarchy.\n"
                     "5. Each node gets a complexity score (1-5): 1=simple definition/concept, 3=moderate understanding needed, 5=very complex/math-heavy/proof-based.\n\n"
                     f"GRANULARITY for this student's level:\n{tree_shape['guidance']}\n\n"
                     "DO NOT invent topics not evidenced in the text."
@@ -357,13 +357,13 @@ class BrainAgent:
     ) -> Tuple[List[NodeData], List[Dict]]:
         """Instant graph generation from document structure (headings/TOC/first pages).
 
-        Returns (nodes, edges). All nodes start as ACTIVE — no locking.
+        Returns (nodes, edges). All nodes start as ACTIVE -> no locking.
         """
         all_structure = "\n\n---\n\n".join(
             f"Document: {d['filename']}\n{d['structure_text'][:3000]}"
             for d in document_overviews
         )
-        all_structure = all_structure[:10000]  # hard cap — prevents JSON truncation at 32K MCL
+        all_structure = all_structure[:10000]  # hard cap -> prevents JSON truncation at 32K MCL
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
         tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
         topic_note = f"The student wants to study: {topic_hint}\n\n" if topic_hint else ""
@@ -381,7 +381,7 @@ class BrainAgent:
                     f"   Its label should be: '{topic_hint}' if provided, otherwise derive the subject name from the documents.\n"
                     "2. Every other node MUST have a parent_id pointing to its parent in the hierarchy.\n"
                     "3. The tree flows top-down: root → major subtopics → specific concepts.\n"
-                    "4. Edges capture cross-connections BETWEEN nodes — these are IN ADDITION to parent-child links.\n"
+                    "4. Edges capture cross-connections BETWEEN nodes -> these are IN ADDITION to parent-child links.\n"
                     "5. Each node gets a complexity score (1-5): 1=simple definition, 3=moderate, 5=very complex/math-heavy.\n\n"
                     f"GRANULARITY for this student's level:\n{tree_shape['guidance']}\n\n"
                     "Use ONLY topics evidenced in the documents."
@@ -425,7 +425,7 @@ class BrainAgent:
 
         # Format existing tree as context
         nodes_desc = "\n".join(
-            f"- {n['id']}: \"{n['label']}\" (depth={n.get('depth', 1)}, complexity={n.get('complexity', 3)}, parent={n.get('parent_id', 'none')}) — {n.get('description', '')}"
+            f"- {n['id']}: \"{n['label']}\" (depth={n.get('depth', 1)}, complexity={n.get('complexity', 3)}, parent={n.get('parent_id', 'none')}) -> {n.get('description', '')}"
             for n in current_nodes
         )
         edges_desc = "\n".join(
@@ -444,7 +444,7 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}\n"
                     "You are REFINING an existing knowledge graph based on student feedback. "
                     "Do NOT regenerate from scratch. Instead:\n"
-                    "- Keep the root node (n0, depth=0) — it is the topic name\n"
+                    "- Keep the root node (n0, depth=0) -> it is the topic name\n"
                     "- Keep nodes that are still relevant\n"
                     "- Add new nodes if the student wants more coverage\n"
                     "- Remove nodes the student says are unnecessary\n"
@@ -479,7 +479,7 @@ class BrainAgent:
                 "role": "system",
                 "content": (
                     "You are a concept identifier. Extract 3-8 key concept phrases from the "
-                    "provided text passage. Return only the exact phrases as they appear in the text — "
+                    "provided text passage. Return only the exact phrases as they appear in the text -> "
                     "no paraphrase, no addition. Short noun phrases preferred."
                 ),
             },

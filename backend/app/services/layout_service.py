@@ -1,7 +1,7 @@
 """PDF page layout segmentation via PyMuPDF (fitz).
 
-Locates non-text regions a student can't otherwise select — figures, plots,
-diagrams, tables — and returns pixel-accurate normalized bounding boxes plus a
+Locates non-text regions a student can't otherwise select -> figures, plots,
+diagrams, tables -> and returns pixel-accurate normalized bounding boxes plus a
 PNG crop of each. Vision understanding (caption / LaTeX / table extraction) is a
 separate step (SensesAgent.describe_region), so this module stays pure geometry
 and is unit-testable without any model call.

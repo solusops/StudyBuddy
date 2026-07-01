@@ -37,7 +37,7 @@ describe("graphStore", () => {
     expect(useGraphStore.getState().nodes[0].data.status).toBe("MASTERED")
   })
 
-  it("score patch is monotone — scores never decrease", () => {
+  it("score patch is monotone -> scores never decrease", () => {
     useGraphStore.setState({
       nodes: [
         {

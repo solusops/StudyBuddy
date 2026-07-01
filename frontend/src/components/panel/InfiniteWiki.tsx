@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import katex from "katex"
 import "katex/dist/katex.min.css"
+import { Video } from "lucide-react"
 import { useContextStore } from "../../store/contextStore"
 import { useSessionStore } from "../../store/sessionStore"
 import { useInteractionStore } from "../../store/interactionStore"
@@ -271,6 +272,17 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     sel.removeAllRanges()
   }
 
+  // Drill-down: user clicks a single word
+  const handleDrillDownClick = (e: React.MouseEvent) => {
+    const target = e.target as HTMLElement
+    if (target.classList.contains("grow-word")) {
+      const term = target.textContent?.trim()
+      if (term && term.length > 0) {
+        fireCard(term, currentPage?.content ?? "", currentPage?.content?.slice(0, 300) ?? "")
+      }
+    }
+  }
+
   // Parse and render streamed markdown
   const renderWikiContent = (text: string) => {
     // Strip [Source: X, chunk N] citations
@@ -488,6 +500,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
 
       {/* Content area */}
       <div
+        onClick={handleDrillDownClick}
         onMouseUp={handleDrillDown}
         style={{ flex: 1, overflow: "auto", padding: "16px 20px 48px", userSelect: "text" }}
       >
@@ -616,7 +629,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
                       padding: "10px 16px", cursor: "pointer", color: "#1A3557", fontSize: 14, fontWeight: 600,
                     }}
                   >
-                    🎥 Deep Dive — find videos
+                    <Video size={16} /> Deep Dive — find videos
                   </button>
                 )}
                 {currentPage.videosLoading && (

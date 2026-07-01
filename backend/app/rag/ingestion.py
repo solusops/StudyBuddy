@@ -3,7 +3,7 @@
 Chunk type is recorded in metadata so the Tutor Agent can preferentially
 query question chunks for quiz/flashcard generation.
 
-Files are deduplicated by SHA-256 content hash — ingest_file() is a no-op if
+Files are deduplicated by SHA-256 content hash -> ingest_file() is a no-op if
 the file is already indexed, making repeated library scans cheap.
 """
 import io
@@ -34,7 +34,7 @@ def _extract_docx(file_bytes: bytes) -> str:
 def extract_document_structure(file_bytes: bytes, filename: str, max_chars: int = 6000) -> str:
     """Extract only the structural overview of a document for instant tree generation.
 
-    Returns headings/TOC and first-page text — enough for Gemma 4 to derive a
+    Returns headings/TOC and first-page text -> enough for Gemma 4 to derive a
     curriculum tree without needing full chunking.
     """
     ext = filename.rsplit(".", 1)[-1].lower()

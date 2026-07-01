@@ -1,4 +1,4 @@
-"""Tutor Agent — grounded lessons, HTML5 visuals, sandbox repair.
+"""Tutor Agent -> grounded lessons, HTML5 visuals, sandbox repair.
 
 Every fact in grounded_truth must cite its RAG source.
 Visuals go through a server-side syntax pre-flight before being sent to the
@@ -129,7 +129,7 @@ class TutorAgent:
             grounding = (
                 "Ground your explanation in the provided SOURCE MATERIAL and WEB SOURCE MATERIAL only. "
                 "If the topic is missing from the student's uploaded content, draw on the web search results "
-                "to fill the gap — cite the web source, not your own training weights. "
+                "to fill the gap -> cite the web source, not your own training weights. "
                 "Do NOT invent facts not present in either the source chunks or the web results."
             )
         else:
@@ -144,14 +144,14 @@ class TutorAgent:
                 "role": "system",
                 "content": (
                     f"You are a Cognitive Translator and tutor. {grounding}\n\n"
-                    "Write a single, flowing lesson — do NOT split into separate sections like "
+                    "Write a single, flowing lesson -> do NOT split into separate sections like "
                     "'Concept' or 'From the Source'. Weave the intuitive explanation and factual "
                     "details together naturally into one coherent narrative.\n\n"
                     "FORMATTING RULES:\n"
                     f"- {math_note}\n"
                     "- Use **bold** for key terms.\n"
                     "- Use bullet points (lines starting with '* ') for lists.\n"
-                    "- Do NOT include [Source: X, chunk N] citations or Web source URLs in your output — "
+                    "- Do NOT include [Source: X, chunk N] citations or Web source URLs in your output -> "
                     "the student should not see internal source or web reference links."
                 ),
             },
@@ -430,7 +430,7 @@ class TutorAgent:
             )[:3000]
             grounding_block = (
                 f"\n\nSOURCE MATERIAL (ground every quantity, relationship, and label "
-                f"in this text only — do not invent data):\n{chunk_text}"
+                f"in this text only -> do not invent data):\n{chunk_text}"
             )
         messages = [
             {
@@ -491,7 +491,7 @@ class TutorAgent:
         """Extract real data from RAG chunks and build a grounded Plotly chart.
 
         The model fills a strict GroundedPlotSpec; Python then assembles the HTML
-        deterministically — no model-written JavaScript, no hallucinated numbers.
+        deterministically -> no model-written JavaScript, no hallucinated numbers.
         """
         chunk_text = "\n\n".join(
             f"[{c.get('source', '?')}]: {c['text']}" for c in chunks
@@ -551,7 +551,7 @@ class TutorAgent:
         return HTML5VisualPayload(
             html_code=html_code,
             animation_type="plotly",
-            explanation=f"{spec.source_note} — {spec.title}: {spec.y_label} vs {spec.x_label}.",
+            explanation=f"{spec.source_note} -> {spec.title}: {spec.y_label} vs {spec.x_label}.",
         )
 
 

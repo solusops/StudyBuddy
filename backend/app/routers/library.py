@@ -1,8 +1,8 @@
-"""Library router — single-document content management.
+"""Library router -> single-document content management.
 
 A session is exactly one uploaded document (set): drag-and-drop files in,
 get an instant curriculum tree, chunk the full text in the background.
-There is no folder-configuration concept — the uploads directory under
+There is no folder-configuration concept -> the uploads directory under
 ~/.studybuddy/uploads IS the content store.
 """
 import asyncio
@@ -110,8 +110,8 @@ def status():
 
 
 @router.post("/start-session")
-async def start_session(req: StartSessionRequest):
-    """Instant tree generation from document structure — no RAG needed.
+async def start_session(req: StartSessionRequest, background_tasks: BackgroundTasks):
+    """Instant tree generation from document structure -> no RAG needed.
 
     Reads headings/TOC from each uploaded file and sends to Gemma 4.
     Returns in ~2s, before chunking is complete.
@@ -136,7 +136,7 @@ async def start_session(req: StartSessionRequest):
         except Exception:
             pass
 
-    # Extract structure from each file (headings / first pages — fast, no embedding)
+    # Extract structure from each file (headings / first pages -> fast, no embedding)
     loop = asyncio.get_event_loop()
     overviews = []
     for path in files[:5]:  # cap at 5 docs to keep the prompt manageable
@@ -159,6 +159,31 @@ async def start_session(req: StartSessionRequest):
     )
 
     get_graph_manager().set_graph(req.session_id, nodes)
+
+    # Background: chunk full documents into LIBRARY_COLLECTION for RAG.
+    db = get_db()
+    db.delete_where(LIBRARY_COLLECTION, {"session_id": req.session_id})
+    set_ingest_status(req.session_id, "chunking")
+
+    def _chunk_all():
+        try:
+            total = 0
+            for path in files:
+                with open(path, "rb") as f:
+                    content = f.read()
+                filename = os.path.basename(path)
+                total += ingest_file(
+                    content, filename, LIBRARY_COLLECTION, db=db,
+                    skip_if_indexed=False, session_id=req.session_id,
+                )
+            set_ingest_status(req.session_id, "ready" if total > 0 else "error")
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("start_session chunking failed for session %s", req.session_id)
+            set_ingest_status(req.session_id, "error")
+
+    background_tasks.add_task(_chunk_all)
+
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
@@ -195,7 +220,7 @@ async def upload_and_start(
     """Accept direct file uploads (drag-and-drop), generate tree instantly, chunk in background.
 
     Works in both browser (no Electron needed) and Electron.
-    - Reads document structure (headings/first pages) immediately — no embedding needed
+    - Reads document structure (headings/first pages) immediately -> no embedding needed
     - Generates curriculum tree in ~2s
     - Chunks full documents into LIBRARY_COLLECTION in background
     """
@@ -208,7 +233,7 @@ async def upload_and_start(
         filename = f.filename or "upload"
         file_store.append((content, filename))
 
-    # The curriculum tree is NOT generated here — the client opens the WebSocket and
+    # The curriculum tree is NOT generated here -> the client opens the WebSocket and
     # fires BUILD_GRAPH, which streams nodes in parallel ("fireworks"). This returns fast.
 
     # Persist uploaded files to disk so /library/file/{name} can serve them later
@@ -275,7 +300,7 @@ def clear_library():
 
 
 # ------------------------------------------------------------------ #
-# History — past learning materials, resumable from the start window #
+# History -> past learning materials, resumable from the start window #
 # ------------------------------------------------------------------ #
 
 
@@ -284,7 +309,7 @@ def list_history():
     """One entry per document the student has committed progress on, most recent first.
 
     A document only shows up here if its source PDF/DOCX/TXT bytes are still cached
-    (~/.studybuddy/pdfs/{document_id}.*) — otherwise there'd be nothing to resume.
+    (~/.studybuddy/pdfs/{document_id}.*) -> otherwise there'd be nothing to resume.
     """
     if not os.path.isdir(_SESSIONS_DIR):
         return {"items": []}
@@ -321,7 +346,7 @@ class ResumeHistoryRequest(BaseModel):
 @router.post("/history/resume")
 async def resume_history(req: ResumeHistoryRequest, background_tasks: BackgroundTasks):
     """Restore a past document as the active upload, re-chunk it under a fresh session,
-    and hand back its already-known curriculum tree — no LLM tree regeneration needed.
+    and hand back its already-known curriculum tree -> no LLM tree regeneration needed.
     """
     doc_json_path = os.path.join(_SESSIONS_DIR, f"doc_{req.document_id}.json")
     pdf_path = os.path.join(_PDF_CACHE_DIR, f"{req.document_id}.pdf")
@@ -341,17 +366,17 @@ async def resume_history(req: ResumeHistoryRequest, background_tasks: Background
     with open(os.path.join(_UPLOADS_DIR, filename), "wb") as fh:
         fh.write(content)
 
-    session_id = str(uuid.uuid4())
+    session_id = saved.get("session_id") or str(uuid.uuid4())
     set_ingest_status(session_id, "chunking")
     db = get_db()
 
     def _chunk_all():
         try:
-            total = ingest_file(
+            ingest_file(
                 content, filename, LIBRARY_COLLECTION, db=db,
                 skip_if_indexed=False, session_id=session_id,
             )
-            set_ingest_status(session_id, "ready" if total > 0 else "error")
+            set_ingest_status(session_id, "ready")
         except Exception:
             import logging
             logging.getLogger(__name__).exception(
@@ -433,7 +458,7 @@ async def refine_tree(req: RefineTreeRequest):
     if chunk_count == 0:
         raise HTTPException(
             400,
-            "Content is still being indexed — wait a moment, then try again.",
+            "Content is still being indexed -> wait a moment, then try again.",
         )
 
     loop = asyncio.get_event_loop()
@@ -448,7 +473,7 @@ async def refine_tree(req: RefineTreeRequest):
     brain = _get_brain()
 
     if req.current_nodes and len(req.current_nodes) > 0:
-        # Context-aware refinement — send existing tree structure to LLM
+        # Context-aware refinement -> send existing tree structure to LLM
         nodes, edges = await loop.run_in_executor(
             None,
             brain.refine_curriculum,

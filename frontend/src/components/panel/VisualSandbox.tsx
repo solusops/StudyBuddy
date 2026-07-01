@@ -45,7 +45,7 @@ export function VisualSandbox({ visual, nodeId, animationType = "canvas", height
         const data = await resp.json()
         setSrcDoc(wrapHtml(data.visual.html_code))
       } catch {
-        // Repair failed — show static error
+        // Repair failed -> show static error
         setSrcDoc(`<html><body style="color:white;background:#0f0f0f;padding:16px">Visual unavailable.</body></html>`)
       } finally {
         setRepairing(false)

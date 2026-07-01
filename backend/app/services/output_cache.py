@@ -1,4 +1,4 @@
-"""Content-addressed output cache — persist & reuse agent outputs.
+"""Content-addressed output cache -> persist & reuse agent outputs.
 
 Key = sha256(SCHEMA_VERSION | event_name | familiarity | anchor_id | input_fingerprint)
 where input_fingerprint = sha256(exact chunk texts + selection_text).
@@ -57,7 +57,7 @@ class OutputCache:
             json.dump(payload, f)
 
     def clear(self) -> int:
-        """Dev helper — wipe all cached entries. Returns count deleted."""
+        """Dev helper -> wipe all cached entries. Returns count deleted."""
         count = 0
         for fname in os.listdir(_CACHE_DIR):
             if fname.endswith(".json"):

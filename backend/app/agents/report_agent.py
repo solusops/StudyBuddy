@@ -1,4 +1,4 @@
-"""Report Agent — streams textbook-style report sections from highlighted context.
+"""Report Agent -> streams textbook-style report sections from highlighted context.
 
 Used by the Live-Compiling Research Report Canvas. Each highlighted passage becomes
 a formatted section; a background pass may attach a grounded visual to it.
@@ -45,14 +45,14 @@ class ReportAgent:
                 "content": (
                     "You are extracting a clean, grounded insight from ONE of a student's notes on a "
                     "research paper. Use the student's note and the surrounding source context. "
-                    "Capture what the note is really about — do not invent beyond the source. "
+                    "Capture what the note is really about -> do not invent beyond the source. "
                     f"Tailor wording to the {familiarity} level."
                 ),
             },
             {
                 "role": "user",
                 "content": (
-                    f"STUDENT NOTE:\n{note_text or '(no written note — the student marked this region)'}\n\n"
+                    f"STUDENT NOTE:\n{note_text or '(no written note -> the student marked this region)'}\n\n"
                     f"HIGHLIGHTED PASSAGE:\n{snippet_text[:1200]}\n\n"
                     f"PINNED/EXTRACTED CONTENT:\n{extracted_content[:800]}\n\n"
                     f"SURROUNDING SOURCE CONTEXT:\n{source_context[:2000]}"
@@ -81,7 +81,7 @@ class ReportAgent:
 
         if knowledge_mode == "net_support":
             grounding = (
-                "Ground the report strictly in the pooled notes and the WEB CONTEXT provided below — "
+                "Ground the report strictly in the pooled notes and the WEB CONTEXT provided below -> "
                 "you may reorganize and reword for clarity, but never add a fact, figure, or claim "
                 "that is not present in the notes or web context."
             )

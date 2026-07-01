@@ -139,7 +139,7 @@ class CerebrasClient:
                 self._health = {"status": "ok"}
                 return output_model.model_validate_json(raw)
             except _ConnErr as exc:
-                # HTTP/2 server disconnect — retry once with backoff
+                # HTTP/2 server disconnect -> retry once with backoff
                 last_exc = exc
                 time.sleep(2)
                 continue

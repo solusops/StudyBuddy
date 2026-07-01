@@ -2,7 +2,7 @@
 
 Write path: push_session() → cognee.remember() with session_id (cache) →
             cognee.improve() at END_SESSION (flush to graph, fire-and-forget).
-Read path:  query_prior_knowledge() → cognee.search(CHUNKS) — pure vector
+Read path:  query_prior_knowledge() → cognee.search(CHUNKS) -> pure vector
             search, no LLM call, returns raw text for BrainAgent context.
 """
 from typing import List
@@ -18,6 +18,7 @@ class StudentMemoryService:
         topic: str,
         journal: List[JournalEntry],
         patches: List[NodePatch],
+        session_summary: str = "",
     ) -> None:
         import cognee
         try:
@@ -84,6 +85,9 @@ class StudentMemoryService:
             if weak:
                 lines.append(f"Weak areas needing review: {', '.join(weak)}.")
 
+            if session_summary:
+                lines.append(f"Session Summary:\n{session_summary}")
+
             summary = "\n".join(lines)
 
             # Cache to Cognee session (no graph build yet)
@@ -104,7 +108,7 @@ class StudentMemoryService:
         from cognee import SearchType
         try:
             results = await cognee.search(
-                query_text=f"student struggles weaknesses mastery {topic}",
+                query_text=f"student name personal details struggles weaknesses mastery {topic}",
                 query_type=SearchType.CHUNKS,
                 datasets=["student_memory"],
                 top_k=8,
@@ -116,6 +120,10 @@ class StudentMemoryService:
                 return ""
             return f'Prior learning context for "{topic}":\n' + "\n".join(chunks[:5])
         except Exception as exc:
+            msg = str(exc)
+            if "No data found in the system" in msg or "DatabaseNotCreatedError" in msg:
+                # Expected on fresh installs before any END_SESSION event has occurred
+                return ""
             import logging
             logging.getLogger(__name__).warning("query_prior_knowledge failed: %s", exc)
             return ""

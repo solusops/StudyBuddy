@@ -3,7 +3,7 @@ import { useGraphStore } from "../store/graphStore"
 import { useInteractionStore } from "../store/interactionStore"
 
 /**
- * Full session teardown — backend (chunks, graph, journal, annotations, uploaded
+ * Full session teardown -> backend (chunks, graph, journal, annotations, uploaded
  * file) and frontend (Zustand stores + the localStorage they mirror). A session
  * is exactly one input document, so "Clear" means starting over with nothing.
  */

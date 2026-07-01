@@ -6,13 +6,13 @@ import { useGraphStore } from "../../store/graphStore"
 
 type ConceptNodeType = Node<NodeData, "concept">
 
-// Status colours — all nodes are open/accessible
+// Status colours -> all nodes are open/accessible
 const STATUS_COLOR: Record<string, { bg: string; border: string; text: string }> = {
-  LOCKED:     { bg: "#EEF3F8", border: "#1A3557", text: "#1A3557" },
-  ACTIVE:     { bg: "#EEF3F8", border: "#1A3557", text: "#1A3557" },
-  MASTERED:   { bg: "#E6F4ED", border: "#2D6A4F", text: "#2D6A4F" },
+  LOCKED: { bg: "#EEF3F8", border: "#1A3557", text: "#1A3557" },
+  ACTIVE: { bg: "#EEF3F8", border: "#1A3557", text: "#1A3557" },
+  MASTERED: { bg: "#E6F4ED", border: "#2D6A4F", text: "#2D6A4F" },
   STRUGGLING: { bg: "#FEF2E8", border: "#92400E", text: "#92400E" },
-  DEGRADED:   { bg: "#FEF3C7", border: "#B45309", text: "#B45309" },
+  DEGRADED: { bg: "#FEF3C7", border: "#B45309", text: "#B45309" },
 }
 
 // Complexity → size scaling (1-5 maps to visual dimensions)
@@ -107,7 +107,7 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
           opacity: (animate && !isRoot) ? undefined : 1,
         }}
       >
-        {/* Activity-tally fill — rises from the bottom, animated */}
+        {/* Activity-tally fill -> rises from the bottom, animated */}
         {!isRoot && percent > 0 && (
           <div style={{
             position: "absolute", left: 0, right: 0, bottom: 0,

@@ -1,4 +1,4 @@
-"""Infinity Wiki Agent — on-demand YouTube "Deep Dive".
+"""Infinity Wiki Agent -> on-demand YouTube "Deep Dive".
 
 Fires only on an explicit Deep Dive button. Returns watchable videos (played in-app)
 and, per video, a transcript-grounded summary that is fed into the session's RAG so
@@ -28,7 +28,7 @@ class InfinityWikiAgent:
         self._yt_key = youtube_api_key or os.getenv("YOUTUBE_API_KEY", "")
 
     async def find_videos(self, term: str, familiarity: str, n: int = 4) -> List[Dict[str, Any]]:
-        """Return watchable videos for a term — id/title/channel/thumbnail/url."""
+        """Return watchable videos for a term -> id/title/channel/thumbnail/url."""
         items = await search_videos(f"{term} {familiarity} explanation", self._yt_key, max_results=n)
         videos: List[Dict[str, Any]] = []
         for it in items:
@@ -59,7 +59,7 @@ class InfinityWikiAgent:
                 "role": "system",
                 "content": (
                     "Summarize this educational video transcript for a student. Ground everything in "
-                    f"the transcript — do not invent. Tailor to the {familiarity} level."
+                    f"the transcript -> do not invent. Tailor to the {familiarity} level."
                 ),
             },
             {

@@ -24,7 +24,7 @@ async def lifespan(app: FastAPI):
     os.environ["LLM_API_KEY"] = cerebras_key
     os.environ["LLM_API_BASE"] = cerebras_base
     os.environ["LLM_MODEL"] = "openai/gemma-4-31b"
-    # Cerebras has no embeddings endpoint — Cognee's default embedding model
+    # Cerebras has no embeddings endpoint -> Cognee's default embedding model
     # (openai/text-embedding-3-large) would otherwise be routed through the
     # OPENAI_API_BASE override above and 404. Use a local, fully offline
     # embedding model instead (matches CLAUDE.md: Cognee never writes to cloud).
@@ -35,6 +35,10 @@ async def lifespan(app: FastAPI):
     import cognee
     from pathlib import Path
     try:
+        import logging
+        # Suppress expected "No data found" and "DatabaseNotCreatedError" logs on fresh installs
+        logging.getLogger("cognee.shared.logging_utils").setLevel(logging.CRITICAL)
+        
         root = str(Path.home() / ".studybuddy" / "cognee")
         cognee.config.data_root_directory(root)
         cognee.config.system_root_directory(f"{root}/system")
@@ -88,7 +92,7 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
                 await handle_event(session_id, event_type, msg.get("data", {}))
             except Exception:
                 # A single bad event (e.g. a transient LLM/web-search failure) must not kill
-                # the whole connection — the student would see chat/lesson generation just
+                # the whole connection -> the student would see chat/lesson generation just
                 # silently stop with no way to retry without reloading.
                 import logging
                 logging.getLogger(__name__).exception(
@@ -96,7 +100,7 @@ async def websocket_endpoint(ws: WebSocket, session_id: str):
                 )
                 await cm.send(session_id, "ERROR", {
                     "event_type": event_type,
-                    "message": "Something went wrong processing that — please try again.",
+                    "message": "Something went wrong processing that -> please try again.",
                 })
     except (WebSocketDisconnect, RuntimeError):
         cm.disconnect(session_id)

@@ -35,7 +35,7 @@ interface SessionStore {
   lessonStreaming: boolean
   studyBuddyInitializing: boolean
 
-  // Lesson cache — keyed by nodeId, avoids re-fetching already-loaded lessons
+  // Lesson cache -> keyed by nodeId, avoids re-fetching already-loaded lessons
   lessonCache: Record<string, string>
   // Web sources (title + url) the current lesson drew on, when Net Support fetched them
   lessonWebSources: { title: string; url: string }[]
@@ -99,7 +99,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setKnowledgeMode: (mode) => set({ knowledgeMode: mode }),
 
-  // Switching nodes must drop all previously-generated tool output — otherwise Study
+  // Switching nodes must drop all previously-generated tool output -> otherwise Study
   // Buddy/Flashcards/Quiz keep showing the prior node's content (lessonCache is the
   // one exception: it's intentionally keyed by nodeId so revisits don't re-fetch).
   setActiveNode: (id, label) =>

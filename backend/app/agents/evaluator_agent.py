@@ -1,8 +1,8 @@
-"""Evaluator Agent — reasoned mastery assessment from the session journal.
+"""Evaluator Agent -> reasoned mastery assessment from the session journal.
 
 The model does NOT invent numeric scores. It classifies the student's demonstrated
-understanding per node against a rubric — judged from the SOPHISTICATION of their
-questions, quiz answers, and Feynman explanations — and gives a reasoning + evidence.
+understanding per node against a rubric -> judged from the SOPHISTICATION of their
+questions, quiz answers, and Feynman explanations -> and gives a reasoning + evidence.
 A deterministic rubric map converts each classification into the 4-axis score patch.
 The monotone clamp is enforced downstream by GraphStateManager.
 """
@@ -64,15 +64,16 @@ class EvaluatorAgent:
                 "content": (
                     "You are a learning-trajectory evaluator. For each concept node in the journal, "
                     "classify the student's demonstrated understanding by the SOPHISTICATION of what "
-                    "they did — the kind of questions they asked, their quiz answers, and their Feynman "
-                    "explanations — into exactly one of:\n"
+                    "they did -> the kind of questions they asked, their quiz answers, and their Feynman "
+                    "explanations -> into exactly one of:\n"
                     "- building_basics: asks definitional 'what is X' questions; frequent wrong answers.\n"
                     "- foundational: grasps core ideas but asks mostly surface-level questions.\n"
                     "- comfortable: asks 'why/how' questions, connects ideas, mostly correct.\n"
                     "- sophisticated: asks abstract, edge-case, or synthesis questions; near-mastery.\n"
                     "Give a one-sentence reasoning and up to 3 concrete evidence signals per node. "
                     "Only assess nodes that appear in the journal. Do NOT output numeric scores. "
-                    "Also write a one-paragraph session_summary."
+                    "Also write a one-paragraph session_summary capturing their learning behavior "
+                    "and any personal details they shared (e.g., their name or background)."
                 ),
             },
             {

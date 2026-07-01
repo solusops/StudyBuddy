@@ -2,7 +2,7 @@ import { useRef } from "react"
 
 /**
  * Live tokens/second for a streaming text output. Pure (no state/effects): recomputes
- * on each render — which is exactly when a new token has been appended. Approximates
+ * on each render -> which is exactly when a new token has been appended. Approximates
  * tokens as chars/4 (Cerebras deltas vary in length). Returns 0 until ~0.3s elapsed.
  */
 export function useTokenRate(text: string, streaming: boolean): number {

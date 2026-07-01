@@ -1,6 +1,6 @@
 """Deterministic per-node activity tally (no LLM).
 
-Computes each node's progress from what the student actually did on it — read from
+Computes each node's progress from what the student actually did on it -> read from
 the session journal. Runs on demand (graph load / every visit) to drive the node
 fill animation and completion light-up. The LLM evaluation (reasoned scores) is a
 separate path.

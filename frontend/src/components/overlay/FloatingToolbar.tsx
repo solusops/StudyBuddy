@@ -33,7 +33,7 @@ export function FloatingToolbar() {
     return () => window.removeEventListener("keydown", handler)
   }, [setCursorMode, clearGroup, toggleRegions])
 
-  // Hand-drawn (RoughNotation) box around the active control — the toolbar is fixed,
+  // Hand-drawn (RoughNotation) box around the active control -> the toolbar is fixed,
   // so RoughNotation positions reliably (no scroll drift).
   useEffect(() => {
     annoRef.current?.remove()

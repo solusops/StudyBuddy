@@ -66,7 +66,7 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
       setWebSearching(false)
       addChatMessage({
         role: "assistant",
-        content: `_${detail.message || "Something went wrong — please try again."}_`,
+        content: `_${detail.message || "Something went wrong -> please try again."}_`,
       })
     }
     window.addEventListener("ws-error", onError)
@@ -176,7 +176,7 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
                 <tr>
                   {header.map((h, hi) => (
                     <th key={hi} style={{ border: "1px solid #E8E0D5", padding: "6px 10px", background: "#EEF3F8", color: "#1A3557", textAlign: "left", fontWeight: 700 }}
-                        dangerouslySetInnerHTML={{ __html: renderInline(h) }} />
+                      dangerouslySetInnerHTML={{ __html: renderInline(h) }} />
                   ))}
                 </tr>
               </thead>
@@ -185,7 +185,7 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
                   <tr key={ri}>
                     {r.map((c, ci) => (
                       <td key={ci} style={{ border: "1px solid #E8E0D5", padding: "6px 10px", color: "#1A1A2E", verticalAlign: "top" }}
-                          dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
+                        dangerouslySetInnerHTML={{ __html: renderInline(c) }} />
                     ))}
                   </tr>
                 ))}
@@ -230,7 +230,7 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
       // Paragraph
       elements.push(
         <p key={`${keyPrefix}-${i}`} style={{ margin: "0 0 10px", lineHeight: 1.55 }}
-           dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
+          dangerouslySetInnerHTML={{ __html: renderInline(trimmed) }} />
       )
       i++
     }
@@ -399,7 +399,7 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input area — context chip sits above the textarea, inside the input block */}
+      {/* Input area -> context chip sits above the textarea, inside the input block */}
       <div style={{ borderTop: "1px solid #E8E0D5", flexShrink: 0 }}>
         {hasContext && (
           <div style={{
@@ -426,10 +426,10 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
                 </p>
               )}
               {selectionImageBase64 && (
-                <img 
-                  src={`data:image/png;base64,${selectionImageBase64}`} 
+                <img
+                  src={`data:image/png;base64,${selectionImageBase64}`}
                   alt="Selection context"
-                  style={{ maxHeight: 300, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #E8E0D5" }} 
+                  style={{ maxHeight: 300, maxWidth: "100%", objectFit: "contain", borderRadius: 4, border: "1px solid #E8E0D5" }}
                 />
               )}
             </div>

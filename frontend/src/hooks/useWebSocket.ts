@@ -34,7 +34,7 @@ export function useWebSocket(sessionId: string | null) {
       if (ws.current?.readyState === WebSocket.OPEN) {
         ws.current.send(payload)
       } else {
-        // Socket not open yet — buffer and flush on open (avoids dropping BUILD_GRAPH).
+        // Socket not open yet -> buffer and flush on open (avoids dropping BUILD_GRAPH).
         pending.current.push(payload)
       }
     },

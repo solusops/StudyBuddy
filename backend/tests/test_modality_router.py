@@ -1,4 +1,4 @@
-"""Tests for ModalityRouter — verifies routing rules and prompt grounding."""
+"""Tests for ModalityRouter -> verifies routing rules and prompt grounding."""
 import json
 from unittest.mock import MagicMock
 

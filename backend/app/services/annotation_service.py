@@ -1,4 +1,4 @@
-"""Annotation persistence — in-memory dict + disk at ~/.studybuddy/annotations/{document_id}.json.
+"""Annotation persistence -> in-memory dict + disk at ~/.studybuddy/annotations/{document_id}.json.
 
 Mirrors the session-persistence pattern in routers/session.py.
 """
@@ -61,7 +61,7 @@ class AnnotationService:
         return a is not None
 
     def delete_for_document(self, document_id: str) -> None:
-        """Drop every annotation for a document — in-memory and on disk."""
+        """Drop every annotation for a document -> in-memory and on disk."""
         for aid in [a.annotation_id for a in self._store.values() if a.document_id == document_id]:
             self._store.pop(aid, None)
         p = self._path(document_id)
@@ -69,7 +69,7 @@ class AnnotationService:
             os.remove(p)
 
 
-# Single process-wide instance — every caller must go through get_annotation_service()
+# Single process-wide instance -> every caller must go through get_annotation_service()
 # rather than constructing AnnotationService() directly, or in-memory state forks
 # (a write through one instance won't be visible to another until the next disk read).
 _instance: AnnotationService | None = None

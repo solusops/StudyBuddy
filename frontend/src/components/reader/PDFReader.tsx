@@ -9,7 +9,7 @@ import { RegionLayer } from "./RegionLayer"
 import { MarginGutter } from "./MarginGutter"
 import { PdfLoupe } from "./PdfLoupe"
 
-// pdf.js worker — Vite serves this from node_modules
+// pdf.js worker -> Vite serves this from node_modules
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
@@ -62,7 +62,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
     fetch(`/annotations/${documentId}`)
       .then((r) => r.json())
       .then((data) => setAnnotations(Array.isArray(data) ? data : []))
-      .catch(() => {})
+      .catch(() => { })
   }, [documentId, setAnnotations])
 
   // Scroll to blinkTarget
@@ -99,7 +99,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
 
   // Capture page text for concept identification
   const handlePageRenderSuccess = (page: { pageNumber: number }) => {
-    // The text layer is in the DOM after render — extract it
+    // The text layer is in the DOM after render -> extract it
     setTimeout(() => {
       const pageEl = containerRef.current?.querySelector(
         `[data-page-number="${page.pageNumber}"] .react-pdf__Page__textContent`
@@ -114,7 +114,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
   }
 
   // Convert a DOMRect to normalised coords relative to the page element
-  const toNorm = (rect: DOMRect, pageEl: Element): {x: number, y: number, w: number, h: number} => {
+  const toNorm = (rect: DOMRect, pageEl: Element): { x: number, y: number, w: number, h: number } => {
     const pr = pageEl.getBoundingClientRect()
     return {
       x: (rect.left - pr.left) / pr.width,
@@ -146,7 +146,7 @@ export function PDFReader({ fileUrl, concepts, onPageTextReady, onConceptClick, 
       pushSnippet(snippet)
       sel.removeAllRanges()
     } else {
-      // Read (DEFAULT) mode — push to Context Broker for Chat/Infinite Wiki
+      // Read (DEFAULT) mode -> push to Context Broker for Chat/Infinite Wiki
       const pageText = pageTexts.current.get(pageNumber) ?? ""
       const idx = pageText.indexOf(text.slice(0, 40))
       const surrounding = idx >= 0

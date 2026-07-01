@@ -35,7 +35,7 @@ interface Props {
 }
 
 export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
-  const { studyBuddyHistory, streamingStudyBuddy, addStudyBuddyMessage, setStudyBuddyHistory, setStudyBuddyInitializing } = useSessionStore()
+  const { studyBuddyHistory, streamingStudyBuddy, addStudyBuddyMessage, setStudyBuddyHistory, studyBuddyInitializing, setStudyBuddyInitializing } = useSessionStore()
   const { studyBuddySessions, activeStudyBuddySessionId, setActiveStudyBuddySession, addStudyBuddySession, updateStudyBuddySession } = useInteractionStore()
   const [draft, setDraft] = useState("")
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -50,6 +50,7 @@ export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Pr
   useEffect(() => {
     if (studyBuddyHistory.length === 0 && !streamingStudyBuddy && initializedNodeId.current !== nodeId) {
       initializedNodeId.current = nodeId
+      setStudyBuddyInitializing(true)
       sendEvent("STUDY_BUDDY_INIT", { node_id: nodeId, node_label: nodeLabel, familiarity })
     }
   }, [studyBuddyHistory.length, streamingStudyBuddy, nodeId, nodeLabel, familiarity, sendEvent])
@@ -377,6 +378,24 @@ export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Pr
             {msg.role === "study_buddy" ? renderProse(msg.content, `msg-${i}`) : msg.content}
           </div>
         ))}
+
+        {studyBuddyInitializing && !streamingStudyBuddy && studyBuddyHistory.length === 0 && (
+          <div style={{
+            alignSelf: "flex-start",
+            background: "#FFFFFF",
+            border: "1px solid #E8E0D5",
+            padding: "16px 20px",
+            borderRadius: 12,
+            boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+            display: "flex",
+            gap: 6,
+            alignItems: "center"
+          }}>
+             <span style={{ width: 8, height: 8, background: "#4A7FB5", borderRadius: "50%", animation: "bounce 1.4s infinite ease-in-out both" }} />
+             <span style={{ width: 8, height: 8, background: "#4A7FB5", borderRadius: "50%", animation: "bounce 1.4s infinite ease-in-out both", animationDelay: "0.2s" }} />
+             <span style={{ width: 8, height: 8, background: "#4A7FB5", borderRadius: "50%", animation: "bounce 1.4s infinite ease-in-out both", animationDelay: "0.4s" }} />
+          </div>
+        )}
         
         {streamingStudyBuddy && (
           <div style={{ 
@@ -440,9 +459,10 @@ export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Pr
         
         <textarea
           value={draft}
+          disabled={studyBuddyInitializing || !!streamingStudyBuddy}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send() } }}
-          placeholder="Respond to Study Buddy..."
+          placeholder={studyBuddyInitializing || !!streamingStudyBuddy ? "Study Buddy is typing..." : "Respond to Study Buddy..."}
           rows={1}
           style={{ 
             flex: 1, 
@@ -460,10 +480,10 @@ export function StudyBuddyTool({ sendEvent, nodeId, nodeLabel, familiarity }: Pr
         
         <button 
           onClick={send} 
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || studyBuddyInitializing || !!streamingStudyBuddy}
           style={{ 
-            background: draft.trim() ? "#1A3557" : "#E2E8F0", 
-            color: draft.trim() ? "#FAF7F2" : "#94A3B8", 
+            background: draft.trim() && !studyBuddyInitializing && !streamingStudyBuddy ? "#1A3557" : "#E2E8F0", 
+            color: draft.trim() && !studyBuddyInitializing && !streamingStudyBuddy ? "#FAF7F2" : "#94A3B8", 
             border: "none", 
             borderRadius: "50%", 
             width: 44,

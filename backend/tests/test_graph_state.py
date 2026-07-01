@@ -15,7 +15,7 @@ def test_score_patch_is_monotone():
     node = NodeData(id="n1", label="Entropy")
     node.scores.memory = 70
     mgr.add_node("s1", node)
-    # Attempt to decrease memory from 70 to 30 — must be clamped
+    # Attempt to decrease memory from 70 to 30 -> must be clamped
     patched = mgr.apply_node_patch("s1", NodePatch(node_id="n1", score_patch={"memory": 30}))
     assert patched.scores.memory == 70
 

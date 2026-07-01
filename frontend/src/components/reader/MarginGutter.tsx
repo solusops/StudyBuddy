@@ -137,7 +137,7 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
     setDraftStatus("saving")
     try {
       if (!documentId || !sessionId) {
-        // No session yet — store locally in interactionStore only (no backend persist)
+        // No session yet -> store locally in interactionStore only (no backend persist)
         addAnnotation({
           annotation_id: `local-${Date.now()}`,
           document_id: documentId ?? "local",
@@ -246,7 +246,7 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault()
-                    ;(e.target as HTMLElement).blur()
+                      ; (e.target as HTMLElement).blur()
                   }
                 }}
                 rows={2}
@@ -267,7 +267,7 @@ export function MarginGutter({ pageNumber, pageHeightPx, documentId, sessionId }
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {annotation.image_base64 && (
-                  <img 
+                  <img
                     src={`data:image/png;base64,${annotation.image_base64}`}
                     alt="Pinned region"
                     style={{ maxWidth: "100%", borderRadius: 6, objectFit: "contain", border: "1px solid #FDE68A" }}

@@ -1,7 +1,7 @@
-"""Multimodal vision agent — analyses cropped PDF regions.
+"""Multimodal vision agent -> analyses cropped PDF regions.
 
 Uses Cerebras vision-capable model (gemma-4-31b).
-Images must be base64-encoded PNG data URIs — hosted URLs not supported.
+Images must be base64-encoded PNG data URIs -> hosted URLs not supported.
 """
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ class SensesAgent:
                             "3. extracted_content: if it is a mathematical formula, output ONLY "
                             "valid LaTeX. If it is a table, output it as a GitHub-markdown table. "
                             "Otherwise give a 1-2 sentence factual description. "
-                            "Transcribe only what is visible — do not invent data."
+                            "Transcribe only what is visible -> do not invent data."
                         ),
                     },
                 ],

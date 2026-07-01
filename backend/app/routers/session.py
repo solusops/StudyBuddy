@@ -111,11 +111,11 @@ class ClearRequest(BaseModel):
 
 @router.post("/clear")
 def clear_session(req: ClearRequest):
-    """Wipe everything tied to this session/document — persistent and in-memory.
+    """Wipe everything tied to this session/document -> persistent and in-memory.
 
     A session is exactly one input document, so clearing means starting over
     with nothing: no curriculum tree, no lessons, no chunks, no uploaded file.
-    Cognee's cross-session student-memory profile is intentionally NOT touched —
+    Cognee's cross-session student-memory profile is intentionally NOT touched ->
     it's meant to persist and grow across documents, not reset with them.
     """
     import shutil

@@ -3,16 +3,16 @@ import type { AppSession } from "../../App"
 import type { FamiliarityLevel } from "../../types"
 
 const FAMILIARITY_OPTIONS: { value: FamiliarityLevel; label: string; desc: string }[] = [
-  { value: "eli5",        label: "ELI5",        desc: "Sensory analogies, no math" },
-  { value: "high_school", label: "High School",  desc: "Standard terms, real-world examples" },
-  { value: "graduate",    label: "Graduate",     desc: "Domain competence assumed" },
-  { value: "expert",      label: "Expert",       desc: "Pure synthesis, proofs" },
+  { value: "eli5", label: "ELI5", desc: "Sensory analogies, no math" },
+  { value: "high_school", label: "High School", desc: "Standard terms, real-world examples" },
+  { value: "graduate", label: "Graduate", desc: "Domain competence assumed" },
+  { value: "expert", label: "Expert", desc: "Pure synthesis, proofs" },
 ]
 
 const KEY_FIELDS: { env: string; label: string; hint: string; required: boolean }[] = [
   { env: "CEREBRAS_API_KEY", label: "Cerebras", hint: "csk-…", required: true },
-  { env: "TAVILY_API_KEY",   label: "Tavily",   hint: "tvly-… (enables Net Support)", required: false },
-  { env: "YOUTUBE_API_KEY",  label: "YouTube",  hint: "AIza… (enables Deep Dive)", required: false },
+  { env: "TAVILY_API_KEY", label: "Tavily", hint: "tvly-… (enables Net Support)", required: false },
+  { env: "YOUTUBE_API_KEY", label: "YouTube", hint: "AIza… (enables Deep Dive)", required: false },
 ]
 
 interface HistoryItem {
@@ -71,7 +71,7 @@ export function SetupModal({ onSessionReady }: Props) {
   useEffect(() => { localStorage.setItem("sb_familiarity", familiarity) }, [familiarity])
   useEffect(() => { localStorage.setItem("sb_knowledgeMode", knowledgeMode) }, [knowledgeMode])
 
-  // Poll until backend is reachable — disables the button during cold start
+  // Poll until backend is reachable -> disables the button during cold start
   useEffect(() => {
     let cancelled = false
     const poll = async () => {
@@ -93,7 +93,7 @@ export function SetupModal({ onSessionReady }: Props) {
     fetch("/api/keys")
       .then((r) => r.json())
       .then((data) => setKeyStatus(data))
-      .catch(() => {})
+      .catch(() => { })
     fetch("/library/status")
       .then((r) => r.json())
       .then((status) => {
@@ -104,7 +104,7 @@ export function SetupModal({ onSessionReady }: Props) {
           }
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [backendReady])
 
   // Load session history when the tab opens (backend must be up).
@@ -336,7 +336,7 @@ export function SetupModal({ onSessionReady }: Props) {
             {historyError && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{historyError}</p>}
             {!historyLoading && !historyError && history.length === 0 && (
               <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>
-                No past sessions yet — study something and hit Commit to save your progress here.
+                No past sessions yet -> study something and hit Commit to save your progress here.
               </p>
             )}
             {history.map((item) => (
@@ -383,219 +383,219 @@ export function SetupModal({ onSessionReady }: Props) {
             ))}
           </div>
         ) : (
-        <>
-        {/* Existing library — quick continue */}
-        {existingFiles.length > 0 && files.length === 0 && (
-          <div style={{
-            background: "#EEF3F8",
-            border: "1.5px solid #1A3557",
-            borderRadius: 12,
-            padding: "14px 16px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ fontSize: 14, fontWeight: 600, color: "#1A3557" }}>Continuing from last session</span>
-              <button
-                onClick={async () => {
-                  await fetch("/library/clear", { method: "POST" })
-                  setExistingFiles([])
-                }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 13 }}
-              >
-                Start fresh
-              </button>
-            </div>
-            {existingFiles.map((f) => (
-              <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#374151" }}>
-                <span style={{ opacity: 0.5 }}>📄</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f}</span>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Drag-and-drop zone — shown when no existing library or user chose fresh start */}
-        {(existingFiles.length === 0 || files.length > 0) && (
-          <div
-            onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={onDrop}
-            onClick={() => fileInputRef.current?.click()}
-            style={{
-              border: `2px dashed ${dragging ? "#1A3557" : "#D1C9C0"}`,
-              borderRadius: 16,
-              background: dragging ? "#EEF3F8" : "#FDFCFA",
-              padding: "36px 24px",
-              textAlign: "center",
-              cursor: "pointer",
-              transition: "border-color 0.15s, background 0.15s",
-            }}
-          >
-            <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.6 }}>📄</div>
-            <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 17 }}>
-              Drop PDFs, DOCX or TXT here
-            </p>
-            <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 15 }}>
-              or{" "}
-              <span style={{ color: "#1A3557", textDecoration: "underline" }}>
-                browse files
-              </span>
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              accept=".pdf,.docx,.txt"
-              style={{ display: "none" }}
-              onChange={(e) => addFiles(e.target.files)}
-            />
-          </div>
-        )}
-
-        {/* File list */}
-        {files.length > 0 && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {files.map((f) => (
-              <div key={f.name} style={{
-                display: "flex", alignItems: "center", gap: 10,
-                background: "#FFFFFF", border: "1px solid #E8E0D5",
-                borderRadius: 8, padding: "8px 12px",
+          <>
+            {/* Existing library -> quick continue */}
+            {existingFiles.length > 0 && files.length === 0 && (
+              <div style={{
+                background: "#EEF3F8",
+                border: "1.5px solid #1A3557",
+                borderRadius: 12,
+                padding: "14px 16px",
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
               }}>
-                <span style={{ flex: 1, fontSize: 15, color: "#1A1A2E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {f.name}
-                </span>
-                <span style={{ fontSize: 14, color: "#9CA3AF", flexShrink: 0 }}>
-                  {(f.size / 1024).toFixed(0)} KB
-                </span>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1A3557" }}>Continuing from last session</span>
+                  <button
+                    onClick={async () => {
+                      await fetch("/library/clear", { method: "POST" })
+                      setExistingFiles([])
+                    }}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 13 }}
+                  >
+                    Start fresh
+                  </button>
+                </div>
+                {existingFiles.map((f) => (
+                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#374151" }}>
+                    <span style={{ opacity: 0.5 }}>📄</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Drag-and-drop zone -> shown when no existing library or user chose fresh start */}
+            {(existingFiles.length === 0 || files.length > 0) && (
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={onDrop}
+                onClick={() => fileInputRef.current?.click()}
+                style={{
+                  border: `2px dashed ${dragging ? "#1A3557" : "#D1C9C0"}`,
+                  borderRadius: 16,
+                  background: dragging ? "#EEF3F8" : "#FDFCFA",
+                  padding: "36px 24px",
+                  textAlign: "center",
+                  cursor: "pointer",
+                  transition: "border-color 0.15s, background 0.15s",
+                }}
+              >
+                <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.6 }}>📄</div>
+                <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 17 }}>
+                  Drop PDFs, DOCX or TXT here
+                </p>
+                <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 15 }}>
+                  or{" "}
+                  <span style={{ color: "#1A3557", textDecoration: "underline" }}>
+                    browse files
+                  </span>
+                </p>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.txt"
+                  style={{ display: "none" }}
+                  onChange={(e) => addFiles(e.target.files)}
+                />
+              </div>
+            )}
+
+            {/* File list */}
+            {files.length > 0 && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {files.map((f) => (
+                  <div key={f.name} style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    background: "#FFFFFF", border: "1px solid #E8E0D5",
+                    borderRadius: 8, padding: "8px 12px",
+                  }}>
+                    <span style={{ flex: 1, fontSize: 15, color: "#1A1A2E", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {f.name}
+                    </span>
+                    <span style={{ fontSize: 14, color: "#9CA3AF", flexShrink: 0 }}>
+                      {(f.size / 1024).toFixed(0)} KB
+                    </span>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); removeFile(f.name) }}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 16, padding: "0 4px", lineHeight: 1 }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Topic (optional) */}
+            <div>
+              <label style={labelStyle}>Topic name <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span></label>
+              <input
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="e.g. Classical Mechanics, Contract Law…"
+                style={inputStyle}
+              />
+            </div>
+
+            {/* Familiarity */}
+            <div>
+              <label style={labelStyle}>Familiarity level</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                {FAMILIARITY_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setFamiliarity(opt.value)}
+                    title={opt.desc}
+                    style={{
+                      flex: 1,
+                      padding: "9px 4px",
+                      borderRadius: 8,
+                      border: familiarity === opt.value ? "2px solid #1A3557" : "2px solid #E8E0D5",
+                      background: familiarity === opt.value ? "#EEF3F8" : "transparent",
+                      color: familiarity === opt.value ? "#1A3557" : "#6B7280",
+                      cursor: "pointer",
+                      fontSize: 14,
+                      fontWeight: familiarity === opt.value ? 600 : 400,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Knowledge Mode */}
+            <div>
+              <label style={labelStyle}>Knowledge Mode</label>
+              <div style={{ display: "flex", gap: 8 }}>
                 <button
-                  onClick={(e) => { e.stopPropagation(); removeFile(f.name) }}
-                  style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 16, padding: "0 4px", lineHeight: 1 }}
+                  onClick={() => setKnowledgeMode("content_only")}
+                  title="Only answer using uploaded materials. Grounded and strict."
+                  style={{
+                    flex: 1,
+                    padding: "9px 4px",
+                    borderRadius: 8,
+                    border: knowledgeMode === "content_only" ? "2px solid #1A3557" : "2px solid #E8E0D5",
+                    background: knowledgeMode === "content_only" ? "#EEF3F8" : "transparent",
+                    color: knowledgeMode === "content_only" ? "#1A3557" : "#6B7280",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    fontWeight: knowledgeMode === "content_only" ? 600 : 400,
+                  }}
                 >
-                  ×
+                  Content Only
+                </button>
+                <button
+                  onClick={() => setKnowledgeMode("net_support")}
+                  title="Search the web if information is missing from your documents."
+                  style={{
+                    flex: 1,
+                    padding: "9px 4px",
+                    borderRadius: 8,
+                    border: knowledgeMode === "net_support" ? "2px solid #1A3557" : "2px solid #E8E0D5",
+                    background: knowledgeMode === "net_support" ? "#EEF3F8" : "transparent",
+                    color: knowledgeMode === "net_support" ? "#1A3557" : "#6B7280",
+                    cursor: "pointer",
+                    fontSize: 14,
+                    fontWeight: knowledgeMode === "net_support" ? 600 : 400,
+                  }}
+                >
+                  Net Support
                 </button>
               </div>
-            ))}
-          </div>
-        )}
+            </div>
 
-        {/* Topic (optional) */}
-        <div>
-          <label style={labelStyle}>Topic name <span style={{ color: "#9CA3AF", fontWeight: 400 }}>(optional)</span></label>
-          <input
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            placeholder="e.g. Classical Mechanics, Contract Law…"
-            style={inputStyle}
-          />
-        </div>
+            {error && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{error}</p>}
 
-        {/* Familiarity */}
-        <div>
-          <label style={labelStyle}>Familiarity level</label>
-          <div style={{ display: "flex", gap: 8 }}>
-            {FAMILIARITY_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFamiliarity(opt.value)}
-                title={opt.desc}
-                style={{
-                  flex: 1,
-                  padding: "9px 4px",
-                  borderRadius: 8,
-                  border: familiarity === opt.value ? "2px solid #1A3557" : "2px solid #E8E0D5",
-                  background: familiarity === opt.value ? "#EEF3F8" : "transparent",
-                  color: familiarity === opt.value ? "#1A3557" : "#6B7280",
-                  cursor: "pointer",
-                  fontSize: 14,
-                  fontWeight: familiarity === opt.value ? 600 : 400,
-                }}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
+            {phase === "starting" && (
+              <p style={{ color: "#4A7FB5", fontSize: 15, margin: 0 }}>
+                Reading document structure and building your curriculum tree…
+              </p>
+            )}
 
-        {/* Knowledge Mode */}
-        <div>
-          <label style={labelStyle}>Knowledge Mode</label>
-          <div style={{ display: "flex", gap: 8 }}>
             <button
-              onClick={() => setKnowledgeMode("content_only")}
-              title="Only answer using uploaded materials. Grounded and strict."
+              onClick={start}
+              disabled={!backendReady || phase === "starting"}
               style={{
-                flex: 1,
-                padding: "9px 4px",
-                borderRadius: 8,
-                border: knowledgeMode === "content_only" ? "2px solid #1A3557" : "2px solid #E8E0D5",
-                background: knowledgeMode === "content_only" ? "#EEF3F8" : "transparent",
-                color: knowledgeMode === "content_only" ? "#1A3557" : "#6B7280",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: knowledgeMode === "content_only" ? 600 : 400,
+                background: "#1A3557",
+                color: "#FAF7F2",
+                border: "none",
+                borderRadius: 10,
+                padding: "15px 0",
+                fontSize: 17,
+                fontWeight: 600,
+                cursor: (!backendReady || phase === "starting") ? "not-allowed" : "pointer",
+                opacity: (!backendReady || phase === "starting") ? 0.6 : 1,
+                fontFamily: "'Libre Caslon Text', Georgia, serif",
+                letterSpacing: "0.02em",
+                transition: "opacity 0.3s",
               }}
             >
-              Content Only
+              {phase === "starting"
+                ? "Building your study tree…"
+                : !backendReady
+                  ? "Connecting to backend…"
+                  : "Start Studying →"}
             </button>
-            <button
-              onClick={() => setKnowledgeMode("net_support")}
-              title="Search the web if information is missing from your documents."
-              style={{
-                flex: 1,
-                padding: "9px 4px",
-                borderRadius: 8,
-                border: knowledgeMode === "net_support" ? "2px solid #1A3557" : "2px solid #E8E0D5",
-                background: knowledgeMode === "net_support" ? "#EEF3F8" : "transparent",
-                color: knowledgeMode === "net_support" ? "#1A3557" : "#6B7280",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: knowledgeMode === "net_support" ? 600 : 400,
-              }}
-            >
-              Net Support
-            </button>
-          </div>
-        </div>
-
-        {error && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{error}</p>}
-
-        {phase === "starting" && (
-          <p style={{ color: "#4A7FB5", fontSize: 15, margin: 0 }}>
-            Reading document structure and building your curriculum tree…
-          </p>
-        )}
-
-        <button
-          onClick={start}
-          disabled={!backendReady || phase === "starting"}
-          style={{
-            background: "#1A3557",
-            color: "#FAF7F2",
-            border: "none",
-            borderRadius: 10,
-            padding: "15px 0",
-            fontSize: 17,
-            fontWeight: 600,
-            cursor: (!backendReady || phase === "starting") ? "not-allowed" : "pointer",
-            opacity: (!backendReady || phase === "starting") ? 0.6 : 1,
-            fontFamily: "'Libre Caslon Text', Georgia, serif",
-            letterSpacing: "0.02em",
-            transition: "opacity 0.3s",
-          }}
-        >
-          {phase === "starting"
-            ? "Building your study tree…"
-            : !backendReady
-              ? "Connecting to backend…"
-              : "Start Studying →"}
-        </button>
-        </>
+          </>
         )}
       </div>
 
-      {/* ── API Keys — bottom center toggle ──────────────────────────── */}
+      {/* ── API Keys -> bottom center toggle ──────────────────────────── */}
       <div style={{
         position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)",
         display: "flex", flexDirection: "column", alignItems: "center",
@@ -636,7 +636,7 @@ export function SetupModal({ onSessionReady }: Props) {
                 </div>
                 <input
                   type="password"
-                  placeholder={keyStatus[kf.env] ? "••••••• (already set — leave blank to keep)" : kf.hint}
+                  placeholder={keyStatus[kf.env] ? "••••••• (already set -> leave blank to keep)" : kf.hint}
                   value={keyValues[kf.env] || ""}
                   onChange={(e) => setKeyValues((prev) => ({ ...prev, [kf.env]: e.target.value }))}
                   style={{

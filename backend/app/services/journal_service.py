@@ -1,4 +1,4 @@
-"""In-memory journal — append-only log of student interactions per session.
+"""In-memory journal -> append-only log of student interactions per session.
 
 The Evaluator Agent reads the full journal at session end to score mastery.
 All entries are immutable once appended.

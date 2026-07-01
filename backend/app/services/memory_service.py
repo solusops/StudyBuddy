@@ -1,4 +1,4 @@
-"""Lightweight local memory (the 'cognee' role) — disk-backed, no external deps.
+"""Lightweight local memory (the 'cognee' role) -> disk-backed, no external deps.
 
 Two roles, both under ~/.studybuddy/cognee/ (per CLAUDE.md, local only):
 

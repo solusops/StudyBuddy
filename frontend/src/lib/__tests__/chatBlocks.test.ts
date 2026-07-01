@@ -41,7 +41,7 @@ describe("splitFencedBlocks", () => {
   it("does not split an unclosed (still-streaming) fence", () => {
     const msg = "building diagram:\n```mermaid\ngraph TD; A-->"
     const blocks = splitFencedBlocks(msg)
-    // No closing fence yet — stays as text until the block completes.
+    // No closing fence yet -> stays as text until the block completes.
     expect(blocks).toHaveLength(1)
     expect(blocks[0].type).toBe("text")
   })

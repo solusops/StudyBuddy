@@ -1,6 +1,6 @@
 """WebSocket connection registry.
 
-Completely stateless about message content — just tracks live sockets and
+Completely stateless about message content -> just tracks live sockets and
 broadcasts typed envelopes. Isolated so routers and handlers never import
 fastapi.WebSocket directly.
 """

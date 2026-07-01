@@ -33,7 +33,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
   const [activePDFPath, setActivePDFPath] = useState<string | null>(null)
   const [activePDFUrl, setActivePDFUrl] = useState<string | null>(null)
 
-  // For the right panel — seed from sessionStore if coming from TreePage node selection
+  // For the right panel -> seed from sessionStore if coming from TreePage node selection
   const [activeConcept, setActiveConcept] = useState<string | null>(activeNodeLabel || null)
   const [concepts, setConcepts] = useState<string[]>([])
 
@@ -140,7 +140,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
       const url = await window.electronAPI!.getFileUrl(filePath)
       setActivePDFUrl(url)
     } else {
-      // Browser mode — backend serves uploaded files via /library/file/{name}
+      // Browser mode -> backend serves uploaded files via /library/file/{name}
       setActivePDFUrl(`/library/file/${encodeURIComponent(filename)}`)
     }
   }
