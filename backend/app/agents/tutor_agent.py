@@ -139,11 +139,20 @@ class TutorAgent:
                 "If the source material does not directly cover a point, say so and "
                 "anchor your explanation to the closest relevant passage that IS in the source."
             )
+        merge_note = ""
+        if node.is_merged:
+            merge_note = (
+                f"\n\nNOTE: '{node.label}' synthesizes overlapping treatments from multiple source "
+                f"documents. {node.merge_summary} When explaining, be explicit about which document a "
+                "specific claim, method, or result comes from if the source chunks reflect differing "
+                "treatments (each chunk below is tagged with its source) -> do not blend the documents' "
+                "framings into one as if they were a single source."
+            )
         messages = [
             {
                 "role": "system",
                 "content": (
-                    f"You are a Cognitive Translator and tutor. {grounding}\n\n"
+                    f"You are a Cognitive Translator and tutor. {grounding}{merge_note}\n\n"
                     "Write a single, flowing lesson -> do NOT split into separate sections like "
                     "'Concept' or 'From the Source'. Weave the intuitive explanation and factual "
                     "details together naturally into one coherent narrative.\n\n"

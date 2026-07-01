@@ -24,6 +24,11 @@ class NodeData(BaseModel):
     children_ids: List[str] = Field(default_factory=list)
     # Which uploaded paper(s) this node draws from -> scopes its lessons/RAG. Empty = all.
     document_ids: List[str] = Field(default_factory=list)
+    # True when this node synthesizes overlapping treatments from 2+ source documents
+    # (see BrainAgent.cleanup_curriculum) -> tutoring agents use this to avoid
+    # conflating the papers' individual treatments when explaining the concept.
+    is_merged: bool = Field(False)
+    merge_summary: str = Field("", description="What's shared vs. distinct across source documents, when is_merged is True")
 
 
 class KnowledgeEdge(BaseModel):

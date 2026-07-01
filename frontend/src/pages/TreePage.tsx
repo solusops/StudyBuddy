@@ -32,7 +32,6 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
   const [refineError, setRefineError] = useState("")
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
-  const [commitDone, setCommitDone] = useState(false)
   const [showReport, setShowReport] = useState(false)
   const [showEval, setShowEval] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -206,36 +205,6 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
     return result
   }
 
-  const commitSession = async () => {
-    const { nodes, edges } = useGraphStore.getState()
-    const { lessonCache } = useSessionStore.getState()
-    await fetch("/session/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: session?.sessionId,
-        topic: session?.topic ?? "Study Session",
-        familiarity: session?.familiarity ?? "high_school",
-        nodes: nodes.map((n) => n.data),
-        content_files: session?.contentFiles ?? [],
-        document_id: session?.documentId ?? "",
-      }),
-    })
-    // Persist full session state -> nodes, edges, lessonCache -> to localStorage
-    const toSave = {
-      sessionId: session?.sessionId,
-      topic: session?.topic ?? "Study Session",
-      familiarity: session?.familiarity ?? "high_school",
-      nodes: nodes.map((n) => n.data),
-      edges: edges.map((e) => ({ source: e.source, target: e.target, relationship: (e.data as Record<string, string> | undefined)?.relationship ?? "prerequisite" })),
-      contentFiles: session?.contentFiles ?? [],
-      lessonCache,
-    }
-    localStorage.setItem("studybuddy_session", JSON.stringify(toSave))
-    setCommitDone(true)
-    setTimeout(() => setCommitDone(false), 2500)
-  }
-
   const pushSession = () => {
     if (isPushing || !session) return
     setIsPushing(true)
@@ -247,6 +216,7 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
       topic: session.topic,
       familiarity: session.familiarity,
       document_id: session.documentId ?? "",
+      content_files: session.contentFiles ?? [],
     })
   }
 
@@ -278,7 +248,7 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
           <ArrowLeft size={16} />
         </button>
         <span style={{ fontFamily: "'Libre Caslon Text', Georgia, serif", fontWeight: 700, color: "#1A3557", fontSize: 17, flex: 1 }}>
-          {session?.topic || "Knowledge Tree"}
+          {nodes.find((n) => n.data.depth === 0)?.data.label || session?.topic || "Knowledge Tree"}
         </span>
         <span style={{ color: "#9CA3AF", fontSize: 14 }}>
           Click a node to explore · edit its description · refine the whole tree below
@@ -317,26 +287,6 @@ export function TreePage({ session, sendEvent, onBack, onStartStudying, onNeedSe
           }}
         >
           Evaluation
-        </button>
-
-        {/* Commit */}
-        <button
-          onClick={commitSession}
-          disabled={commitDone}
-          title="Save progress to disk"
-          style={{
-            background: commitDone ? "#E6F4ED" : "transparent",
-            color: commitDone ? "#2D6A4F" : "#2D6A4F",
-            border: "1px solid #2D6A4F",
-            borderRadius: 6,
-            padding: "4px 12px",
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: commitDone ? "default" : "pointer",
-            transition: "background 0.2s",
-          }}
-        >
-          {commitDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Saved <Check size={14} /></span> : "Commit"}
         </button>
 
         {/* Push */}

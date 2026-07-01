@@ -90,15 +90,25 @@ async def segment(req: SegmentRequest):
         with open(pdf_path, "wb") as f:
             f.write(base64.b64decode(req.pdf_base64))
     if not os.path.exists(pdf_path):
+        # Last-resort fallback -> normally unreachable, since upload_and_start/resume
+        # both cache every file under ~/.studybuddy/pdfs/{file_id}.pdf immediately.
+        # Each session has its own upload folder (no shared directory), so this
+        # searches across all of them -> safe because it only ever copies a file
+        # whose content hash actually matches the requested document_id.
         print(f"[REGIONS] PDF path {pdf_path} not found. Attempting backend-side resolution...")
         import hashlib
         import shutil
+        from app.services.session_files import SESSION_UPLOADS_ROOT
         resolved = False
-        content_folder = os.path.expanduser("~/.studybuddy/uploads")
-        if os.path.exists(content_folder):
-            for filename in os.listdir(content_folder):
-                if filename.lower().endswith(".pdf"):
-                    path = os.path.join(content_folder, filename)
+        if os.path.exists(SESSION_UPLOADS_ROOT):
+            for session_dir in os.listdir(SESSION_UPLOADS_ROOT):
+                folder = os.path.join(SESSION_UPLOADS_ROOT, session_dir)
+                if not os.path.isdir(folder):
+                    continue
+                for filename in os.listdir(folder):
+                    if not filename.lower().endswith(".pdf"):
+                        continue
+                    path = os.path.join(folder, filename)
                     try:
                         with open(path, "rb") as f:
                             h = hashlib.sha256(f.read()).hexdigest()
@@ -109,6 +119,8 @@ async def segment(req: SegmentRequest):
                             break
                     except Exception as e:
                         print(f"[REGIONS] Error checking {filename}: {e}")
+                if resolved:
+                    break
         if not resolved:
             print(f"[REGIONS] PDF path does not exist on disk: {pdf_path}. Returning 409.")
             raise HTTPException(status_code=409, detail="pdf_not_cached")

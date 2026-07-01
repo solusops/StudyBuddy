@@ -17,6 +17,7 @@ const KEY_FIELDS: { env: string; label: string; hint: string; required: boolean 
 
 interface HistoryItem {
   document_id: string
+  title: string
   topic: string
   familiarity: FamiliarityLevel
   content_files: string[]
@@ -51,7 +52,15 @@ export function SetupModal({ onSessionReady }: Props) {
   const [phase, setPhase] = useState<"idle" | "starting" | "error">("idle")
   const [error, setError] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [existingFiles, setExistingFiles] = useState<string[]>([])
+  // Guards against overlapping in-flight requests if the student fires a second
+  // start/resume action (e.g. switches papers) before the first one resolves.
+  const activeRequestRef = useRef<AbortController | null>(null)
+  const beginRequest = () => {
+    activeRequestRef.current?.abort()
+    const controller = new AbortController()
+    activeRequestRef.current = controller
+    return controller.signal
+  }
 
   // ── Session history state ────────────────────────────────────────────
   const [history, setHistory] = useState<HistoryItem[]>([])
@@ -87,23 +96,12 @@ export function SetupModal({ onSessionReady }: Props) {
     return () => { cancelled = true }
   }, [])
 
-  // Once backend is ready, fetch which keys are already configured and check library
+  // Once backend is ready, fetch which keys are already configured.
   useEffect(() => {
     if (!backendReady) return
     fetch("/api/keys")
       .then((r) => r.json())
       .then((data) => setKeyStatus(data))
-      .catch(() => { })
-    fetch("/library/status")
-      .then((r) => r.json())
-      .then((status) => {
-        if (status.configured && status.content_files?.length > 0) {
-          setExistingFiles(status.content_files)
-          if (!topic && status.content_files[0]) {
-            setTopic(status.content_files[0].replace(/\.[^.]+$/, ""))
-          }
-        }
-      })
       .catch(() => { })
   }, [backendReady])
 
@@ -120,6 +118,7 @@ export function SetupModal({ onSessionReady }: Props) {
   }, [activeTab, backendReady])
 
   const resumeFromHistory = async (documentId: string) => {
+    const signal = beginRequest()
     setResumingId(documentId)
     setHistoryError("")
     try {
@@ -127,6 +126,7 @@ export function SetupModal({ onSessionReady }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ document_id: documentId }),
+        signal,
       })
       if (!resp.ok) {
         const e = await resp.json()
@@ -144,6 +144,7 @@ export function SetupModal({ onSessionReady }: Props) {
         documentId: document_id,
       })
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return  // superseded by a newer action
       setHistoryError(err instanceof Error ? err.message : String(err))
     } finally {
       setResumingId(null)
@@ -195,48 +196,9 @@ export function SetupModal({ onSessionReady }: Props) {
     }
   }
 
-  const startFromExisting = async () => {
-    setError("")
-    setPhase("starting")
-    try {
-      const sessionResp = await fetch("/session/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: topic.trim() || "Study Session", familiarity }),
-      })
-      if (!sessionResp.ok) throw new Error("Failed to create session")
-      const { session_id } = await sessionResp.json()
-
-      const startResp = await fetch("/library/start-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id, familiarity, topic_hint: topic.trim() }),
-      })
-      if (!startResp.ok) {
-        const e = await startResp.json()
-        throw new Error(e.detail || "Failed to start session")
-      }
-      const { nodes, edges, document_id } = await startResp.json()
-
-      onSessionReady({
-        sessionId: session_id,
-        topic: topic.trim() || "Study Session",
-        familiarity,
-        knowledgeMode,
-        nodes,
-        edges: edges ?? [],
-        contentFiles: existingFiles,
-        documentId: document_id,
-      })
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setPhase("error")
-    }
-  }
-
   const start = async () => {
-    if (files.length === 0 && existingFiles.length === 0) { setError("Drop at least one PDF, DOCX or TXT file."); return }
-    if (files.length === 0 && existingFiles.length > 0) { return startFromExisting() }
+    if (files.length === 0) { setError("Drop at least one PDF, DOCX or TXT file."); return }
+    const signal = beginRequest()
     setError("")
     setPhase("starting")
 
@@ -246,6 +208,7 @@ export function SetupModal({ onSessionReady }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ topic: topic.trim() || "Study Session", familiarity }),
+        signal,
       })
       if (!sessionResp.ok) throw new Error("Failed to create session")
       const { session_id } = await sessionResp.json()
@@ -260,6 +223,7 @@ export function SetupModal({ onSessionReady }: Props) {
       const uploadResp = await fetch("/library/upload-and-start", {
         method: "POST",
         body: form,
+        signal,
       })
       if (!uploadResp.ok) {
         const e = await uploadResp.json()
@@ -278,6 +242,7 @@ export function SetupModal({ onSessionReady }: Props) {
         documentId: document_id,
       })
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return  // superseded by a newer action
       setError(err instanceof Error ? err.message : String(err))
       setPhase("error")
     }
@@ -336,7 +301,7 @@ export function SetupModal({ onSessionReady }: Props) {
             {historyError && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{historyError}</p>}
             {!historyLoading && !historyError && history.length === 0 && (
               <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>
-                No past sessions yet -&gt; study something and hit Commit to save your progress here.
+                No past sessions yet -&gt; study something and hit Push to save your progress here.
               </p>
             )}
             {history.map((item) => (
@@ -359,7 +324,7 @@ export function SetupModal({ onSessionReady }: Props) {
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                   <span style={{ fontSize: 16, fontWeight: 700, color: "#1A1A2E", fontFamily: "'Libre Caslon Text', Georgia, serif" }}>
-                    {resumingId === item.document_id ? "Resuming…" : item.topic}
+                    {resumingId === item.document_id ? "Resuming…" : item.title}
                   </span>
                   <span style={{ fontSize: 12, color: "#9CA3AF", flexShrink: 0, whiteSpace: "nowrap" }}>
                     {formatRelativeTime(item.updated_at)}
@@ -384,75 +349,41 @@ export function SetupModal({ onSessionReady }: Props) {
           </div>
         ) : (
           <>
-            {/* Existing library -> quick continue */}
-            {existingFiles.length > 0 && files.length === 0 && (
-              <div style={{
-                background: "#EEF3F8",
-                border: "1.5px solid #1A3557",
-                borderRadius: 12,
-                padding: "14px 16px",
-                display: "flex",
-                flexDirection: "column",
-                gap: 8,
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ fontSize: 14, fontWeight: 600, color: "#1A3557" }}>Continuing from last session</span>
-                  <button
-                    onClick={async () => {
-                      await fetch("/library/clear", { method: "POST" })
-                      setExistingFiles([])
-                    }}
-                    style={{ background: "none", border: "none", cursor: "pointer", color: "#9CA3AF", fontSize: 13 }}
-                  >
-                    Start fresh
-                  </button>
-                </div>
-                {existingFiles.map((f) => (
-                  <div key={f} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 14, color: "#374151" }}>
-                    <span style={{ opacity: 0.5 }}>📄</span>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Drag-and-drop zone -> shown when no existing library or user chose fresh start */}
-            {(existingFiles.length === 0 || files.length > 0) && (
-              <div
-                onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
-                onDragLeave={() => setDragging(false)}
-                onDrop={onDrop}
-                onClick={() => fileInputRef.current?.click()}
-                style={{
-                  border: `2px dashed ${dragging ? "#1A3557" : "#D1C9C0"}`,
-                  borderRadius: 16,
-                  background: dragging ? "#EEF3F8" : "#FDFCFA",
-                  padding: "36px 24px",
-                  textAlign: "center",
-                  cursor: "pointer",
-                  transition: "border-color 0.15s, background 0.15s",
-                }}
-              >
-                <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.6 }}>📄</div>
-                <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 17 }}>
-                  Drop PDFs, DOCX or TXT here
-                </p>
-                <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 15 }}>
-                  or{" "}
-                  <span style={{ color: "#1A3557", textDecoration: "underline" }}>
-                    browse files
-                  </span>
-                </p>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept=".pdf,.docx,.txt"
-                  style={{ display: "none" }}
-                  onChange={(e) => addFiles(e.target.files)}
-                />
-              </div>
-            )}
+            {/* Drag-and-drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={onDrop}
+              onClick={() => fileInputRef.current?.click()}
+              style={{
+                border: `2px dashed ${dragging ? "#1A3557" : "#D1C9C0"}`,
+                borderRadius: 16,
+                background: dragging ? "#EEF3F8" : "#FDFCFA",
+                padding: "36px 24px",
+                textAlign: "center",
+                cursor: "pointer",
+                transition: "border-color 0.15s, background 0.15s",
+              }}
+            >
+              <div style={{ fontSize: 36, marginBottom: 12, opacity: 0.6 }}>📄</div>
+              <p style={{ margin: 0, color: "#1A1A2E", fontWeight: 600, fontSize: 17 }}>
+                Drop PDFs, DOCX or TXT here
+              </p>
+              <p style={{ margin: "6px 0 0", color: "#9CA3AF", fontSize: 15 }}>
+                or{" "}
+                <span style={{ color: "#1A3557", textDecoration: "underline" }}>
+                  browse files
+                </span>
+              </p>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.docx,.txt"
+                style={{ display: "none" }}
+                onChange={(e) => addFiles(e.target.files)}
+              />
+            </div>
 
             {/* File list */}
             {files.length > 0 && (

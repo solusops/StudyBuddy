@@ -23,6 +23,8 @@ export interface NodeData {
   parent_id: string | null
   children_ids: string[]
   document_ids?: string[]
+  is_merged?: boolean
+  merge_summary?: string
 }
 
 export interface KnowledgeEdge {

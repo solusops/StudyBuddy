@@ -41,11 +41,11 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
 
   useEffect(() => {
     if (session) {
-      // Session passed from setup modal
       applySession(session)
     } else {
-      // Auto-resume from configured library
-      resumeSession()
+      // No session -> nothing to render here, send the student back to Setup
+      // rather than trying to guess at a session from shared/leftover state.
+      onNeedSetup()
     }
   }, [])
 
@@ -60,55 +60,9 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     setContentFiles(s.contentFiles)
     setIsIndexing(true)
     if (s.contentFiles.length > 0) {
-      await loadFirstPDF(s.contentFiles[0])
+      await loadFirstPDF(s.sessionId, s.contentFiles[0])
     }
     // Check indexing status handled by useEffect
-  }
-
-  const resumeSession = async () => {
-    try {
-      const statusResp = await fetch("/library/status")
-      const status = await statusResp.json()
-      if (!status.configured || !status.content_files.length) {
-        onNeedSetup()
-        return
-      }
-
-      // Create a new session
-      const sessionResp = await fetch("/session/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic: "Study Session", familiarity: "high_school" }),
-      })
-      const { session_id } = await sessionResp.json()
-      setSessionId(session_id)
-      setSession(session_id, "Study Session", "high_school")
-
-      if (status.document_id) {
-        setDocumentId(status.document_id)
-      }
-
-      // Generate tree
-      const startResp = await fetch("/library/start-session", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id, familiarity: "high_school" }),
-      })
-      const { nodes, document_id } = await startResp.json()
-      applyNodes(nodes)
-      setContentFiles(status.content_files)
-      setTopic(status.content_files[0]?.replace(/\.[^.]+$/, "") || "Study Session")
-
-      if (document_id) {
-        setDocumentId(document_id)
-      }
-
-      if (status.content_files.length > 0) {
-        await loadFirstPDF(status.content_files[0])
-      }
-    } catch {
-      onNeedSetup()
-    }
   }
 
   const applyNodes = (nodes: NodeData[]) => {
@@ -129,19 +83,18 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     setGraph(flowNodes, edges)
   }
 
-  const loadFirstPDF = async (filename: string) => {
-    const status = await fetch("/library/status").then((r) => r.json())
-    const folder = status.content_folder
-    if (!folder) return
-    const filePath = `${folder}/${filename}`.replace(/\\/g, "/")
-    setActivePDFPath(filePath)
-
+  const loadFirstPDF = async (sid: string, filename: string) => {
     if (isElectron) {
+      // Each session has its own upload folder: ~/.studybuddy/session_uploads/{sessionId}/
+      const homeDir = await window.electronAPI!.getHomeDir()
+      const filePath = `${homeDir}/.studybuddy/session_uploads/${sid}/${filename}`.replace(/\\/g, "/")
+      setActivePDFPath(filePath)
       const url = await window.electronAPI!.getFileUrl(filePath)
       setActivePDFUrl(url)
     } else {
-      // Browser mode -> backend serves uploaded files via /library/file/{name}
-      setActivePDFUrl(`/library/file/${encodeURIComponent(filename)}`)
+      // Browser mode -> backend serves this session's own upload folder
+      setActivePDFPath(`${sid}/${filename}`)
+      setActivePDFUrl(`/library/file/${sid}/${encodeURIComponent(filename)}`)
     }
   }
 
@@ -208,37 +161,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
 
   const [isPushing, setIsPushing] = useState(false)
   const [pushDone, setPushDone] = useState(false)
-  const [commitDone, setCommitDone] = useState(false)
   const [showClearConfirm, setShowClearConfirm] = useState(false)
-
-  const commitSession = async () => {
-    const { nodes, edges } = useGraphStore.getState()
-    const { lessonCache } = useSessionStore.getState()
-    await fetch("/session/commit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_id: sessionId,
-        document_id: documentId || "",
-        topic,
-        familiarity: "high_school",
-        nodes: nodes.map((n) => n.data),
-        content_files: contentFiles,
-      }),
-    })
-    const toSave = {
-      sessionId,
-      topic,
-      familiarity: "high_school",
-      nodes: nodes.map((n) => n.data),
-      edges: edges.map((e) => ({ source: e.source, target: e.target, relationship: (e.data as Record<string, string> | undefined)?.relationship ?? "prerequisite" })),
-      contentFiles,
-      lessonCache,
-    }
-    localStorage.setItem("studybuddy_session", JSON.stringify(toSave))
-    setCommitDone(true)
-    setTimeout(() => setCommitDone(false), 2500)
-  }
 
   const pushSession = async () => {
     if (isPushing) return
@@ -246,7 +169,10 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     setPushDone(false)
     const onDone = () => { setIsPushing(false); setPushDone(true) }
     window.addEventListener("evaluation-done", onDone, { once: true })
-    sendEvent("EVALUATE_SESSION", { topic, familiarity: "high_school" })
+    sendEvent("EVALUATE_SESSION", {
+      topic, familiarity: "high_school",
+      document_id: documentId || "", content_files: contentFiles,
+    })
   }
 
   const clearSession = async () => {
@@ -298,7 +224,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           {contentFiles.slice(0, 3).map((f) => (
             <button
               key={f}
-              onClick={() => loadFirstPDF(f)}
+              onClick={() => sessionId && loadFirstPDF(sessionId, f)}
               style={{
                 background: activePDFPath?.endsWith(f) ? "#EEF3F8" : "transparent",
                 color: activePDFPath?.endsWith(f) ? "#1A3557" : "#6B7280",
@@ -335,26 +261,6 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           }}
         >
           Tree
-        </button>
-
-        {/* Commit */}
-        <button
-          onClick={commitSession}
-          disabled={commitDone}
-          title="Save progress to disk"
-          style={{
-            background: commitDone ? "#E6F4ED" : "transparent",
-            color: "#2D6A4F",
-            border: "1px solid #2D6A4F",
-            borderRadius: 8,
-            padding: "5px 14px",
-            fontSize: 14,
-            cursor: commitDone ? "default" : "pointer",
-            fontWeight: 600,
-            transition: "background 0.2s",
-          }}
-        >
-          {commitDone ? <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>Saved <Check size={14} /></span> : "Commit"}
         </button>
 
         {/* Push */}

@@ -11,20 +11,28 @@ class StudyBuddyAgent:
         node_label: str,
         chunks: List[Dict[str, Any]],
         familiarity: str,
-        student_profile: str = ""
+        student_profile: str = "",
+        is_merged: bool = False,
+        merge_summary: str = "",
     ):
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}"
             for i, c in enumerate(chunks)
         )
-        
+        merge_note = (
+            f"\n\nNOTE: '{node_label}' synthesizes overlapping treatments from multiple source "
+            f"documents. {merge_summary} Ask questions that surface cross-document distinctions "
+            "where relevant, rather than treating this as a single paper's concept."
+            if is_merged else ""
+        )
+
         messages = [
             {
                 "role": "system",
                 "content": (
                     "You are Study Buddy, an expert tutor utilizing the Socratic method and active recall. "
                     f"Your goal is to guide the user to master the topic at a {familiarity} level "
-                    "through a conversational interview.\n\n"
+                    f"through a conversational interview.{merge_note}\n\n"
                     f"STUDENT PROFILE:\n{student_profile if student_profile else 'Unknown (First time user)'}\n\n"
                     "INSTRUCTIONS:\n"
                     "1. Welcome the student. If their name is unknown, kindly ask for it to personalize future sessions. If known, greet them by name. Introduce the core concept in 1-2 short sentences using the source material.\n"
@@ -51,26 +59,34 @@ class StudyBuddyAgent:
         familiarity: str,
         history: List[Dict[str, str]],
         student_answer: str,
-        student_profile: str = ""
+        student_profile: str = "",
+        is_merged: bool = False,
+        merge_summary: str = "",
     ):
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}"
             for i, c in enumerate(chunks)
         )
-        
+        merge_note = (
+            f"\n\nNOTE: '{node_label}' synthesizes overlapping treatments from multiple source "
+            f"documents. {merge_summary} Ask questions that surface cross-document distinctions "
+            "where relevant, rather than treating this as a single paper's concept."
+            if is_merged else ""
+        )
+
         formatted_history = []
         for msg in history:
             role = "assistant" if msg["role"] == "study_buddy" else "user"
             formatted_history.append({"role": role, "content": msg["content"]})
-        
+
         formatted_history.append({"role": "user", "content": student_answer})
-        
+
         messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are Study Buddy tutoring a student on '{node_label}' at a {familiarity} level using Socratic questioning. "
-                    "Evaluate their answer based on the SOURCE MATERIAL.\n\n"
+                    f"Evaluate their answer based on the SOURCE MATERIAL.{merge_note}\n\n"
                     f"STUDENT PROFILE:\n{student_profile if student_profile else 'Unknown'}\n\n"
                     "INSTRUCTIONS:\n"
                     "1. If they are wrong or missing nuance, use scaffolding: gently point out the gap and ask a leading question to help them discover the answer themselves.\n"

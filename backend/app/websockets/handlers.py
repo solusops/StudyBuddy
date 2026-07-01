@@ -10,7 +10,7 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
-from app.agents.brain_agent import BrainAgent
+from app.agents.brain_agent import BrainAgent, _fallback_topic_name
 from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
@@ -19,6 +19,7 @@ from app.agents.report_agent import ReportAgent
 from app.agents.wiki_agent import WikiAgent
 from app.agents.tutor_agent import TutorAgent
 from app.agents.study_buddy_agent import StudyBuddyAgent
+from app.agents.net_research_agent import NetResearchAgent
 from app.rag.chromadb_client import ChromaDBClient
 from app.rag.ingestion import LIBRARY_COLLECTION, ingest_text
 from app.schemas.journal import JournalEntry, JournalEventType
@@ -41,6 +42,20 @@ _memory = StudentMemoryService()
 # Ephemeral in-memory cache to bridge the gap while Cognee embeds summaries in the background
 _recent_session_summaries: Dict[str, List[str]] = {}
 
+# Cache of "all document ids currently loaded in this session" -> used to scope
+# RAG retrieval fairly across every uploaded paper for requests that have no
+# single graph node to anchor to (Infinite Wiki's free-text selection flow).
+# Populated lazily, refreshed whenever _build_graph_streaming (re)builds a graph.
+_session_doc_ids_cache: Dict[str, List[str]] = {}
+
+
+async def _session_all_doc_ids(session_id: str) -> List[str]:
+    if session_id not in _session_doc_ids_cache:
+        loop = asyncio.get_event_loop()
+        docs = await loop.run_in_executor(None, _session_documents, session_id)
+        _session_doc_ids_cache[session_id] = [d["document_id"] for d in docs]
+    return _session_doc_ids_cache[session_id]
+
 
 async def _push_and_flush_memory(session_id, topic, journal, patches, session_summary) -> None:
     """Cache the session summary, then flush the session's cache into the permanent graph."""
@@ -55,32 +70,13 @@ _report: ReportAgent | None = None
 _cache = OutputCache()
 _wiki = WikiAgent()
 _study_buddy: StudyBuddyAgent | None = None
+_net_research: NetResearchAgent | None = None
 
 from app.services.annotation_service import get_annotation_service
 from app.services.memory_service import MemoryService
 _annotations = get_annotation_service()
 # Local memory: ephemeral per-PDF report clusters + persistent learning trajectory.
 _local_mem = MemoryService()
-
-# Tool the chat model may call to fetch live web context (executed via WikiAgent.search_tavily).
-_WEB_SEARCH_TOOL = {
-    "type": "function",
-    "function": {
-        "name": "web_search",
-        "description": (
-            "Search the web for current or external information that is NOT in the student's "
-            "uploaded material. Use when the question needs recent facts, external definitions, "
-            "or context beyond the source documents."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "The web search query."},
-            },
-            "required": ["query"],
-        },
-    },
-}
 
 
 def _get_db() -> ChromaDBClient:
@@ -116,6 +112,13 @@ def _get_router() -> ModalityRouter:
     if _router is None:
         _router = ModalityRouter()
     return _router
+
+
+def _get_net_research() -> NetResearchAgent:
+    global _net_research
+    if _net_research is None:
+        _net_research = NetResearchAgent()
+    return _net_research
 
 
 def _get_report() -> ReportAgent:
@@ -186,24 +189,23 @@ async def _get_chunks(session_id: str, query: str, n: int = 5, chunk_type: str |
     return db.query(LIBRARY_COLLECTION, embedding[0], n_results=n, where=where)
 
 
-def _session_documents() -> list[dict]:
-    """List the session's uploaded documents with their content-hash id + structure.
+def _session_documents(session_id: str) -> list[dict]:
+    """List THIS session's own uploaded documents with their content-hash id + structure.
 
+    Reads only this session's own upload folder (see app.services.session_files) ->
+    never a shared directory, so one session can never see another's files.
     document_id here is ChromaDBClient.file_hash (matches chunk metadata) so node
     tagging lines up with RAG retrieval.
     """
     import os
     from app.rag.ingestion import extract_document_structure
+    from app.services.session_files import list_session_files
 
-    folder = os.path.expanduser("~/.studybuddy/uploads")
     docs: list[dict] = []
-    if not os.path.isdir(folder):
-        return docs
-    for name in sorted(os.listdir(folder)):
-        if not name.lower().endswith((".pdf", ".docx", ".txt")):
-            continue
+    for path in list_session_files(session_id):
+        name = os.path.basename(path)
         try:
-            with open(os.path.join(folder, name), "rb") as f:
+            with open(path, "rb") as f:
                 content = f.read()
             docs.append({
                 "filename": name,
@@ -390,9 +392,10 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         await _replay_doc_graph(session_id, cached[0], cached[1])
         return
 
-    docs = await loop.run_in_executor(None, _session_documents)
+    docs = await loop.run_in_executor(None, _session_documents, session_id)
     doc_ids = [d["document_id"] for d in docs]
     doc_names = [d["filename"] for d in docs]
+    _session_doc_ids_cache[session_id] = doc_ids  # refresh the no-node RAG-scoping cache
     structure = "\n\n---\n\n".join(f"Document: {d['filename']}\n{d['structure']}" for d in docs)[:10000]
     if not structure:
         await _cm.send(session_id, "GRAPH_BUILD_DONE", {"count": 0})
@@ -406,7 +409,7 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         edges: list = []
 
         root = NodeData(
-            id="n0", label=rs.root_label or (topic or "Topic"),
+            id="n0", label=_fallback_topic_name(rs.root_label or topic, doc_names),
             description=rs.root_description, depth=0, complexity=3,
             parent_id=None, status="ACTIVE",
             document_ids=doc_ids,  # root spans all papers
@@ -416,17 +419,21 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         await _cm.send(session_id, "GRAPH_NODE_ADDED", root.model_dump())
 
         section_nodes: list[NodeData] = []
-        section_struct: dict[str, str] = {}  # section id → its source-doc structure (for expansion)
+        section_doc_indices: dict[str, list[int]] = {}  # section id -> its source doc indices (for expansion)
         for i, s in enumerate(rs.sections):
             sid = f"s{i + 1}"
-            src = max(0, min(s.source_doc, len(docs) - 1)) if docs else 0
-            sec_doc_ids = [doc_ids[src]] if docs else []
+            valid_indices = sorted({
+                idx for idx in (s.source_docs or [0]) if docs and 0 <= idx < len(docs)
+            }) if docs else []
+            if not valid_indices and docs:
+                valid_indices = [0]
+            sec_doc_ids = [doc_ids[idx] for idx in valid_indices]
             sn = NodeData(
                 id=sid, label=s.label, description=s.description, depth=1,
                 complexity=s.complexity, parent_id="n0", status="ACTIVE",
                 document_ids=sec_doc_ids,
             )
-            section_struct[sid] = docs[src]["structure"] if docs else structure
+            section_doc_indices[sid] = valid_indices
             section_nodes.append(sn)
             nodes.append(sn)
             _graph_mgr.add_node(session_id, sn)
@@ -450,9 +457,14 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
 
         async def expand(sn: NodeData) -> tuple:
             siblings = [lbl for lbl in all_section_labels if lbl != sn.label]
+            indices = section_doc_indices.get(sn.id, [])
+            doc_excerpts = [
+                {"index": idx, "filename": docs[idx]["filename"], "structure_text": docs[idx]["structure"]}
+                for idx in indices
+            ] if docs else [{"index": 0, "filename": "content", "structure_text": structure}]
             try:
                 exp = await loop.run_in_executor(
-                    None, _get_brain().expand_section, sn.label, section_struct.get(sn.id, structure),
+                    None, _get_brain().expand_section, sn.label, doc_excerpts,
                     familiarity, siblings,
                 )
                 children = exp.children
@@ -469,10 +481,11 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
                 seen_labels.add(norm_label)
                 cid = f"{sn.id}c{next_idx}"
                 next_idx += 1
+                child_doc_ids = [doc_ids[i] for i in (ch.source_docs or []) if docs and 0 <= i < len(docs)]
                 cn = NodeData(
                     id=cid, label=ch.label, description=ch.description, depth=sn.depth + 1,
                     complexity=ch.complexity, parent_id=sn.id, status="ACTIVE",
-                    document_ids=sn.document_ids,  # inherit the section's paper
+                    document_ids=child_doc_ids or sn.document_ids,  # fall back to the section's papers
                 )
                 out_nodes.append(cn)
                 _graph_mgr.add_node(session_id, cn)
@@ -487,17 +500,34 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
             nodes.extend(child_nodes)
             edges.extend(child_edges)
 
-        # Run post-generation cleanup pass to merge semantic duplicates
+        # Run post-generation cleanup pass to merge semantic duplicates. The cleanup LLM
+        # call can silently drop nodes (truncation, or over-aggressive merging) with no
+        # exception raised -> validate its output before trusting it. Reject and keep the
+        # already-known-good pre-cleanup tree if the result is structurally broken (orphaned
+        # parent_id) OR if it silently dropped an entire source document's content -> losing
+        # a whole paper is worse than leaving a few semantic duplicates un-merged.
+        doc_name_lookup = {d["document_id"]: d["filename"] for d in docs}
         try:
-            nodes, edges = await loop.run_in_executor(
-                None, _get_brain().cleanup_curriculum, nodes, edges
+            cleaned_nodes, cleaned_edges = await loop.run_in_executor(
+                None,
+                lambda: _get_brain().cleanup_curriculum(nodes, edges, doc_name_lookup),
             )
+            # Root node deliberately spans every document (document_ids=doc_ids) -> checking
+            # coverage against non-root nodes only, so a document with NO real section/child
+            # content left can't hide behind the root's blanket tag.
+            cleaned_doc_ids = {d for n in cleaned_nodes if n.depth > 0 for d in (n.document_ids or [])}
+            if not _is_valid_graph(cleaned_nodes):
+                raise ValueError("cleanup produced a structurally invalid graph (orphaned parent_id)")
+            if doc_ids and not set(doc_ids).issubset(cleaned_doc_ids):
+                dropped = [doc_name_lookup.get(d, d) for d in doc_ids if d not in cleaned_doc_ids]
+                raise ValueError(f"cleanup silently dropped source document(s): {dropped}")
+            nodes, edges = cleaned_nodes, cleaned_edges
             await _cm.send(session_id, "GRAPH_CLEANUP_DONE", {
                 "nodes": [n.model_dump() for n in nodes],
                 "edges": edges
             })
         except Exception as cleanup_err:
-            print("GRAPH_CLEANUP failed, falling back to raw streamed graph:", cleanup_err)
+            print("GRAPH_CLEANUP rejected, keeping raw streamed graph:", cleanup_err)
 
         _graph_mgr.set_graph(session_id, nodes)
         _graph_mgr.save_doc_graph(document_id, nodes, edges)  # persist for reuse across sessions
@@ -674,8 +704,20 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         selection_text = data.get("selection_text", "")
         surrounding_context = data.get("surrounding_context", "")
         knowledge_mode = data.get("knowledge_mode", "content_only")
-        chunks = await _get_chunks(session_id, query or selection_text or "context", n=5)
+        chat_node = _safe_get_node(session_id, node_id)
+        chunks = await _get_chunks(
+            session_id, query or selection_text or "context", n=5,
+            document_ids=chat_node.document_ids or None,
+        )
         chunk_ctx = "\n".join(f"[{c.get('source','?')}]: {c['text']}" for c in chunks)
+        merge_note = ""
+        if chat_node.is_merged:
+            merge_note = (
+                f"\n\nNOTE: '{chat_node.label}' synthesizes overlapping treatments from multiple "
+                f"source documents. {chat_node.merge_summary} Be explicit about which document a "
+                "specific claim comes from when the source chunks reflect differing treatments -> "
+                "do not blend them into one as if they were a single source.\n"
+            )
         selection_img = data.get("selection_image_base64")
         selection_prefix = ""
         if selection_text or selection_img:
@@ -718,13 +760,18 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 "You are Study Buddy, an expert research tutor helping a student understand a paper "
                 "they uploaded. Be genuinely helpful and substantive -> explain, define, give intuition, "
                 "analogies, and worked reasoning. Tailor the depth to the "
-                f"{familiarity} level.\n\n"
+                f"{familiarity} level.{merge_note}\n\n"
                 f"{_today_note}"
                 f"{selection_prefix}"
-                "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. When the "
+                "Use the SOURCE MATERIAL below as your primary anchor when it is relevant. If the "
                 "student's question involves a fact, definition, dataset, statistic, or claim that is "
-                "NOT covered by the SOURCE MATERIAL, you MUST call the web_search tool to find it -> "
-                "do NOT answer factual questions from your own training data. The only things you may "
+                "NOT covered by the SOURCE MATERIAL, independent web research has already been "
+                "gathered for you and -> if any was needed -> will appear below as a WEB RESEARCH "
+                "section; rely on that section for such facts. You have NO tool-calling capability "
+                "in this conversation -> do NOT write out a tool call, function call, or any "
+                "'calling X' syntax yourself under any circumstance. If a fact is not covered by the "
+                "SOURCE MATERIAL or the WEB RESEARCH section, say plainly that you don't have a "
+                "grounded source for it instead of guessing or inventing one. The only things you may "
                 "explain directly without a source are pure reasoning, intuition, analogies, or "
                 "restating/clarifying material that IS already in the SOURCE MATERIAL.\n\n"
                 "Attribution rules:\n"
@@ -733,7 +780,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 "- Pure intuition/analogy/reasoning (no external fact) → no citation needed.\n"
                 "- NEVER invent a citation or attribute a claim to the source if it is not there.\n"
                 "- NEVER state a fact, figure, or claim you have not grounded in SOURCE MATERIAL or "
-                "a web_search result.\n\n"
+                "the WEB RESEARCH section.\n\n"
                 f"{_CHAT_FORMATTING}"
                 f"SOURCE MATERIAL:\n{chunk_ctx}"
             )
@@ -755,46 +802,45 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 role = "user" if h.get("role") in ("student", "user") else "assistant"
                 messages.append({"role": role, "content": h.get("content", "")})
             messages.append(user_msg)
-            # Let the model decide whether it needs the web (tool-calling, "auto when helpful").
-            decision = await loop.run_in_executor(
+            # Plan first: does this need the web, and does it involve 2+ distinct entities/topics
+            # that need independent research so they don't get conflated in one search?
+            plan = await loop.run_in_executor(
                 None,
-                lambda: _get_tutor()._client.complete_with_tools(messages, [_WEB_SEARCH_TOOL]),
+                lambda: _get_net_research().plan(query or selection_text, selection_text),
             )
-            tool_calls = getattr(decision, "tool_calls", None)
-            if tool_calls:
-                await _cm.send(session_id, "CHAT_TOOL", {"tool": "web_search", "status": "running"})
-                messages.append({
-                    "role": "assistant",
-                    "content": decision.content or "",
-                    "tool_calls": [
-                        {"id": tc.id, "type": "function",
-                         "function": {"name": tc.function.name, "arguments": tc.function.arguments}}
-                        for tc in tool_calls
-                    ],
+            if plan.needs_web and plan.sub_queries:
+                await _cm.send(session_id, "CHAT_TOOL", {
+                    "tool": "web_search", "status": "running",
+                    "entities": [sq.entity_label for sq in plan.sub_queries],
                 })
-                for tc in tool_calls:
-                    try:
-                        args = json.loads(tc.function.arguments or "{}")
-                    except json.JSONDecodeError:
-                        args = {}
-                    results = await _wiki.search_tavily(args.get("query", query or selection_text))
-                    web_text = "\n\n".join(
-                        f"[Web: {r.get('title')} -> {r.get('url')}]\n{r.get('content')}" for r in results
-                    ) or "No web results found."
-                    messages.append({"role": "tool", "tool_call_id": tc.id, "content": web_text})
-                async for token in _get_tutor()._client.stream_complete(messages):
-                    full_response += token
-                    await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
-            else:
-                # No tool needed -> the decision call already produced the full answer; replay as tokens.
-                full_response = decision.content or ""
-                for word in full_response.split(" "):
-                    await _cm.send(session_id, "CHAT_TOKEN", {"token": word + " "})
+                # Each sub-agent researches its OWN entity/topic in isolation (own search, own
+                # summary, blind to the others) -> only this synthesis step ever sees all of
+                # them together, clearly labeled, so it can attribute facts correctly instead
+                # of blending two different people/topics into one.
+                findings = await asyncio.gather(*(
+                    _get_net_research().research_subquery(sq, _wiki.search_tavily)
+                    for sq in plan.sub_queries
+                ))
+                web_text = "\n\n".join(
+                    f"--- Independently researched: {f.entity_label} ---\n{f.summary}"
+                    for f in findings
+                )
+                messages.append({
+                    "role": "system",
+                    "content": (
+                        "WEB RESEARCH (each section below was researched independently for a "
+                        "different entity/topic -> do NOT blend facts between them; attribute "
+                        f"each fact to the correct one):\n{web_text}"
+                    ),
+                })
+            async for token in _get_tutor()._client.stream_complete(messages):
+                full_response += token
+                await _cm.send(session_id, "CHAT_TOKEN", {"token": token})
         else:
             # content_only mode: strictly grounded in the uploaded material, no web, no outside facts.
             system_msg = (
                 "You are Study Buddy, helping a student understand a paper they uploaded, at the "
-                f"{familiarity} level.\n\n"
+                f"{familiarity} level.{merge_note}\n\n"
                 f"{_today_note}"
                 f"{selection_prefix}"
                 "Answer using ONLY the SOURCE MATERIAL below. Cite inline like [Source: <label>]. "
@@ -840,9 +886,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         label = data.get("node_label", node_id)
         anchor_id = data.get("anchor_id") or node_id
         selection_text = data.get("selection_text", "")
-        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
+        fc_node = _safe_get_node(session_id, node_id)
+        fc_doc_ids = fc_node.document_ids or None
+        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question", document_ids=fc_doc_ids)
         if not chunks:
-            chunks = await _get_chunks(session_id, label, n=8)
+            chunks = await _get_chunks(session_id, label, n=8, document_ids=fc_doc_ids)
             
         images_base64 = []
         doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
@@ -854,7 +902,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     for r in page_regions:
                         if r.get("crop_base64"):
                             images_base64.append(r["crop_base64"])
-        images_base64 = images_base64[:10]  # Cap to prevent context blowup
+        images_base64 = images_base64[:2]  # Cerebras hard-limits image inputs to 2 per request
 
         cache_key = _cache.make_key("FLASHCARDS_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
@@ -886,9 +934,11 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         label = data.get("node_label", node_id)
         anchor_id = data.get("anchor_id") or node_id
         selection_text = data.get("selection_text", "")
-        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question")
+        quiz_node = _safe_get_node(session_id, node_id)
+        quiz_doc_ids = quiz_node.document_ids or None
+        chunks = await _get_chunks(session_id, label, n=8, chunk_type="question", document_ids=quiz_doc_ids)
         if not chunks:
-            chunks = await _get_chunks(session_id, label, n=8)
+            chunks = await _get_chunks(session_id, label, n=8, document_ids=quiz_doc_ids)
             
         images_base64 = []
         doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
@@ -900,7 +950,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     for r in page_regions:
                         if r.get("crop_base64"):
                             images_base64.append(r["crop_base64"])
-        images_base64 = images_base64[:10]  # Cap to prevent context blowup
+        images_base64 = images_base64[:2]  # Cerebras hard-limits image inputs to 2 per request
 
         cache_key = _cache.make_key("QUIZ_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
@@ -959,15 +1009,19 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         familiarity_level = data.get("familiarity", familiarity)
         full = ""
         try:
-            node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
-            chunks = await _get_chunks(session_id, node_label, n=5)
+            sb_node = _safe_get_node(session_id, node_id)
+            node_label = data.get("node_label") or sb_node.label
+            chunks = await _get_chunks(session_id, node_label, n=5, document_ids=sb_node.document_ids or None)
             student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
 
             recent_summaries = _recent_session_summaries.get(session_id, [])
             if recent_summaries:
                 student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
 
-            async for token in _get_study_buddy().generate_initial_question(node_label, chunks, familiarity_level, student_profile):
+            async for token in _get_study_buddy().generate_initial_question(
+                node_label, chunks, familiarity_level, student_profile,
+                is_merged=sb_node.is_merged, merge_summary=sb_node.merge_summary,
+            ):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
         except Exception as e:
@@ -993,8 +1047,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         
         full = ""
         try:
-            node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
-            chunks = await _get_chunks(session_id, node_label, n=5)
+            sb_node = _safe_get_node(session_id, node_id)
+            node_label = data.get("node_label") or sb_node.label
+            chunks = await _get_chunks(session_id, node_label, n=5, document_ids=sb_node.document_ids or None)
             student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
             recent_summaries = _recent_session_summaries.get(session_id, [])
             if recent_summaries:
@@ -1005,7 +1060,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 familiarity=familiarity_level,
                 history=history,
                 student_answer=student_text,
-                student_profile=student_profile
+                student_profile=student_profile,
+                is_merged=sb_node.is_merged,
+                merge_summary=sb_node.merge_summary,
             ):
                 full += token
                 await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
@@ -1047,8 +1104,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                 
                 full = ""
                 try:
-                    node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
-                    chunks = await _get_chunks(session_id, node_label, n=5)
+                    sb_node = _safe_get_node(session_id, node_id)
+                    node_label = data.get("node_label") or sb_node.label
+                    chunks = await _get_chunks(session_id, node_label, n=5, document_ids=sb_node.document_ids or None)
                     student_profile = await _memory.query_prior_knowledge(node_label, session_id=session_id)
                     recent_summaries = _recent_session_summaries.get(session_id, [])
                     if recent_summaries:
@@ -1059,7 +1117,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                         familiarity=familiarity_level,
                         history=history,
                         student_answer=text,
-                        student_profile=student_profile
+                        student_profile=student_profile,
+                        is_merged=sb_node.is_merged,
+                        merge_summary=sb_node.merge_summary,
                     ):
                         full += token
                         await _cm.send(session_id, "STUDY_BUDDY_TOKEN", {"token": token})
@@ -1122,6 +1182,21 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         await _push_and_flush_memory(session_id, data.get("topic", ""), journal, patches, session_summary)
         _recent_session_summaries.setdefault(session_id, []).append(session_summary)
 
+        # Also durably commit to Session History -> Push is the only save action students
+        # actually use, so it has to do both jobs (no separate manual "Commit" click).
+        from app.services.session_commit import commit_session_snapshot
+        all_nodes = _graph_mgr.list_nodes(session_id)
+        file_ids: List[str] = []
+        for n in all_nodes:
+            for d in (n.document_ids or []):
+                if d not in file_ids:
+                    file_ids.append(d)
+        await commit_session_snapshot(
+            session_id, data.get("topic", ""), familiarity,
+            [n.model_dump() for n in all_nodes],
+            data.get("content_files", []), document_id, file_ids,
+        )
+
         await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
 
     # ---- PROGRESS_REQUEST (deterministic activity tally) -----------------
@@ -1143,7 +1218,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         parent_context = data.get("parent_context", "")
         knowledge_mode = data.get("knowledge_mode", "content_only")
         anchor_id = f"wiki_{hash(selection_text) & 0xFFFFFF}"
-        chunks = await _get_chunks(session_id, selection_text, n=5)
+        wiki_doc_ids = await _session_all_doc_ids(session_id)
+        chunks = await _get_chunks(session_id, selection_text, n=5, document_ids=wiki_doc_ids or None)
         cache_key = _cache.make_key("CONTEXT_CARD", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
         if cached:
@@ -1205,7 +1281,8 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         recommended_tool = data.get("recommended_tool", "Canvas")
         card_content = data.get("card_content", "")
         anchor_id = f"wiki_{hash(selection_text) & 0xFFFFFF}"
-        chunks = await _get_chunks(session_id, selection_text, n=5)
+        visual_doc_ids = await _session_all_doc_ids(session_id)
+        chunks = await _get_chunks(session_id, selection_text, n=5, document_ids=visual_doc_ids or None)
         # Ground the visual in BOTH the wiki card's content and the source chunks.
         ctx_chunks = ([{"source": "wiki summary", "text": card_content}] + chunks) if card_content else chunks
         visual_cache_key = _cache.make_key(
@@ -1263,6 +1340,19 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         asyncio.create_task(
             _push_and_flush_memory(session_id, data.get("topic", ""), journal, patches, session_summary)
         )
+
+        # Same Session History commit Push does -> in case a session ends without a prior Push.
+        from app.services.session_commit import commit_session_snapshot
+        file_ids: List[str] = []
+        for n in all_nodes:
+            for d in (n.document_ids or []):
+                if d not in file_ids:
+                    file_ids.append(d)
+        asyncio.create_task(commit_session_snapshot(
+            session_id, data.get("topic", ""), familiarity,
+            [n.model_dump() for n in all_nodes],
+            data.get("content_files", []), data.get("document_id", ""), file_ids,
+        ))
 
         # Bridge the background processing gap for the current session
         _recent_session_summaries.setdefault(session_id, []).append(session_summary)

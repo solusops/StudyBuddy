@@ -35,7 +35,7 @@ class ChromaDBClient:
 
     @staticmethod
     def file_hash(content: bytes) -> str:
-        return hashlib.sha256(content).hexdigest()[:16]
+        return hashlib.sha256(content).hexdigest()
 
     def is_indexed(self, content_hash: str) -> bool:
         try:

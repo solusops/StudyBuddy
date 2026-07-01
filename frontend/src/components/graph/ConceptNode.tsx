@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react"
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react"
-import { Check } from "lucide-react"
+import { Check, Link2 } from "lucide-react"
 import type { NodeData } from "../../types"
 import { useGraphStore } from "../../store/graphStore"
+
+// Distinct from status colors on purpose -> a merged node's fill still reflects its
+// LOCKED/ACTIVE/MASTERED status, this ring/badge is an independent visual axis marking
+// "this node synthesizes overlapping treatments from 2+ source documents".
+const MERGE_ACCENT = "#9333EA"
 
 type ConceptNodeType = Node<NodeData, "concept">
 
@@ -53,6 +58,7 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
   const percent = progress?.percent ?? 0
   const complete = !!progress?.complete
   const isRoot = data.depth === 0
+  const isMerged = !!data.is_merged
   const complexity = data.complexity ?? 3
   const animIndex = (data as Record<string, unknown>)._animIndex as number | undefined
   const animDelay = (animIndex ?? 0) * 0.04  // stagger 40ms per node for fireworks
@@ -87,17 +93,20 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
           borderRadius: isRoot ? 14 : 10,
           minWidth,
           maxWidth,
-          border: `${borderWidth}px solid ${complete ? "#2D6A4F" : baseColors.border}`,
+          border: `${borderWidth}px ${isMerged ? "dashed" : "solid"} ${isMerged ? MERGE_ACCENT : complete ? "#2D6A4F" : baseColors.border}`,
           color: baseColors.text,
           cursor: "pointer",
           userSelect: "none",
-          boxShadow: complete
-            ? "0 0 0 3px rgba(45,106,79,0.35), 0 0 14px rgba(45,106,79,0.45)"
-            : isRoot
-              ? "0 4px 16px rgba(26,53,87,0.25)"
-              : selected
-                ? `0 0 0 3px ${baseColors.border}33`
-                : "0 1px 4px rgba(26,53,87,0.08)",
+          boxShadow: [
+            complete
+              ? "0 0 0 3px rgba(45,106,79,0.35), 0 0 14px rgba(45,106,79,0.45)"
+              : isRoot
+                ? "0 4px 16px rgba(26,53,87,0.25)"
+                : selected
+                  ? `0 0 0 3px ${baseColors.border}33`
+                  : "0 1px 4px rgba(26,53,87,0.08)",
+            isMerged ? `0 0 0 2px ${MERGE_ACCENT}55` : "",
+          ].filter(Boolean).join(", "),
           fontFamily: "'Libre Caslon Text', Georgia, serif",
           textAlign: "center",
           transition: "box-shadow 0.3s, transform 0.15s, border-color 0.3s",
@@ -107,6 +116,20 @@ export function ConceptNode({ id, data, selected }: NodeProps<ConceptNodeType>) 
           opacity: (animate && !isRoot) ? undefined : 1,
         }}
       >
+        {isMerged && (
+          <div
+            title={data.merge_summary || "This concept merges overlapping treatments from multiple source documents."}
+            style={{
+              position: "absolute", top: -8, right: -8, zIndex: 2,
+              width: 20, height: 20, borderRadius: "50%",
+              background: MERGE_ACCENT, color: "#FFFFFF",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              boxShadow: "0 1px 4px rgba(0,0,0,0.25)",
+            }}
+          >
+            <Link2 size={11} />
+          </div>
+        )}
         {/* Activity-tally fill -> rises from the bottom, animated */}
         {!isRoot && percent > 0 && (
           <div style={{

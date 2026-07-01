@@ -1,5 +1,3 @@
-import json
-import os
 import uuid
 from typing import Any, Dict, List
 
@@ -57,44 +55,23 @@ class CommitRequest(BaseModel):
     nodes: List[Dict[str, Any]]
     content_files: List[str] = []
     document_id: str = ""
+    file_ids: List[str] = []
 
 
 @router.post("/commit")
 async def commit_session(req: CommitRequest):
-    import shutil
-    import asyncio
-    import cognee
+    """Kept for compatibility -> the frontend no longer calls this directly.
 
-    save_dir = os.path.expanduser("~/.studybuddy/sessions")
-    os.makedirs(save_dir, exist_ok=True)
-    payload = req.model_dump()
-    # Force-save in ONE place per paper (document_id) when known, plus the session file.
-    paths = [os.path.join(save_dir, f"{req.session_id}.json")]
-    if req.document_id:
-        paths.append(os.path.join(save_dir, f"doc_{req.document_id}.json"))
-    paths.append(os.path.join(save_dir, "latest.json"))
-    for path in paths:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(payload, f, indent=2)
-            
-    # Stage memory in Cognee's session cache
-    payload_str = json.dumps(payload)
-    await cognee.add(payload_str, dataset_name=f"session_{req.session_id}")
-    
-    # Execute memory snapshot using shutil.copytree for Memory Versioning
-    try:
-        from cognee.base_config import get_base_config
-        data_root = get_base_config().data_root_directory
-        if data_root and os.path.exists(data_root):
-            snapshot_dir = f"{data_root}_snapshot_{req.session_id}"
-            if os.path.exists(snapshot_dir):
-                shutil.rmtree(snapshot_dir)
-            shutil.copytree(data_root, snapshot_dir)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Failed to create memory snapshot: %s", e)
+    Session History is now committed automatically as part of Push
+    (EVALUATE_SESSION, see handlers.py's _push_and_flush_memory), which
+    calls the same commit_session_snapshot() this route delegates to.
+    """
+    from app.services.session_commit import commit_session_snapshot
 
-    return {"status": "committed", "paths": paths}
+    return await commit_session_snapshot(
+        req.session_id, req.topic, req.familiarity, req.nodes,
+        req.content_files, req.document_id, req.file_ids,
+    )
 
 
 @router.get("/trajectory/{document_id}")
@@ -107,14 +84,15 @@ def get_trajectory(document_id: str):
 class ClearRequest(BaseModel):
     session_id: str
     document_id: str = ""
+    file_ids: List[str] = []
 
 
 @router.post("/clear")
 def clear_session(req: ClearRequest):
     """Wipe everything tied to this session/document -> persistent and in-memory.
 
-    A session is exactly one input document, so clearing means starting over
-    with nothing: no curriculum tree, no lessons, no chunks, no uploaded file.
+    A session is exactly one input document set, so clearing means starting over
+    with nothing: no curriculum tree, no lessons, no chunks, no uploaded files.
     Cognee's cross-session student-memory profile is intentionally NOT touched ->
     it's meant to persist and grow across documents, not reset with them.
     """
@@ -124,6 +102,7 @@ def clear_session(req: ClearRequest):
     from app.rag.ingestion import LIBRARY_COLLECTION
     from app.services.annotation_service import get_annotation_service
     from app.services.memory_service import MemoryService
+    from app.services.session_files import session_upload_dir
 
     _journal.clear_session(req.session_id)
     mgr = get_graph_manager()
@@ -144,16 +123,19 @@ def clear_session(req: ClearRequest):
         for p in (
             base / "sessions" / f"doc_{document_id}.json",
             base / "graphs" / f"doc_{document_id}.json",
-            base / "pdfs" / f"{document_id}.pdf",
         ):
             if p.exists():
                 p.unlink()
         get_annotation_service().delete_for_document(document_id)
         MemoryService().flush_cluster(document_id)
+    # document_id is a combined hash of the whole file set, not a single PDF's cache
+    # filename -> the per-file PDF cache is keyed by file_ids instead.
+    for file_id in req.file_ids:
+        p = base / "pdfs" / f"{file_id}.pdf"
+        if p.exists():
+            p.unlink()
 
-    # Single-document-per-session model: the uploaded file IS the session's content.
-    uploads_dir = os.path.expanduser("~/.studybuddy/uploads")
-    if os.path.isdir(uploads_dir):
-        shutil.rmtree(uploads_dir, ignore_errors=True)
+    # This session's own upload folder -> never a shared directory.
+    shutil.rmtree(session_upload_dir(req.session_id), ignore_errors=True)
 
     return {"status": "cleared"}

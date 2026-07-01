@@ -3,12 +3,30 @@
 IMPORTANT: extract_curriculum reads RAG content to find topics.
 It NEVER invents topics from model weights.
 """
+import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from pydantic import BaseModel, Field
 
 from app.agents.cerebras_client import CerebrasClient
 from app.schemas.graph import NodeData
+
+_GENERIC_LABELS = {"", "untitled", "document", "study session", "topic", "subject"}
+
+
+def _fallback_topic_name(root_label: str, doc_names: Optional[List[str]] = None) -> str:
+    """Guarantee a real topic name even if the LLM didn't derive one from the documents.
+
+    The prompt asks the model to derive a subject name from the documents when no
+    topic_hint is given, but nothing enforces it -> this guardrail catches an empty
+    or generic root label and falls back to the uploaded filename(s) instead.
+    """
+    if root_label and root_label.strip().lower() not in _GENERIC_LABELS:
+        return root_label.strip()
+    doc_names = doc_names or []
+    stems = [os.path.splitext(n)[0].replace("_", " ").replace("-", " ").strip() for n in doc_names[:2]]
+    joined = " & ".join(s.title() for s in stems if s)
+    return joined or "Study Session"
 
 FAMILIARITY_NOTES: Dict[str, str] = {
     "eli5": "Use purely sensory analogies, zero math, max 2-syllable words where possible.",
@@ -68,6 +86,16 @@ class _SyllabusNode(BaseModel):
     depth: int = Field(1, ge=0, le=4)
     complexity: int = Field(3, ge=1, le=5, description="Conceptual density: 1=simple definition, 3=moderate, 5=very complex/math-heavy")
     parent_id: Optional[str] = None
+    merged_from_ids: List[str] = Field(
+        default_factory=list,
+        description="If this node merges 2+ input nodes that covered the same concept across "
+                    "different source documents, list all their original ids here. Empty if unchanged.",
+    )
+    merge_summary: str = Field(
+        "", description="If merged_from_ids is non-empty: 1-2 sentences on what's shared across "
+                        "the source documents' treatments of this concept, and what (if anything) differs. "
+                        "Empty otherwise.",
+    )
 
 
 class _SyllabusEdge(BaseModel):
@@ -90,7 +118,13 @@ class _SectionItem(BaseModel):
     label: str = Field(description="≤6 word section title")
     description: str = Field("", description="≤80 char summary")
     complexity: int = Field(3, ge=1, le=5)
-    source_doc: int = Field(0, description="Index of the document this section comes from (0-based)")
+    source_docs: List[int] = Field(
+        default_factory=lambda: [0],
+        description="0-based indices of ALL documents this section draws from. List more than "
+                    "one if 2+ source documents cover substantially the same ground for this "
+                    "section (e.g. both papers have a background/related-work section on the "
+                    "same subfield, or both introduce the same foundational concept).",
+    )
 
 
 class _RootAndSections(BaseModel):
@@ -104,6 +138,14 @@ class _ExpansionChild(BaseModel):
     description: str = Field("", description="≤80 char summary")
     complexity: int = Field(3, ge=1, le=5)
     relationship: str = Field("prerequisite", description="prerequisite | related | builds-on")
+    source_docs: List[int] = Field(
+        default_factory=list,
+        description="0-based indices (from the section's available documents) of which specific "
+                    "document(s) THIS CONCEPT is grounded in. If this exact concept is treated by "
+                    "more than one of the section's source documents, list all of them -> this "
+                    "marks it as a shared/overlapping concept. A section can span multiple "
+                    "documents while most of its individual concepts are still document-specific.",
+    )
 
 
 class _SectionExpansion(BaseModel):
@@ -130,8 +172,10 @@ class BrainAgent:
     ) -> _RootAndSections:
         """One fast call: the root subject + its top-level sections (no children yet).
 
-        When multiple documents are provided, each section is tagged with the index of
-        the document it belongs to (source_doc), so the graph routes nodes to papers.
+        When multiple documents are provided, each section is tagged with the index(es) of
+        the document(s) it draws from (source_docs), so the graph routes nodes to papers.
+        A section can list more than one document when they cover overlapping ground ->
+        that's the first, coarsest signal of cross-paper topic overlap.
         """
         tree_shape = FAMILIARITY_TREE_SHAPE.get(familiarity, FAMILIARITY_TREE_SHAPE["high_school"])
         familiarity_note = FAMILIARITY_NOTES.get(familiarity, "")
@@ -144,7 +188,9 @@ class BrainAgent:
             listing = "\n".join(f"  [{i}] {n}" for i, n in enumerate(doc_names))
             doc_note = (
                 f"\nThere are {len(doc_names)} source documents:\n{listing}\n"
-                "Set each section's source_doc to the 0-based index of the document it comes from.\n"
+                "Set each section's source_docs to the 0-based index of every document it draws "
+                "from -> list 2+ indices if multiple documents cover substantially the same ground "
+                "for this section.\n"
             )
         messages = [
             {
@@ -163,7 +209,7 @@ class BrainAgent:
                     f"Document structure:\n{structure_text[:10000]}\n\n"
                     f"root_label should be '{topic_hint}' if provided, else the subject name. "
                     "List the top-level sections (each ≤6 words)."
-                    + (" Tag each with its source_doc index." if multi else "")
+                    + (" Tag each with its source_docs indices." if multi else "")
                 ),
             },
         ]
@@ -172,11 +218,20 @@ class BrainAgent:
     def expand_section(
         self,
         section_label: str,
-        structure_text: str,
+        doc_excerpts: List[Dict[str, Any]],
         familiarity: str,
         sibling_sections: Optional[List[str]] = None,
     ) -> _SectionExpansion:
         """Expand one section into 1-3 specific child concepts (one parallel call per section).
+
+        doc_excerpts is one dict per source document this section draws from:
+        {"index": int, "filename": str, "structure_text": str}. A section can span 2+
+        documents when they cover overlapping ground (see derive_root_and_sections) -> each
+        excerpt is kept individually capped so the total prompt still scales with section
+        count, not with how many documents happen to overlap on this one section. Each child
+        concept is asked to name which specific document(s) it came from (source_docs, using
+        the indices given here) so genuinely shared concepts can be told apart from concepts
+        that merely live in a section with mixed provenance.
 
         sibling_sections lists the OTHER top-level sections in this same tree (generated
         together, before any of them were expanded). Each section is still expanded by its
@@ -194,6 +249,23 @@ class BrainAgent:
                 "if a concept clearly belongs to one of these instead, leave it out):\n"
                 + "\n".join(f"- {s}" for s in sibling_sections) + "\n"
             )
+
+        multi_doc = len(doc_excerpts) > 1
+        excerpt_cap = 2000 if multi_doc else 4000
+        doc_index_note = ""
+        if multi_doc:
+            listing = "\n".join(f"  [{d['index']}] {d['filename']}" for d in doc_excerpts)
+            doc_index_note = (
+                f"\nThis section draws from {len(doc_excerpts)} documents:\n{listing}\n"
+                "For each child concept, set source_docs to the index(es) of which document(s) "
+                "actually cover THAT specific concept -> list more than one only if the concept "
+                "genuinely appears in more than one of them.\n"
+            )
+        excerpt_text = "\n\n".join(
+            f"--- From: {d['filename']} (index {d['index']}) ---\n{d['structure_text'][:excerpt_cap]}"
+            for d in doc_excerpts
+        )
+
         messages = [
             {
                 "role": "system",
@@ -201,16 +273,17 @@ class BrainAgent:
                     f"You are a curriculum organiser. {familiarity_note}\n"
                     "Given ONE section of a subject, list 1-3 specific concepts a student must learn "
                     "within it. Use ONLY topics evidenced in the material. Keep labels ≤6 words."
-                    f"{sibling_note}"
+                    f"{doc_index_note}{sibling_note}"
                 ),
             },
             {
                 "role": "user",
                 "content": (
                     f"Section: {section_label}\n\n"
-                    f"Document structure (for grounding):\n{structure_text[:4000]}\n\n"
+                    f"Document structure (for grounding):\n{excerpt_text}\n\n"
                     "List 1-3 child concepts for this section -> concepts that belong specifically "
                     "here, not to one of the other sections listed above."
+                    + (" Tag each with its source_docs indices." if multi_doc else "")
                 ),
             },
         ]
@@ -244,12 +317,24 @@ class BrainAgent:
         self,
         nodes: List[NodeData],
         edges: List[Dict],
+        doc_name_lookup: Optional[Dict[str, str]] = None,
     ) -> Tuple[List[NodeData], List[Dict]]:
         """Run a post-generation cleanup pass on the graph to merge semantic duplicates
         and fix any structural issues introduced by parallel expansion.
+
+        doc_name_lookup maps each node's document_ids entries (file ids) to a human
+        filename, so the model can see which paper each node came from and specifically
+        look for the SAME concept appearing under different names across papers (not just
+        same-paper synonyms) -> that's the deliberate cross-paper merge this pass exists for.
         """
+        doc_name_lookup = doc_name_lookup or {}
+
+        def _doc_label(n: NodeData) -> str:
+            names = [doc_name_lookup.get(d, d) for d in (n.document_ids or [])]
+            return ", ".join(names) if names else "unspecified"
+
         nodes_desc = "\n".join(
-            f"- {n.id}: \"{n.label}\" (depth={n.depth}, parent={n.parent_id or 'none'})"
+            f"- {n.id}: \"{n.label}\" (depth={n.depth}, parent={n.parent_id or 'none'}, from: {_doc_label(n)})"
             for n in nodes
         )
         edges_desc = "\n".join(
@@ -266,11 +351,20 @@ class BrainAgent:
                     "(e.g., 'Math' and 'Mathematics', or 'Neural Networks' and 'Artificial Neural Networks').\n"
                     "RULES:\n"
                     "1. Merge nodes that mean the exact same thing. Keep the broader/better name.\n"
-                    "2. Do NOT merge distinct sub-topics (e.g. 'Deep Learning' is distinct from 'Neural Networks').\n"
-                    "3. Ensure the root node (n0) remains at depth=0 with parent_id=null.\n"
-                    "4. Every other node MUST have a valid parent_id.\n"
-                    "5. If you remove/merge a node, you MUST re-assign any edges or children that pointed to it.\n"
-                    "6. Return the finalized list of nodes and edges."
+                    "2. Pay special attention to concepts that appear across MULTIPLE source documents "
+                    "under different names or framings (e.g. one document calls it 'Attention Mechanism', "
+                    "another calls it 'Self-Attention Layer', but they're the same underlying concept) -> "
+                    "these are exactly the nodes that should merge, even more so than same-document synonyms.\n"
+                    "3. Do NOT merge distinct sub-topics (e.g. 'Deep Learning' is distinct from 'Neural Networks').\n"
+                    "4. When you merge two or more nodes, you MUST set merged_from_ids to all their original "
+                    "ids, and write merge_summary: 1-2 sentences on what's shared across the source documents' "
+                    "treatments, and what (if anything) differs (e.g. 'Both documents define this identically' "
+                    "vs. 'Document A frames this as X; Document B extends it with Y'). Leave both empty if the "
+                    "node is unchanged from a single input node.\n"
+                    "5. Ensure the root node (n0) remains at depth=0 with parent_id=null.\n"
+                    "6. Every other node MUST have a valid parent_id.\n"
+                    "7. If you remove/merge a node, you MUST re-assign any edges or children that pointed to it.\n"
+                    "8. Return the finalized list of nodes and edges."
                 ),
             },
             {
@@ -278,23 +372,31 @@ class BrainAgent:
                 "content": (
                     f"CURRENT NODES:\n{nodes_desc}\n\n"
                     f"CURRENT EDGES:\n{edges_desc}\n\n"
-                    "Return the clean graph. Nodes: id, label, description, depth, complexity (1-5), parent_id.\n"
+                    "Return the clean graph. Nodes: id, label, description, depth, complexity (1-5), parent_id, "
+                    "merged_from_ids, merge_summary.\n"
                     "Edges: source, target, relationship."
                 ),
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
-        
-        # When merging, we need to preserve document_ids.
-        # The LLM doesn't output document_ids in _SyllabusBlueprint (it doesn't know about them).
-        # We can map them back based on the node IDs that were kept.
-        doc_map = {n.id: getattr(n, "document_ids", []) for n in nodes}
-        
+
+        # Preserve document_ids across the merge: union every contributing node's
+        # document_ids via merged_from_ids, rather than relying on id survival (the LLM
+        # may assign a merged node a brand-new id matching none of the originals).
+        doc_map = {n.id: list(getattr(n, "document_ids", [])) for n in nodes}
+
         clean_nodes, clean_edges = self._build_nodes_and_edges(blueprint)
-        for cn in clean_nodes:
-            if cn.id in doc_map:
-                cn.document_ids = doc_map[cn.id]
-                
+        for cn, bn in zip(clean_nodes, blueprint.nodes):
+            contributing_ids = bn.merged_from_ids or [cn.id]
+            union_docs: List[str] = []
+            for cid in contributing_ids:
+                for d in doc_map.get(cid, []):
+                    if d not in union_docs:
+                        union_docs.append(d)
+            cn.document_ids = union_docs
+            cn.is_merged = len(bn.merged_from_ids) > 1
+            cn.merge_summary = bn.merge_summary
+
         return clean_nodes, clean_edges
 
     def extract_curriculum(
@@ -346,6 +448,9 @@ class BrainAgent:
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        if blueprint.nodes:
+            doc_names = sorted({c.get("source", "") for c in chunks if c.get("source")})
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
         return self._build_nodes_and_edges(blueprint)
 
     def extract_curriculum_from_documents(
@@ -370,12 +475,20 @@ class BrainAgent:
         memory_note = (
             f"Prior student knowledge:\n{memory_context}\n\n" if memory_context else ""
         )
+        multi_doc_note = ""
+        if len(document_overviews) > 1:
+            listing = "\n".join(f"  - {d['filename']}" for d in document_overviews)
+            multi_doc_note = (
+                f"\nThere are {len(document_overviews)} source documents:\n{listing}\n"
+                "The tree MUST include topics from EVERY one of them, not just the first -> "
+                "a tree that only covers one document while ignoring the others is wrong.\n"
+            )
         messages = [
             {
                 "role": "system",
                 "content": (
                     f"You are a curriculum organiser. {familiarity_note}\n"
-                    f"{topic_note}{memory_note}\n"
+                    f"{topic_note}{memory_note}{multi_doc_note}\n"
                     "TREE STRUCTURE RULES:\n"
                     "1. The FIRST node (id=n0, depth=0) MUST be the overall topic/subject as a root node with parent_id=null.\n"
                     f"   Its label should be: '{topic_hint}' if provided, otherwise derive the subject name from the documents.\n"
@@ -401,6 +514,9 @@ class BrainAgent:
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        if blueprint.nodes:
+            doc_names = [d["filename"] for d in document_overviews]
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
         return self._build_nodes_and_edges(blueprint)
 
     def refine_curriculum(
@@ -470,6 +586,9 @@ class BrainAgent:
             },
         ]
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
+        if blueprint.nodes:
+            doc_names = sorted({c.get("source", "") for c in chunks if c.get("source")})
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
         return self._build_nodes_and_edges(blueprint)
 
     def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:
@@ -498,3 +617,34 @@ class BrainAgent:
     def build_rag_query(self, node_label: str, familiarity: str) -> str:
         note = FAMILIARITY_NOTES.get(familiarity, "")
         return f"{node_label} {note} explanation concepts"
+
+    def generate_session_title(self, topic: str, content_files: List[str], familiarity: str) -> str:
+        """Short descriptive title for a Session History entry, generated once per
+        document set so a student can tell sessions apart at a glance.
+        """
+        class _SessionTitle(BaseModel):
+            title: str = Field(description="A short (<=8 word) descriptive title for this study "
+                                            "session, capturing what it's about and its source "
+                                            "material -> NOT just the filenames verbatim.")
+
+        files_note = ", ".join(content_files) if content_files else "no files"
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Generate a short, descriptive title for a study session based on its topic "
+                    "and source material filenames, so a student can distinguish it from other "
+                    "sessions in a history list at a glance. <=8 words. Describe what the session "
+                    "is ABOUT, don't just restate the filenames."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Topic: {topic or '(none given)'}\nSource files: {files_note}\nFamiliarity level: {familiarity}",
+            },
+        ]
+        try:
+            result = self._client.structured_complete(messages, _SessionTitle)
+            return result.title.strip() or (topic or "Study Session")
+        except Exception:
+            return topic or "Study Session"

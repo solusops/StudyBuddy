@@ -1,15 +1,14 @@
-"""Library router -> single-document content management.
+"""Library router -> per-session content management.
 
-A session is exactly one uploaded document (set): drag-and-drop files in,
-get an instant curriculum tree, chunk the full text in the background.
-There is no folder-configuration concept -> the uploads directory under
-~/.studybuddy/uploads IS the content store.
+Each session gets its own isolated upload folder (see app.services.session_files) ->
+a session's document set is exactly what's in its own folder, never a shared,
+rescanned "current uploads" directory. Drag-and-drop files in, get an instant
+curriculum tree, chunk the full text in the background.
 """
 import asyncio
 import hashlib
 import json
 import os
-import shutil
 import uuid
 
 # Cap concurrent highlight-concepts LLM calls to avoid token-burst 429s
@@ -23,19 +22,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.agents.brain_agent import BrainAgent
-from app.rag.ingestion import (
-    LIBRARY_COLLECTION,
-    extract_document_structure,
-    ingest_file,
-)
+from app.rag.ingestion import LIBRARY_COLLECTION, ingest_file
 from app.routers.session import set_ingest_status
 from app.schemas.graph import NodeData
+from app.services.session_files import list_session_files, session_upload_dir
 from app.websockets.handlers import get_db, get_graph_manager
 
 router = APIRouter(prefix="/library", tags=["library"])
 
-_SUPPORTED_EXTS = {".pdf", ".docx", ".txt"}
-_UPLOADS_DIR = os.path.expanduser("~/.studybuddy/uploads")
 _SESSIONS_DIR = os.path.expanduser("~/.studybuddy/sessions")
 _PDF_CACHE_DIR = os.path.expanduser("~/.studybuddy/pdfs")
 
@@ -54,12 +48,6 @@ def _get_brain() -> BrainAgent:
 # ------------------------------------------------------------------ #
 
 
-class StartSessionRequest(BaseModel):
-    session_id: str
-    familiarity: str = "high_school"
-    topic_hint: str = ""
-
-
 class HighlightConceptsRequest(BaseModel):
     page_text: str
     familiarity: str = "high_school"
@@ -70,126 +58,21 @@ class HighlightConceptsRequest(BaseModel):
 # ------------------------------------------------------------------ #
 
 
-def _list_files(folder: str) -> List[str]:
-    if not folder or not os.path.isdir(folder):
-        return []
-    return [
-        os.path.join(folder, f)
-        for f in os.listdir(folder)
-        if os.path.isfile(os.path.join(folder, f))
-        and os.path.splitext(f)[1].lower() in _SUPPORTED_EXTS
-    ]
+def _combined_document_id(file_contents: List[bytes]) -> str:
+    """Order-independent identity for a session's whole set of uploaded files.
+
+    Sorting the per-file hashes before joining means the same SET of files
+    always produces the same id regardless of upload order or directory
+    listing order -> callers (upload, resume, status) can compute this
+    independently and still land on the same cache key.
+    """
+    per_file = sorted(hashlib.sha256(c).hexdigest() for c in file_contents)
+    return hashlib.sha256("".join(per_file).encode()).hexdigest()
 
 
 # ------------------------------------------------------------------ #
 # Endpoints                                                           #
 # ------------------------------------------------------------------ #
-
-
-@router.get("/status")
-def status():
-    """Check what's currently uploaded and how many chunks are indexed."""
-    db = get_db()
-    files = _list_files(_UPLOADS_DIR)
-
-    document_id = None
-    if files:
-        try:
-            with open(files[0], "rb") as f:
-                document_id = hashlib.sha256(f.read()).hexdigest()
-        except Exception:
-            pass
-
-    return {
-        "configured": bool(files),
-        "content_folder": _UPLOADS_DIR if files else None,
-        "content_files": [os.path.basename(p) for p in files],
-        "indexed_chunks": db.collection_count(LIBRARY_COLLECTION),
-        "document_id": document_id,
-    }
-
-
-@router.post("/start-session")
-async def start_session(req: StartSessionRequest, background_tasks: BackgroundTasks):
-    """Instant tree generation from document structure -> no RAG needed.
-
-    Reads headings/TOC from each uploaded file and sends to Gemma 4.
-    Returns in ~2s, before chunking is complete.
-    """
-    files = _list_files(_UPLOADS_DIR)
-    if not files:
-        raise HTTPException(400, "No document uploaded yet.")
-
-    # Cache the first file for layout/regions segmentation under its document_id hash
-    document_id = ""
-    if files:
-        try:
-            with open(files[0], "rb") as f:
-                first_content = f.read()
-            document_id = hashlib.sha256(first_content).hexdigest()
-            pdf_dir = os.path.expanduser("~/.studybuddy/pdfs")
-            os.makedirs(pdf_dir, exist_ok=True)
-            pdf_cache_dest = os.path.join(pdf_dir, f"{document_id}.pdf")
-            if not os.path.exists(pdf_cache_dest):
-                with open(pdf_cache_dest, "wb") as fh:
-                    fh.write(first_content)
-        except Exception:
-            pass
-
-    # Extract structure from each file (headings / first pages -> fast, no embedding)
-    loop = asyncio.get_event_loop()
-    overviews = []
-    for path in files[:5]:  # cap at 5 docs to keep the prompt manageable
-        with open(path, "rb") as f:
-            content = f.read()
-        filename = os.path.basename(path)
-        structure = await loop.run_in_executor(
-            None, extract_document_structure, content, filename
-        )
-        overviews.append({"filename": filename, "structure_text": structure})
-
-    # Generate graph instantly from document structure
-    nodes, edges = await loop.run_in_executor(
-        None,
-        _get_brain().extract_curriculum_from_documents,
-        overviews,
-        req.familiarity,
-        req.topic_hint,
-        "",
-    )
-
-    get_graph_manager().set_graph(req.session_id, nodes)
-
-    # Background: chunk full documents into LIBRARY_COLLECTION for RAG.
-    db = get_db()
-    db.delete_where(LIBRARY_COLLECTION, {"session_id": req.session_id})
-    set_ingest_status(req.session_id, "chunking")
-
-    def _chunk_all():
-        try:
-            total = 0
-            for path in files:
-                with open(path, "rb") as f:
-                    content = f.read()
-                filename = os.path.basename(path)
-                total += ingest_file(
-                    content, filename, LIBRARY_COLLECTION, db=db,
-                    skip_if_indexed=False, session_id=req.session_id,
-                )
-            set_ingest_status(req.session_id, "ready" if total > 0 else "error")
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception("start_session chunking failed for session %s", req.session_id)
-            set_ingest_status(req.session_id, "error")
-
-    background_tasks.add_task(_chunk_all)
-
-    return {
-        "status": "ready",
-        "nodes": [n.model_dump() for n in nodes],
-        "edges": edges,
-        "document_id": document_id,
-    }
 
 
 @router.post("/highlight-concepts")
@@ -236,10 +119,12 @@ async def upload_and_start(
     # The curriculum tree is NOT generated here -> the client opens the WebSocket and
     # fires BUILD_GRAPH, which streams nodes in parallel ("fireworks"). This returns fast.
 
-    # Persist uploaded files to disk so /library/file/{name} can serve them later
-    os.makedirs(_UPLOADS_DIR, exist_ok=True)
+    # Each session gets its OWN upload folder (session_id is always a fresh UUID from
+    # /session/create) -> no shared directory, so there's nothing to clear and nothing
+    # another session's leftover files could contaminate this one with.
+    upload_dir = session_upload_dir(session_id)
     for content, filename in file_store:
-        dest = os.path.join(_UPLOADS_DIR, filename)
+        dest = os.path.join(upload_dir, filename)
         with open(dest, "wb") as fh:
             fh.write(content)
 
@@ -280,8 +165,9 @@ async def upload_and_start(
 
     background_tasks.add_task(_chunk_all)
 
-    # Stable document id = SHA-256 of first uploaded file (same file = same id)
-    document_id = hashlib.sha256(file_store[0][0]).hexdigest() if file_store else ""
+    # Stable document id = order-independent hash of the WHOLE uploaded file set
+    # (same set of files, any order = same id).
+    document_id = _combined_document_id([c for c, _ in file_store]) if file_store else ""
     return {
         "status": "ready",
         "nodes": [],   # streamed via BUILD_GRAPH over the WebSocket
@@ -291,26 +177,6 @@ async def upload_and_start(
     }
 
 
-@router.post("/clear")
-def clear_library():
-    """Wipe the uploaded document so /library/status reports unconfigured.
-
-    Also wipes every cached doc_*.json curriculum graph. The graph cache is
-    keyed by a content hash of the uploaded file(s) (see document_id in
-    upload_and_start below), so re-uploading the same PDF after "Start Fresh"
-    would otherwise silently replay the old graph and topic name instead of
-    regenerating -> "fresh" has to mean no cached curriculum tree survives.
-    """
-    if os.path.isdir(_UPLOADS_DIR):
-        shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
-    get_graph_manager().clear_all_doc_graphs()
-    if os.path.isdir(_SESSIONS_DIR):
-        for name in os.listdir(_SESSIONS_DIR):
-            if name.startswith("doc_") and name.endswith(".json"):
-                os.remove(os.path.join(_SESSIONS_DIR, name))
-    return {"status": "cleared"}
-
-
 # ------------------------------------------------------------------ #
 # History -> past learning materials, resumable from the start window #
 # ------------------------------------------------------------------ #
@@ -318,10 +184,14 @@ def clear_library():
 
 @router.get("/history")
 def list_history():
-    """One entry per document the student has committed progress on, most recent first.
+    """One entry per document set the student has committed progress on, most recent first.
 
-    A document only shows up here if its source PDF/DOCX/TXT bytes are still cached
-    (~/.studybuddy/pdfs/{document_id}.*) -> otherwise there'd be nothing to resume.
+    A document set only shows up here if at least one of its source files is
+    still cached under ~/.studybuddy/pdfs/{file_id}.* -> otherwise there'd be
+    nothing to resume. document_id is a combined, order-independent hash of
+    the whole file set (see _combined_document_id), so it never corresponds
+    to a single cached PDF filename directly -> file_ids (the per-file
+    hashes) is what's checked against the PDF cache.
     """
     if not os.path.isdir(_SESSIONS_DIR):
         return {"items": []}
@@ -331,16 +201,18 @@ def list_history():
         if not (name.startswith("doc_") and name.endswith(".json")):
             continue
         document_id = name[len("doc_"):-len(".json")]
-        if not os.path.exists(os.path.join(_PDF_CACHE_DIR, f"{document_id}.pdf")):
-            continue
         path = os.path.join(_SESSIONS_DIR, name)
         try:
             with open(path, encoding="utf-8") as f:
                 saved = json.load(f)
         except Exception:
             continue
+        file_ids = saved.get("file_ids", [])
+        if not any(os.path.exists(os.path.join(_PDF_CACHE_DIR, f"{fid}.pdf")) for fid in file_ids):
+            continue
         items.append({
             "document_id": document_id,
+            "title": saved.get("title") or saved.get("topic") or "Untitled",
             "topic": saved.get("topic") or "Untitled",
             "familiarity": saved.get("familiarity", "high_school"),
             "content_files": saved.get("content_files", []),
@@ -356,47 +228,44 @@ class ResumeHistoryRequest(BaseModel):
 
 
 @router.post("/history/resume")
-async def resume_history(req: ResumeHistoryRequest, background_tasks: BackgroundTasks):
-    """Restore a past document as the active upload, re-chunk it under a fresh session,
-    and hand back its already-known curriculum tree -> no LLM tree regeneration needed.
+async def resume_history(req: ResumeHistoryRequest):
+    """Restore a past session's document set into its own folder and hand back its
+    already-known curriculum tree -> no LLM regeneration, no re-chunking, no
+    re-indexing. Chunks already exist in ChromaDB tagged with the original
+    session_id (reused here), so they're immediately queryable again.
     """
     doc_json_path = os.path.join(_SESSIONS_DIR, f"doc_{req.document_id}.json")
-    pdf_path = os.path.join(_PDF_CACHE_DIR, f"{req.document_id}.pdf")
-    if not os.path.exists(doc_json_path) or not os.path.exists(pdf_path):
+    if not os.path.exists(doc_json_path):
         raise HTTPException(404, "That session's material is no longer available.")
 
     with open(doc_json_path, encoding="utf-8") as f:
         saved = json.load(f)
-    with open(pdf_path, "rb") as f:
-        content = f.read()
-    filename = (saved.get("content_files") or [f"{req.document_id}.pdf"])[0]
 
-    # Single-document-per-session model: resuming replaces whatever is currently active.
-    if os.path.isdir(_UPLOADS_DIR):
-        shutil.rmtree(_UPLOADS_DIR, ignore_errors=True)
-    os.makedirs(_UPLOADS_DIR, exist_ok=True)
-    with open(os.path.join(_UPLOADS_DIR, filename), "wb") as fh:
-        fh.write(content)
-
+    content_files = saved.get("content_files") or []
+    file_ids = saved.get("file_ids") or []
     session_id = saved.get("session_id") or str(uuid.uuid4())
-    set_ingest_status(session_id, "chunking")
-    db = get_db()
 
-    def _chunk_all():
-        try:
-            ingest_file(
-                content, filename, LIBRARY_COLLECTION, db=db,
-                skip_if_indexed=False, session_id=session_id,
-            )
-            set_ingest_status(session_id, "ready")
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception(
-                "Resume chunking failed for session %s", session_id
-            )
-            set_ingest_status(session_id, "error")
+    # Restore every file in this document set from its own per-file PDF cache into the
+    # session's own folder -> content_files/file_ids are parallel lists built together
+    # at commit time.
+    upload_dir = session_upload_dir(session_id)
+    restored_any = False
+    for filename, file_id in zip(content_files, file_ids):
+        src = os.path.join(_PDF_CACHE_DIR, f"{file_id}.pdf")
+        if not os.path.exists(src):
+            continue
+        with open(src, "rb") as f:
+            content = f.read()
+        with open(os.path.join(upload_dir, filename), "wb") as fh:
+            fh.write(content)
+        restored_any = True
+    if not restored_any:
+        raise HTTPException(404, "That session's material is no longer available.")
 
-    background_tasks.add_task(_chunk_all)
+    # No re-chunking, no re-indexing: this session_id's chunks already exist in
+    # ChromaDB from the original session and are never deleted except by an explicit
+    # /session/clear or a fresh upload reusing the same session_id.
+    set_ingest_status(session_id, "ready")
 
     # Prefer the graph cache (has real edges); fall back to synthesizing edges from
     # parent_id on the committed nodes if that cache is somehow missing.
@@ -418,15 +287,15 @@ async def resume_history(req: ResumeHistoryRequest, background_tasks: Background
         "familiarity": saved.get("familiarity", "high_school"),
         "nodes": [n.model_dump() for n in nodes],
         "edges": edges,
-        "filenames": [filename],
+        "filenames": content_files,
         "document_id": req.document_id,
     }
 
 
-@router.get("/file/{filename}")
-def serve_library_file(filename: str):
-    """Serve a file from the uploads directory (for browser-mode PDF viewer)."""
-    path = os.path.join(_UPLOADS_DIR, filename)
+@router.get("/file/{session_id}/{filename}")
+def serve_library_file(session_id: str, filename: str):
+    """Serve a file from this session's own upload folder (for browser-mode PDF viewer)."""
+    path = os.path.join(session_upload_dir(session_id), filename)
     if not os.path.isfile(path):
         raise HTTPException(404, f"File not found: {filename}")
     ext = os.path.splitext(filename)[1].lower()
@@ -507,8 +376,22 @@ async def refine_tree(req: RefineTreeRequest):
         )
 
     get_graph_manager().set_graph(req.session_id, nodes)
-    # Persist the refined graph for this PDF so reloads reuse the refinement.
-    get_graph_manager().save_doc_graph(req.document_id, nodes, edges)
+    # Persist the refined graph under whatever document set is CURRENTLY uploaded,
+    # not the client-supplied document_id -> which can be stale if a file was
+    # added/removed since the tree was first built, and would otherwise silently
+    # orphan the refined tree under the wrong cache key.
+    current_files = list_session_files(req.session_id)
+    current_id = req.document_id
+    if current_files:
+        try:
+            contents = []
+            for p in current_files:
+                with open(p, "rb") as f:
+                    contents.append(f.read())
+            current_id = _combined_document_id(contents)
+        except Exception:
+            pass
+    get_graph_manager().save_doc_graph(current_id, nodes, edges)
     return {
         "status": "ready",
         "nodes": [n.model_dump() for n in nodes],
