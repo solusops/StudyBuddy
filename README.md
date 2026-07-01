@@ -150,6 +150,58 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 
 ---
 
+## 🚀 Full Deployment (No Installer)
+
+Study Buddy does not ship a packaged installer/executable — it's designed to be cloned and run as a standalone desktop app straight from source. This is the same three processes described above (Electron shell, Vite-built frontend, FastAPI backend), just run in production mode instead of `npm run dev`'s hot-reloading dev servers.
+
+<details>
+<summary>Click to expand — clone, build, and launch as a standalone desktop app</summary>
+
+```bash
+# 1. Clone
+git clone https://github.com/solusops/StudyBuddy.git
+cd StudyBuddy
+
+# 2. Python dependencies
+cd backend
+uv sync
+cd ..
+
+# 3. Node dependencies
+npm install                        # Electron + root orchestration
+npm install --prefix frontend      # React frontend
+
+# 4. API keys
+cp backend/.env.example backend/.env
+# Edit backend/.env:
+#   CEREBRAS_API_KEY=csk-...       (required)
+#   TAVILY_API_KEY=tvly-...        (optional -> enables Net Support mode)
+#   YOUTUBE_API_KEY=...            (optional -> enables Deep Dive)
+# Keys can also be entered later from the in-app Setup screen -> it writes back to this same file.
+
+# 5. Build the frontend for production (Vite dev server is not used in this flow)
+npm run build --prefix frontend
+
+# 6. Activate the backend's uv-managed virtualenv in this shell
+#    (electron/main.js spawns a plain `python` process -> it must resolve to the
+#    venv's interpreter, which is what has all backend dependencies installed)
+#    Windows (PowerShell):
+.\backend\.venv\Scripts\Activate.ps1
+#    Windows (cmd.exe):
+backend\.venv\Scripts\activate.bat
+#    macOS / Linux:
+source backend/.venv/bin/activate
+
+# 7. Launch the desktop shell (production mode: loads frontend/dist, not localhost:5173)
+npx electron .
+```
+
+Re-running the app after the first setup only requires steps 6 and 7 (re-activate the venv in your shell, then `npx electron .`) unless you `git pull` new backend dependencies or frontend changes, in which case re-run `uv sync` / `npm run build --prefix frontend` first.
+
+</details>
+
+---
+
 ## How to Use
 
 1. **Upload content** -> drop a PDF, DOCX, or TXT (textbook chapters, lecture notes, problem sets)
