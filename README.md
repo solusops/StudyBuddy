@@ -15,6 +15,36 @@ An **agentic AI study companion** that teaches exclusively from your uploaded ma
 
 ---
 
+## Design Philosophy: Cerebras Speed Chose the Architecture
+
+Most RAG tutoring apps make one LLM call, wait, and show the result. Study Buddy doesn't — and the reason it *can't afford to* isn't a stylistic choice, it's a direct consequence of building on an inference provider fast enough that decomposition is cheaper than monolith. On a typical ~50–100 tok/s provider, splitting one job into five sequential calls multiplies latency five times over; on Cerebras at 900–1,500+ tok/s, five *small, structured, parallel* calls often finish before one large one would have even started streaming. That single fact shaped almost every non-obvious design decision in this codebase:
+
+- **The curriculum is never generated in one shot.** `BrainAgent` derives the root + top-level sections in one fast call, then fans out one `expand_section()` call **per section, in parallel**, each scoped to only the documents that section actually draws from. A monolithic "read everything, emit the whole tree" prompt would blow past context budgets on multi-document uploads and produce a shallow tree; the decomposed version scales with document count instead of collapsing under it — but it only *works* at Cerebras speed, because the frontend streams each node in as it resolves (`GRAPH_NODE_ADDED`) rather than waiting for every section to finish.
+- **Chat's "Net Support" mode never does OpenAI-style single-shot tool calling.** When a question involves two distinct entities that could be confused with each other (two people sharing a name, a comparison between two papers), `NetResearchAgent.plan()` spins up one independent research sub-agent **per entity**, each with its own Tavily search and its own grounded summary, run concurrently via `asyncio.gather`. Only the final synthesis call ever sees all the labeled findings together. This is strictly more LLM calls than a single tool-calling loop — a design that's only viable because those extra calls are nearly free in wall-clock time on Cerebras.
+- **Every user-facing surface streams token-by-token** — lessons, chat, Infinite Wiki cards, the Report Canvas — not because streaming is fashionable, but because at 1,500+ tok/s the first token arrives fast enough that streaming is what makes the "instantaneous" feel real instead of aspirational.
+- **The sandbox self-repairs instead of failing.** Generated HTML5 visuals get a server-side syntax pre-flight before ever reaching the iframe, and a client-side `onerror` triggers a repair round-trip (`POST /sandbox/repair`) rather than showing the student a red error. Round-tripping through another LLM call to fix broken code is only an acceptable UX (rather than a visible stall) when that round trip is sub-second.
+- **Structured output, not prose parsing, everywhere.** Every agent call uses `strict=True` JSON-schema-constrained output (`CerebrasClient.structured_complete()`) rather than asking the model to describe a graph patch or a node assessment in free text and parsing it after the fact. This is deliberately *not* the cheapest way to get an answer out of the model — it costs an extra schema validation round-trip on failure (see `structured_complete()`'s retry-once behavior for truncated/invalid JSON) — but it's what makes fanning work out across a dozen small independent calls per interaction tractable, since every call's output is immediately typed and composable instead of needing its own bespoke parser.
+
+In short: Cerebras didn't just make the app *feel* fast. Its speed is the reason the system is architected as many small, independently-verifiable, parallel agent calls instead of one large one — a design that would be a latency liability on a slower provider and is instead Study Buddy's core advantage.
+
+---
+
+## Why Cognee Is Vital
+
+RAG alone (ChromaDB, in this app) can only ever tell an agent **what the uploaded material says**. It has no memory of the student — reload the same PDF next week and a pure-RAG tutor starts from zero, asking questions the student already answered correctly, re-teaching concepts they already mastered, and never noticing they've been stuck on the same weak spot across three separate sessions. That's the gap [Cognee](https://www.cognee.ai/) closes: it's the layer that remembers **how this specific student learns**, persisted locally and queried before every curriculum is built.
+
+Concretely, in this codebase:
+
+- **The Brain Agent reads Cognee before it writes a single curriculum node.** `StudentMemoryService.query_prior_knowledge()` recalls prior quiz accuracy, flashcard ease, Feynman attempts, and rubric-based mastery classifications for this student, scoped by topic — so a returning student's tree generation is informed by what they already struggled with, not generated in a vacuum every time.
+- **The Evaluator writes to it after every session**, not as an afterthought bolt-on but as the terminal step of the same mastery-scoring pipeline that updates the Knowledge Graph — quiz correctness, flashcard grades, and Feynman-explanation attempts per node all get folded into a text summary and pushed into Cognee's session cache, then explicitly flushed into the permanent knowledge graph at session end (`cognee.improve()`).
+- **It's session-cache-then-flush, not naive fire-and-forget**, deliberately: every "Push" (`EVALUATE_SESSION`) writes cheaply to a per-session cache (`cognee.remember(..., session_id=...)`) so mastery data is never lost mid-session, but the expensive graph-rebuild step (`cognee.improve()`) only runs once, at `END_SESSION` — avoiding rebuilding the whole student memory graph on every quiz submission.
+- **It never leaves the machine.** Cognee's data root is pinned to `~/.studybuddy/cognee/` (LanceDB for vectors, SQLite for relational metadata), and even its *embedding model* is forced to run locally (`fastembed`/`sentence-transformers`) rather than falling through to a cloud default — because Cerebras has no embeddings endpoint of its own, and "local-first" would otherwise silently break the moment Cognee needed to embed something. Nothing about a student's learning history is ever sent anywhere but Cerebras (for the LLM calls that read/write it) and disk.
+- **It's what makes "Adaptive Difficulty" adaptive across sessions, not just within one.** The four familiarity levels (ELI5 → Expert) change how a single session's prompts are phrased; Cognee is what lets the system additionally notice, over weeks, that a student is *consistently* weak on gradient descent specifically, regardless of which paper they're currently reading.
+
+Without Cognee, Study Buddy would be a well-built single-session RAG tutor. With it, every session after the first one starts smarter than the last — which is the actual premise of an agentic *study partner*, not just a document Q&A tool.
+
+---
+
 ## Features
 
 ### Intelligent PDF Reader
@@ -35,14 +65,21 @@ An **agentic AI study companion** that teaches exclusively from your uploaded ma
 
 ### Knowledge Graph
 - **Auto-generated curriculum tree** -> the AI extracts a topic hierarchy from your material and renders it as an interactive node graph
+- **Multi-document aware** -> upload several papers in one session and the tree balances coverage across all of them; genuinely overlapping concepts across papers merge into one visually-distinguished node, and every downstream tool (Chat, Feynman, lessons) is told a node is a merge so it attributes claims to the right source instead of blending them
 - **Click-to-learn** -> click any concept node to stream a full lesson. The tutor never refuses to teach a concept, even if it's only tangentially mentioned in the text
 - **Session-scoped RAG** -> document chunks are isolated per session; uploading a new PDF doesn't bleed into old sessions
+- **Session History** -> every session is auto-titled from its content (not the filename) and resumable later without re-uploading, re-chunking, or re-indexing anything
 
 ### Study Tools
 - **Flashcards** -> generated from your uploaded question papers
 - **Quiz** -> timed self-assessment with graded answers
 - **Feynman Method** -> explain the concept aloud to a curious Study Buddy persona (voice or text). The persona adapts its age and behaviour to your difficulty level (Age 5 for ELI5, Age 30 for Expert)
 - **Speech-to-text** -> backend Canary neural transcription when available, with automatic Web Speech API fallback
+
+### Report Canvas
+- **Turns your own annotations into a report** -> highlight passages and write margin notes while reading, then compile them into a synthesized, textbook-style, streamed writeup -> not a summary of the PDF, a synthesis of *what you chose to capture*
+- **Editable, not regenerate-from-scratch** -> ask for a rewrite ("more formal", "add an example") and it re-synthesizes from your already-processed notes instead of reprocessing everything
+- **Auto-illustrated** -> the finished report is classified for a fitting visual (plot, diagram, or animation) and one is attached automatically
 
 ### Adaptive Difficulty
 Four familiarity levels that reshape every interaction:
@@ -130,49 +167,96 @@ Open **http://localhost:5173**. The "Start Studying" button activates once the b
 
 ---
 
+## System Design Patterns
+
+Beyond the Cerebras-shaped decomposition described above, a handful of deliberate patterns recur throughout the codebase:
+
+### Per-session isolation, all the way down
+
+There is no shared, folder-wide upload state anywhere in the app. Every session gets its own upload folder (`~/.studybuddy/session_uploads/{session_id}/`), its own scoped ChromaDB retrieval (`document_ids` filters on every RAG call site), and its own journal. Duplication across sessions (the same PDF stored twice if uploaded in two sessions) is an accepted tradeoff for that isolation, not an oversight — it means starting a new session, or resuming an old one, can never accidentally bleed in another session's files, chunks, or graph state.
+
+### Content-addressed document identity
+
+Two hash-based identifiers drive caching and dedup: a `file_id` (SHA-256 of one file's bytes) and a `document_id` (an order-independent combined hash of the whole file *set* in a session — sorted per-file hashes, joined, re-hashed). Uploading the same set of papers again, in any order, resolves to the same `document_id`, which means the curriculum tree is *replayed* from `~/.studybuddy/graphs/doc_{document_id}.json` instead of regenerated — a real latency and cost win for anyone re-studying the same material, with a defense-in-depth validity check (structural soundness + full document coverage) before a cached tree is trusted, falling back to regeneration if it isn't.
+
+### Multi-stage curriculum generation with cross-paper merge detection
+
+The curriculum pipeline is three explicit stages, not one call: `derive_root_and_sections()` (coarse root + sections, each tagged with which source document(s) it draws from) → `expand_section()` (one parallel call per section, fed only that section's relevant document excerpts, aware of sibling sections so it doesn't duplicate their topics) → `cleanup_curriculum()` (sees every node's source filenames and explicitly looks for the same concept described differently across papers, merging those into one node tagged `is_merged` with a `merge_summary` explaining what's shared vs. distinct). Every downstream consumer of a merged node — lessons, chat, Feynman — gets told it's a merge so it attributes claims to the correct paper instead of blending two treatments into one voice.
+
+### Monotone mastery invariant
+
+Node mastery scores (Memory / Comprehension / Structure / Application, 0–100 each) can only increase, never decrease — enforced independently in both `GraphStateManager.apply_node_patch()` (backend) and `applyNodePatch()` (frontend store), because a single missed enforcement point would let a bad evaluation silently erase real progress. The Evaluator Agent never invents these numbers directly either: it classifies demonstrated understanding against a fixed rubric (from the *sophistication* of quiz answers, questions asked, and Feynman explanations), and a deterministic lookup table converts that classification into the actual score delta.
+
+### Lazy generation + self-healing sandbox
+
+Visuals are never generated eagerly — `LEARN_NODE` returns lesson text only; the (often expensive) HTML5 visual is generated on-demand only when the student opens the Visual tab. Once generated, it goes through a server-side syntax pre-flight (`compile(script, '<visual>', 'exec')`) before ever reaching the sandboxed iframe (`sandbox="allow-scripts"`, `srcdoc` only, no external `src` — fully self-contained), and a client-side runtime error triggers an automatic repair round-trip instead of surfacing a broken visualization to the student.
+
+### Structured output as the connective tissue
+
+Every agent-to-agent and agent-to-frontend boundary is a `strict=True` JSON-schema Pydantic model, never free-text parsing. `CerebrasClient._build_schema()` inlines `$ref`s and forces `additionalProperties: false` at every nesting level (Cerebras's strict mode rejects `$ref`), so a dozen independently-developed agents can compose without any of them needing a bespoke text parser for another agent's output.
+
+### Defense-in-depth over trust-the-first-answer
+
+Several pipelines validate a generated artifact and fall back rather than assuming success: a cached curriculum graph is checked for structural validity and full document coverage before replay; a curriculum "cleanup" pass that would drop content is rejected in favor of the pre-cleanup tree; a blank/generic curriculum root label triggers a second, differently-framed LLM attempt before ever falling back to (much weaker) filename-derived naming.
+
+---
+
 ## 🧱 Architecture (Auto-Generated)
 
 ```tree
-┌──────────────────────────────────────────────────────────-┐
-│                    Electron Shell                         │
-│  ┌────────────────────────┬───────────────────────────-┐  │
-│  │     React Frontend     │     FastAPI Backend        │  │
-│  │     (Vite, port 5173)  │     (uvicorn, port 8765)   │  │
-│  │                        │                            │  │
-│  │  PDFReader ◄──────────►│  WebSocket /ws/{session}   │  │
-│  │  InfiniteWiki          │  ├─ BrainAgent             │  │
-│  │  ChatTool              │  ├─ TutorAgent             │  │
-│  │  FlashcardTool         │  ├─ WikiAgent              │  │
-│  │  QuizTool              │  ├─ EvaluatorAgent         │  │
-│  │  FeynmanTool           │  ├─ SensesAgent (vision)   │  │
-│  │  VisualSandbox         │  └─ ModalityRouter         │  │
-│  │  KnowledgeGraph        │                            │  │
-│  │                        │  REST Routers              │  │
-│  │  Zustand Stores ──────►│  ├─ /library     (upload)  │  │
-│  │  (session, context,    │  ├─ /session     (create)  │  │
-│  │   interaction, graph)  │  ├─ /regions     (figures) │  │
-│  │                        │  ├─ /annotations (notes)   │  │
-│  │                        │  ├─ /sandbox     (repair)  │  │
-│  │                        │  └─ /api/health            │  │
-│  │                        │                            │  │
-│  │                        │  Services                  │  │
-│  │                        │  ├─ ChromaDB (RAG)         │  │
-│  │                        │  ├─ LayoutService (PyMuPDF)│  │
-│  │                        │  ├─ OutputCache            │  │
-│  │                        │  └─ AnnotationService      │  │
-│  └────────────────────────┴──────────────────────────-─┘  │
-│                              │                            │
-│                    ┌─────────▼──────────┐                 │
-│                    │   Cerebras Cloud   │                 │
-│                    │  Gemma 4 (31B)     │                 │
-│                    │  1,500+ TPS        │                 │
-│                    └─────────┬──────────┘                 │
-│                              │ (optional)                 │
-│                    ┌─────────▼──────────┐                 │
-│                    │   Tavily Search    │                 │
-│                    │   (Net Support)    │                 │
-│                    └────────────────────┘                 │
-└───────────────────────────────────────────────────────-───┘
+┌────────────────────────────────────────────────────────────────┐
+│                        Electron Shell                          │
+│  ┌────────────────────────┬────────────────────────────────┐   │
+│  │     React Frontend     │       FastAPI Backend          │   │
+│  │     (Vite, port 5173)  │       (uvicorn, port 8765)     │   │
+│  │                        │                                │   │
+│  │  PDFReader ◄──────────►│  WebSocket /ws/{session_id}    │   │
+│  │  InfiniteWiki          │  ├─ BrainAgent (curriculum)    │   │
+│  │  ChatTool              │  ├─ TutorAgent (lessons)       │   │
+│  │  FlashcardTool         │  ├─ NetResearchAgent (chat)    │   │
+│  │  QuizTool              │  ├─ StudyBuddyAgent (Feynman)  │   │
+│  │  StudyBuddyTool        │  ├─ ReportAgent (canvas)       │   │
+│  │  ReportView            │  ├─ WikiAgent / InfinityWiki   │   │
+│  │  VisualSandbox         │  ├─ EvaluatorAgent             │   │
+│  │  KnowledgeGraph        │  ├─ SensesAgent (vision)       │   │
+│  │  EvaluationView        │  └─ ModalityRouter             │   │
+│  │                        │                                │   │
+│  │  Zustand Stores ──────►│  REST Routers                  │   │
+│  │  (session, context,    │  ├─ /library   (per-session     │  │
+│  │   interaction, graph)  │  │              upload+history) │  │
+│  │                        │  ├─ /session   (create/commit/  │  │
+│  │                        │  │              clear/trajectory)│  │
+│  │                        │  ├─ /regions   (figure detect)  │  │
+│  │                        │  ├─ /annotations (margin notes)  │  │
+│  │                        │  ├─ /sandbox   (visual repair)   │  │
+│  │                        │  ├─ /review    (Cognee recall)   │  │
+│  │                        │  └─ /api       (health, keys)    │  │
+│  │                        │                                │   │
+│  │                        │  Services                      │   │
+│  │                        │  ├─ ChromaDB (per-session RAG)  │   │
+│  │                        │  ├─ StudentMemoryService(Cognee)│   │
+│  │                        │  ├─ MemoryService (report/traj.)│   │
+│  │                        │  ├─ session_files/session_commit│   │
+│  │                        │  ├─ LayoutService (PyMuPDF)     │   │
+│  │                        │  ├─ OutputCache / JournalService│   │
+│  │                        │  └─ AnnotationService           │   │
+│  └────────────────────────┴────────────────────────────────┘   │
+│                              │                                  │
+│              ┌───────────────┼────────────────┐                 │
+│    ┌─────────▼──────────┐    │    ┌────────────▼───────────┐    │
+│    │   Cerebras Cloud   │    │    │   Cognee (local)       │    │
+│    │   Gemma 4 (31B)    │    │    │   LanceDB + SQLite      │    │
+│    │   900-1,500+ TPS   │    │    │   ~/.studybuddy/cognee/ │    │
+│    └─────────────────────┘    │    └─────────────────────────┘  │
+│                              │ (optional)                       │
+│                    ┌─────────▼──────────┐                       │
+│                    │  Tavily / YouTube  │                       │
+│                    │  / OpenAlex        │                       │
+│                    │  (Net Support,     │                       │
+│                    │   Deep Dive,       │                       │
+│                    │   Further Reading) │                       │
+│                    └────────────────────┘                       │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -187,45 +271,57 @@ StudyBuddy/
 ├── backend/
 │   ├── app/
 │   │   ├── agents/            # AI agent layer
-│   │   │   ├── brain_agent.py       # Curriculum extraction & topic hierarchy
-│   │   │   ├── tutor_agent.py       # Lesson streaming & visual generation
-│   │   │   ├── wiki_agent.py        # Infinite Wiki card generation
-│   │   │   ├── evaluator_agent.py   # Quiz & flashcard evaluation
-│   │   │   ├── senses_agent.py      # Vision model (figure/table description)
-│   │   │   ├── modality_router.py   # Routes concepts to best visual type
-│   │   │   ├── cerebras_client.py   # Cerebras SDK wrapper (structured + streaming)
-│   │   │   └── cerebras_errors.py   # Error classification & rate-limit handling
+│   │   │   ├── brain_agent.py         # Curriculum extraction, multi-doc merge, session titles
+│   │   │   ├── tutor_agent.py         # Lesson streaming, flashcards/quiz, visual generation
+│   │   │   ├── net_research_agent.py  # Chat query decomposition + per-entity web research
+│   │   │   ├── study_buddy_agent.py   # Feynman-method persona ("Clara")
+│   │   │   ├── report_agent.py        # Report Canvas: note→insight, insight→report synthesis
+│   │   │   ├── wiki_agent.py          # Infinite Wiki card generation
+│   │   │   ├── infinity_wiki_agent.py # Deep Dive: YouTube search + transcript summarization
+│   │   │   ├── evaluator_agent.py     # Rubric-based mastery classification
+│   │   │   ├── senses_agent.py        # Vision model (figure/table description)
+│   │   │   ├── modality_router.py     # Routes concepts/reports to best visual type
+│   │   │   ├── cerebras_client.py     # Cerebras SDK wrapper (structured + streaming)
+│   │   │   └── cerebras_errors.py     # Error classification & rate-limit handling
 │   │   ├── rag/               # ChromaDB vector store, embeddings, chunker
-│   │   ├── schemas/           # Pydantic data contracts (graph, annotations)
+│   │   ├── schemas/           # Pydantic data contracts (graph, journal, annotations, session)
 │   │   ├── services/          # Business logic
-│   │   │   ├── layout_service.py    # PyMuPDF page segmentation (figures/tables)
-│   │   │   ├── output_cache.py      # Deterministic cache for LLM outputs
-│   │   │   ├── annotation_service.py
-│   │   │   ├── graph_state.py       # Graph state manager
-│   │   │   ├── summary_writer.py    # End-of-session Markdown export
-│   │   │   └── transcription_service.py  # Canary STT
+│   │   │   ├── session_files.py       # Per-session upload folder isolation
+│   │   │   ├── session_commit.py      # Session History commit (shared by REST + WS)
+│   │   │   ├── student_memory.py      # Cognee-backed cross-session memory (StudentMemoryService)
+│   │   │   ├── memory_service.py      # Disk-only report clusters + eval trajectory (NOT Cognee)
+│   │   │   ├── journal_service.py     # In-memory per-session interaction journal
+│   │   │   ├── progress_service.py    # Deterministic (no-LLM) per-node activity tally
+│   │   │   ├── scholar_service.py     # OpenAlex "Further Reading" lookup
+│   │   │   ├── youtube_service.py     # YouTube search + transcript fetch
+│   │   │   ├── layout_service.py      # PyMuPDF page segmentation (figures/tables)
+│   │   │   ├── output_cache.py        # Deterministic cache for LLM outputs
+│   │   │   ├── annotation_service.py  # Margin-note CRUD + persistence
+│   │   │   ├── graph_state.py         # Graph state manager (monotone-score enforcement)
+│   │   │   └── summary_writer.py      # End-of-session Markdown export
 │   │   ├── routers/           # FastAPI REST endpoints
-│   │   │   ├── library.py          # File upload, indexing, status
+│   │   │   ├── library.py          # Per-session upload+start, Session History, refine-tree
+│   │   │   ├── session.py          # create / ingest-status / commit / trajectory / clear
 │   │   │   ├── regions.py          # Figure/table segmentation
-│   │   │   ├── session.py          # Session lifecycle
 │   │   │   ├── annotations.py      # CRUD for margin notes
 │   │   │   ├── sandbox.py          # Visual self-repair endpoint
-│   │   │   └── health.py           # Readiness probe
+│   │   │   ├── review.py           # Cognee-backed spaced-repetition review query
+│   │   │   └── health.py           # Readiness probe + runtime API key management
 │   │   └── websockets/
-│   │       └── handlers.py         # Central event dispatch (LEARN_NODE, CHAT, etc.)
+│   │       └── handlers.py         # Central event dispatch (BUILD_GRAPH, CHAT_TURN, etc.)
 │   └── tests/                 # pytest suite
 ├── frontend/
 │   └── src/
 │       ├── components/
 │       │   ├── graph/              # KnowledgeGraph, ConceptNode
-│       │   ├── panel/              # ScientificFigurePanel, InfiniteWiki, VisualSandbox
-│       │   ├── reader/             # PDFReader, HighlightLayer, RegionLayer, MarginGutter
-│       │   ├── study-tools/        # ChatTool, FlashcardTool, QuizTool, FeynmanTool
-│       │   ├── overlay/            # FloatingToolbar (cursor mode switcher)
-│       │   └── init/               # SetupModal (onboarding)
+│       │   ├── panel/              # ScientificFigurePanel, InfiniteWiki, ReportView, EvaluationView, VisualSandbox
+│       │   ├── reader/              # PDFReader, HighlightLayer, RegionLayer, MarginGutter
+│       │   ├── study-tools/         # ChatTool, FlashcardTool, QuizTool, StudyBuddyTool
+│       │   ├── overlay/             # FloatingToolbar (cursor mode switcher)
+│       │   └── init/                # SetupModal (onboarding, Session History list)
 │       ├── hooks/                  # useWebSocket
-│       ├── lib/                    # fileSystem (Electron IPC + browser fallback)
-│       ├── pages/                  # TreePage, ManualPage, StudyPage
+│       ├── lib/                    # fileSystem (Electron IPC + browser fallback), clearSession
+│       ├── pages/                  # TreePage (graph + Push/Report), ManualPage (reader-first flow)
 │       ├── store/                  # Zustand: graphStore, sessionStore, contextStore, interactionStore
 │       └── types/                  # Shared TypeScript interfaces
 └── package.json               # Root orchestration (concurrently, electron-forge)
