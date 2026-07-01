@@ -91,14 +91,12 @@ class StudentMemoryService:
             summary = "\n".join(lines)
 
             # Cache to Cognee session (no graph build yet)
-            await cognee.remember(
+            await cognee.add(
                 summary,
-                dataset_name="student_memory",
-                session_id=session_id,
-                temporal_cognify=True,
+                dataset_name="student_memory"
             )
             # Flush session cache to permanent graph
-            await cognee.improve(dataset="student_memory", session_ids=[session_id])
+            await cognee.cognify(datasets=["student_memory"])
         except Exception as exc:
             import logging
             logging.getLogger(__name__).error("push_session failed: %s", exc)

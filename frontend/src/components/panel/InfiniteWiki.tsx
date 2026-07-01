@@ -397,7 +397,7 @@ export function InfiniteWiki({ isActive, sendEvent }: Props) {
     )
     let result = protectedText
     // Bold: **text**
-    result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    result = result.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>")
     // Links: [text](url)
     result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
     // Word-grow hover/selection feedback — wrap plain-text words (outside any tag) so

@@ -31,6 +31,9 @@ async def lifespan(app: FastAPI):
     os.environ.setdefault("EMBEDDING_PROVIDER", "fastembed")
     os.environ.setdefault("EMBEDDING_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
     os.environ.setdefault("EMBEDDING_DIMENSIONS", "384")
+    
+    # Disable multi-tenant access control for Cognee 1.2+ since StudyBuddy uses a single local user
+    os.environ["ENABLE_BACKEND_ACCESS_CONTROL"] = "false"
 
     import cognee
     from pathlib import Path

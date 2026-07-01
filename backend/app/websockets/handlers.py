@@ -990,6 +990,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
             chunks = await _get_chunks(session_id, node_label, n=5)
             student_profile = await _memory.query_prior_knowledge(node_label)
+            recent_summaries = _recent_session_summaries.get(session_id, [])
+            if recent_summaries:
+                student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
             async for token in _get_study_buddy().evaluate_and_ask_next(
                 node_label=node_label,
                 chunks=chunks,
@@ -1041,6 +1044,9 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     node_label = data.get("node_label") or _safe_get_node(session_id, node_id).label
                     chunks = await _get_chunks(session_id, node_label, n=5)
                     student_profile = await _memory.query_prior_knowledge(node_label)
+                    recent_summaries = _recent_session_summaries.get(session_id, [])
+                    if recent_summaries:
+                        student_profile += "\nRecent interaction summaries:\n" + "\n".join(recent_summaries)
                     async for token in _get_study_buddy().evaluate_and_ask_next(
                         node_label=node_label,
                         chunks=chunks,
@@ -1091,7 +1097,7 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         document_id = data.get("document_id", "")
         evaluator = EvaluatorAgent(journal_service=_journal)
         loop = asyncio.get_event_loop()
-        patches, assessments, _ = await loop.run_in_executor(
+        patches, assessments, session_summary = await loop.run_in_executor(
             None, evaluator.evaluate_session, session_id
         )
         for patch in patches:
@@ -1102,6 +1108,12 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
             await _cm.send(session_id, "NODE_ASSESSMENT", payload)
             # Persist the reasoned snapshot to the long-running trajectory memory.
             _local_mem.append_trajectory(document_id, payload)
+        
+        # Push to Cognee (await so UI shows 'processing' until it completes)
+        journal = _journal.get_session(session_id)
+        await _memory.push_session(session_id, data.get("topic", ""), journal, patches, session_summary)
+        _recent_session_summaries.setdefault(session_id, []).append(session_summary)
+
         await _cm.send(session_id, "EVALUATION_DONE", {"patches": [p.model_dump() for p in patches]})
 
     # ---- PROGRESS_REQUEST (deterministic activity tally) -----------------

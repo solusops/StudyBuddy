@@ -123,11 +123,22 @@ export function ChatTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
 
   const renderInline = (text: string): string => {
     // Math first (KaTeX HTML must not be touched by the markdown regexes below).
-    let result = renderMath(text)
+    const mathHtml: string[] = []
+    const protectedText = text.replace(
+      /\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\\([\s\S]+?\\\)|\$[^$\n]+?\$/g,
+      (match) => {
+        mathHtml.push(renderMath(match))
+        return ` ${mathHtml.length - 1} `
+      }
+    )
+    let result = protectedText
     // Bold: **text**
-    result = result.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    result = result.replace(/\*\*([\s\S]+?)\*\*/g, "<strong>$1</strong>")
     // Links: [text](url)
     result = result.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #3b82f6; text-decoration: underline; font-weight: 500;">$1</a>')
+    
+    // Restore protected math HTML, untouched.
+    result = result.replace(/ (\d+) /g, (_, idx) => mathHtml[Number(idx)])
     return result
   }
 

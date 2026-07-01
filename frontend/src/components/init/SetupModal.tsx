@@ -336,7 +336,7 @@ export function SetupModal({ onSessionReady }: Props) {
             {historyError && <p style={{ color: "#EF4444", fontSize: 15, margin: 0 }}>{historyError}</p>}
             {!historyLoading && !historyError && history.length === 0 && (
               <p style={{ color: "#9CA3AF", fontSize: 15, margin: 0 }}>
-                No past sessions yet -> study something and hit Commit to save your progress here.
+                No past sessions yet -&gt; study something and hit Commit to save your progress here.
               </p>
             )}
             {history.map((item) => (
