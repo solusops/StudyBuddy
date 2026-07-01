@@ -14,15 +14,24 @@ from app.schemas.graph import NodeData
 _GENERIC_LABELS = {"", "untitled", "document", "study session", "topic", "subject"}
 
 
-def _fallback_topic_name(root_label: str, doc_names: Optional[List[str]] = None) -> str:
+def _is_generic_label(label: str) -> bool:
+    return not label or label.strip().lower() in _GENERIC_LABELS
+
+
+def _fallback_topic_name(root_label: str, doc_names: Optional[List[str]] = None, smart_fallback: str = "") -> str:
     """Guarantee a real topic name even if the LLM didn't derive one from the documents.
 
     The prompt asks the model to derive a subject name from the documents when no
     topic_hint is given, but nothing enforces it -> this guardrail catches an empty
-    or generic root label and falls back to the uploaded filename(s) instead.
+    or generic root label. `smart_fallback` (a second, content-grounded LLM attempt,
+    e.g. via generate_session_title) is preferred when the caller supplies one, since
+    filenames (especially arXiv-style ids like "1706.03762v7") carry no real subject
+    information -> filename munging is the last resort, not the first.
     """
-    if root_label and root_label.strip().lower() not in _GENERIC_LABELS:
+    if not _is_generic_label(root_label):
         return root_label.strip()
+    if not _is_generic_label(smart_fallback):
+        return smart_fallback.strip()
     doc_names = doc_names or []
     stems = [os.path.splitext(n)[0].replace("_", " ").replace("-", " ").strip() for n in doc_names[:2]]
     joined = " & ".join(s.title() for s in stems if s)
@@ -450,7 +459,13 @@ class BrainAgent:
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
         if blueprint.nodes:
             doc_names = sorted({c.get("source", "") for c in chunks if c.get("source")})
-            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
+            smart_fallback = ""
+            if _is_generic_label(blueprint.nodes[0].label):
+                try:
+                    smart_fallback = self.generate_session_title("", list(doc_names), familiarity)
+                except Exception:
+                    pass
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names, smart_fallback)
         return self._build_nodes_and_edges(blueprint)
 
     def extract_curriculum_from_documents(
@@ -516,7 +531,13 @@ class BrainAgent:
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
         if blueprint.nodes:
             doc_names = [d["filename"] for d in document_overviews]
-            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
+            smart_fallback = ""
+            if _is_generic_label(blueprint.nodes[0].label):
+                try:
+                    smart_fallback = self.generate_session_title(topic_hint, doc_names, familiarity)
+                except Exception:
+                    pass
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names, smart_fallback)
         return self._build_nodes_and_edges(blueprint)
 
     def refine_curriculum(
@@ -588,7 +609,13 @@ class BrainAgent:
         blueprint = self._client.structured_complete(messages, _SyllabusBlueprint)
         if blueprint.nodes:
             doc_names = sorted({c.get("source", "") for c in chunks if c.get("source")})
-            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names)
+            smart_fallback = ""
+            if _is_generic_label(blueprint.nodes[0].label):
+                try:
+                    smart_fallback = self.generate_session_title("", list(doc_names), familiarity)
+                except Exception:
+                    pass
+            blueprint.nodes[0].label = _fallback_topic_name(blueprint.nodes[0].label, doc_names, smart_fallback)
         return self._build_nodes_and_edges(blueprint)
 
     def identify_concepts(self, page_text: str, familiarity: str) -> List[str]:

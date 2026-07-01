@@ -7,7 +7,6 @@ instead of requiring a separate manual "Commit" click.
 """
 import json
 import os
-import shutil
 from typing import Any, Dict, List
 
 _brain = None
@@ -76,18 +75,5 @@ async def commit_session_snapshot(
     # Stage memory in Cognee's session cache
     payload_str = json.dumps(payload)
     await cognee.add(payload_str, dataset_name=f"session_{session_id}")
-
-    # Execute memory snapshot using shutil.copytree for Memory Versioning
-    try:
-        from cognee.base_config import get_base_config
-        data_root = get_base_config().data_root_directory
-        if data_root and os.path.exists(data_root):
-            snapshot_dir = f"{data_root}_snapshot_{session_id}"
-            if os.path.exists(snapshot_dir):
-                shutil.rmtree(snapshot_dir)
-            shutil.copytree(data_root, snapshot_dir)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).warning("Failed to create memory snapshot: %s", e)
 
     return {"status": "committed", "paths": paths}

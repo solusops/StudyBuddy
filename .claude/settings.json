@@ -23,7 +23,8 @@
       "Bash(xargs grep -l \"electronAPI\")",
       "Bash(xargs grep -l \"interface\\\\|declare\")",
       "Bash(powershell -NoProfile -Command \"\\(Get-NetTCPConnection -LocalPort 8768 -State Listen -ErrorAction SilentlyContinue\\).OwningProcess\")",
-      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 25856 -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; try { Get-NetTCPConnection -LocalPort 8768 -State Listen -ErrorAction Stop } catch { Write-Output 'port free' }\")"
+      "Bash(powershell -NoProfile -Command \"Stop-Process -Id 25856 -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1; try { Get-NetTCPConnection -LocalPort 8768 -State Listen -ErrorAction Stop } catch { Write-Output 'port free' }\")",
+      "Read(//c/Users/SystemSu/.studybuddy/graphs/**)"
     ],
     "additionalDirectories": [
       "\\tmp",

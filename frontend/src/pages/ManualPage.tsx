@@ -22,7 +22,7 @@ interface Props {
 
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
   const { setGraph } = useGraphStore()
-  const { setSession, activeNodeId, activeNodeLabel, setActiveNode } = useSessionStore()
+  const { setSession, activeNodeId, activeNodeLabel, setActiveNode, familiarity } = useSessionStore()
   const { documentId, setDocumentId } = useInteractionStore()
 
   // -- Session bootstrap ------------------------------------------------
@@ -128,7 +128,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         const resp = await fetch("/library/highlight-concepts", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ page_text: text, familiarity: "high_school" }),
+          body: JSON.stringify({ page_text: text, familiarity }),
         })
         const { concepts: found } = await resp.json()
         setConcepts((prev) => {
@@ -137,7 +137,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
         })
       } catch { /* ignore */ }
     },
-    [concepts.length]
+    [concepts.length, familiarity]
   )
 
   const handleConceptClick = useCallback(
@@ -170,7 +170,7 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
     const onDone = () => { setIsPushing(false); setPushDone(true) }
     window.addEventListener("evaluation-done", onDone, { once: true })
     sendEvent("EVALUATE_SESSION", {
-      topic, familiarity: "high_school",
+      topic, familiarity,
       document_id: documentId || "", content_files: contentFiles,
     })
   }

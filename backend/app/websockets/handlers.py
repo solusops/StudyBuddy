@@ -10,7 +10,7 @@ import asyncio
 import json
 from typing import Any, Dict, List, Optional
 
-from app.agents.brain_agent import BrainAgent, _fallback_topic_name
+from app.agents.brain_agent import BrainAgent, _fallback_topic_name, _is_generic_label
 from app.services.output_cache import OutputCache
 from app.agents.evaluator_agent import EvaluatorAgent
 from app.agents.infinity_wiki_agent import InfinityWikiAgent
@@ -408,8 +408,16 @@ async def _build_graph_streaming(session_id: str, familiarity: str, topic: str, 
         nodes: list[NodeData] = []
         edges: list = []
 
+        smart_fallback = ""
+        if _is_generic_label(rs.root_label or topic):
+            try:
+                smart_fallback = await loop.run_in_executor(
+                    None, _get_brain().generate_session_title, topic, doc_names, familiarity
+                )
+            except Exception:
+                pass
         root = NodeData(
-            id="n0", label=_fallback_topic_name(rs.root_label or topic, doc_names),
+            id="n0", label=_fallback_topic_name(rs.root_label or topic, doc_names, smart_fallback),
             description=rs.root_description, depth=0, complexity=3,
             parent_id=None, status="ACTIVE",
             document_ids=doc_ids,  # root spans all papers
