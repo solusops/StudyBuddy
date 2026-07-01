@@ -899,18 +899,6 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         chunks = await _get_chunks(session_id, label, n=8, chunk_type="question", document_ids=fc_doc_ids)
         if not chunks:
             chunks = await _get_chunks(session_id, label, n=8, document_ids=fc_doc_ids)
-            
-        images_base64 = []
-        doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
-        if doc_ids:
-            from app.routers.regions import _load_region_cache
-            for did in doc_ids:
-                cache = _load_region_cache(did)
-                for page_regions in cache.values():
-                    for r in page_regions:
-                        if r.get("crop_base64"):
-                            images_base64.append(r["crop_base64"])
-        images_base64 = images_base64[:2]  # Cerebras hard-limits image inputs to 2 per request
 
         cache_key = _cache.make_key("FLASHCARDS_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
@@ -923,17 +911,16 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     card["source_chunk_text"] = "\n\n".join(c_texts)
             await _cm.send(session_id, "FLASHCARDS_READY", cached)
         else:
-            result = _get_tutor().generate_flashcards(label, chunks, familiarity, images_base64=images_base64)
+            result = _get_tutor().generate_flashcards(label, chunks, familiarity)
             payload = result.model_dump()
-            
+
             doc_id = chunks[0].get("document_id") if chunks else None
             for card in payload["cards"]:
                 idxs = card.get("source_chunk_indexes", [])
                 c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
                 card["source_location"] = _resolve_chunk_location(doc_id, c_texts)
                 card["source_chunk_text"] = "\n\n".join(c_texts)
-                
-            payload["context_images"] = images_base64
+
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "FLASHCARDS_READY", payload)
 
@@ -947,18 +934,6 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
         chunks = await _get_chunks(session_id, label, n=8, chunk_type="question", document_ids=quiz_doc_ids)
         if not chunks:
             chunks = await _get_chunks(session_id, label, n=8, document_ids=quiz_doc_ids)
-            
-        images_base64 = []
-        doc_ids = {c["document_id"] for c in chunks if "document_id" in c}
-        if doc_ids:
-            from app.routers.regions import _load_region_cache
-            for did in doc_ids:
-                cache = _load_region_cache(did)
-                for page_regions in cache.values():
-                    for r in page_regions:
-                        if r.get("crop_base64"):
-                            images_base64.append(r["crop_base64"])
-        images_base64 = images_base64[:2]  # Cerebras hard-limits image inputs to 2 per request
 
         cache_key = _cache.make_key("QUIZ_REQUEST", familiarity, anchor_id, [c["text"] for c in chunks], selection_text)
         cached = _cache.get(cache_key)
@@ -971,17 +946,16 @@ async def handle_event(session_id: str, event_type: str, data: Dict[str, Any]) -
                     q["source_chunk_text"] = "\n\n".join(c_texts)
             await _cm.send(session_id, "QUIZ_READY", cached)
         else:
-            result = _get_tutor().generate_quiz(label, chunks, familiarity, images_base64=images_base64)
+            result = _get_tutor().generate_quiz(label, chunks, familiarity)
             payload = result.model_dump()
-            
+
             doc_id = chunks[0].get("document_id") if chunks else None
             for q in payload["questions"]:
                 idxs = q.get("source_chunk_indexes", [])
                 c_texts = [chunks[i]["text"] for i in idxs if i < len(chunks)]
                 q["source_location"] = _resolve_chunk_location(doc_id, c_texts)
                 q["source_chunk_text"] = "\n\n".join(c_texts)
-                
-            payload["context_images"] = images_base64
+
             _cache.put(cache_key, payload)
             await _cm.send(session_id, "QUIZ_READY", payload)
 

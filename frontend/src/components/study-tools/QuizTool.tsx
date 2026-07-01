@@ -63,7 +63,7 @@ function shuffle<T>(arr: T[]): T[] {
 }
 
 export function QuizTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
-  const { quizQuestions, quizContextImages, setQuizQuestions } = useSessionStore()
+  const { quizQuestions, setQuizQuestions } = useSessionStore()
   const { setBlinkTarget } = useInteractionStore()
   const [qIndex, setQIndex] = useState(0)
   const [selected, setSelected] = useState<number | null>(null)
@@ -125,13 +125,6 @@ export function QuizTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, padding: 20 }}>
-      {quizContextImages && quizContextImages.length > 0 && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, borderBottom: "1px solid #E2E8F0" }}>
-          {quizContextImages.map((img, idx) => (
-            <img key={idx} src={`data:image/png;base64,${img}`} alt="Context" style={{ height: 100, borderRadius: 6, objectFit: "contain", border: "1px solid #E2E8F0", background: "#FFFFFF", padding: 4 }} />
-          ))}
-        </div>
-      )}
       <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{qIndex + 1} / {quizQuestions.length}</div>
       <h3 style={{ margin: "0 0 16px 0", color: "#1A3557", fontSize: 20, lineHeight: 1.4 }}>
         {parseText(currentQ.question, currentQ.source_location, currentQ.source_chunk_text, setBlinkTarget)}

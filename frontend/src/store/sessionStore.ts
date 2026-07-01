@@ -21,9 +21,7 @@ interface SessionStore {
   lesson: LessonPayload | null
   visual: HTML5VisualPayload | null
   flashcards: Flashcard[]
-  flashcardContextImages: string[]
   quizQuestions: MCQ[]
-  quizContextImages: string[]
   chatHistory: ChatMessage[]
   studyBuddyHistory: StudyBuddyMessage[]
   chatDraft: string
@@ -46,8 +44,8 @@ interface SessionStore {
   setActiveNode: (id: string, label: string) => void
   setLesson: (lesson: LessonPayload) => void
   setVisual: (visual: HTML5VisualPayload) => void
-  setFlashcards: (cards: Flashcard[], contextImages?: string[]) => void
-  setQuizQuestions: (qs: MCQ[], contextImages?: string[]) => void
+  setFlashcards: (cards: Flashcard[]) => void
+  setQuizQuestions: (qs: MCQ[]) => void
   appendLessonToken: (token: string) => void
   commitLesson: (visualSuggestion: string, webSources?: { title: string; url: string }[]) => void
   appendChatToken: (token: string) => void
@@ -75,9 +73,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
   lesson: null,
   visual: null,
   flashcards: [],
-  flashcardContextImages: [],
   quizQuestions: [],
-  quizContextImages: [],
   chatHistory: [],
   studyBuddyHistory: [],
   chatDraft: "",
@@ -109,9 +105,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       lesson: null,
       visual: null,
       flashcards: [],
-      flashcardContextImages: [],
       quizQuestions: [],
-      quizContextImages: [],
       chatHistory: [],
       studyBuddyHistory: [],
       chatDraft: "",
@@ -125,8 +119,8 @@ export const useSessionStore = create<SessionStore>((set) => ({
 
   setLesson: (lesson) => set({ lesson }),
   setVisual: (visual) => set({ visual }),
-  setFlashcards: (cards, contextImages) => set({ flashcards: cards, flashcardContextImages: contextImages || [] }),
-  setQuizQuestions: (qs, contextImages) => set({ quizQuestions: qs, quizContextImages: contextImages || [] }),
+  setFlashcards: (cards) => set({ flashcards: cards }),
+  setQuizQuestions: (qs) => set({ quizQuestions: qs }),
 
   appendLessonToken: (token) =>
     set((s) => ({ streamingLesson: s.streamingLesson + token, lessonStreaming: true })),
@@ -190,9 +184,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       lesson: null,
       visual: null,
       flashcards: [],
-      flashcardContextImages: [],
       quizQuestions: [],
-      quizContextImages: [],
       chatHistory: [],
       studyBuddyHistory: [],
       chatDraft: "",
@@ -214,9 +206,7 @@ export const useSessionStore = create<SessionStore>((set) => ({
       lesson: null,
       visual: null,
       flashcards: [],
-      flashcardContextImages: [],
       quizQuestions: [],
-      quizContextImages: [],
       chatHistory: [],
       studyBuddyHistory: [],
       chatDraft: "",

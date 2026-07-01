@@ -215,7 +215,7 @@ class TutorAgent:
     # ------------------------------------------------------------------ #
 
     def generate_flashcards(
-        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
+        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str
     ) -> _FlashcardsPayload:
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}" for i, c in enumerate(chunks)
@@ -229,9 +229,6 @@ class TutorAgent:
                 ),
             }
         ]
-        if images_base64:
-            for img in images_base64:
-                user_content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
 
         messages = [
             {
@@ -312,7 +309,7 @@ class TutorAgent:
         return _FlashcardsPayload(cards=good_cards[:10])
 
     def generate_quiz(
-        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str, images_base64: Optional[List[str]] = None
+        self, node_label: str, chunks: List[Dict[str, Any]], familiarity: str
     ) -> _QuizPayload:
         chunk_text = "\n\n".join(
             f"[Chunk {c.get('chunk_index', i)}]\n{c['text']}" for i, c in enumerate(chunks)
@@ -326,9 +323,6 @@ class TutorAgent:
                 ),
             }
         ]
-        if images_base64:
-            for img in images_base64:
-                user_content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img}"}})
 
         messages = [
             {

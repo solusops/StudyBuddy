@@ -64,7 +64,7 @@ const GRADES = [
 ]
 
 export function FlashcardTool({ sendEvent, nodeId, nodeLabel, familiarity }: Props) {
-  const { flashcards, flashcardContextImages, setFlashcards } = useSessionStore()
+  const { flashcards, setFlashcards } = useSessionStore()
   const { setBlinkTarget } = useInteractionStore()
   const [index, setIndex] = useState(0)
   const [flipped, setFlipped] = useState(false)
@@ -113,13 +113,6 @@ export function FlashcardTool({ sendEvent, nodeId, nodeLabel, familiarity }: Pro
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: 20 }}>
-      {flashcardContextImages && flashcardContextImages.length > 0 && (
-        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 8, width: "100%", justifyContent: "center" }}>
-          {flashcardContextImages.map((img, idx) => (
-            <img key={idx} src={`data:image/png;base64,${img}`} alt="Context" style={{ height: 100, borderRadius: 6, objectFit: "contain", border: "1px solid #E2E8F0", background: "#FFFFFF", padding: 4 }} />
-          ))}
-        </div>
-      )}
       <div style={{ fontSize: 13, color: "#64748B", fontWeight: 600 }}>{index + 1} / {flashcards.length}</div>
       <div
         onClick={() => setFlipped((f) => !f)}

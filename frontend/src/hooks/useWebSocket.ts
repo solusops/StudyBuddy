@@ -73,13 +73,13 @@ export function useWebSocket(sessionId: string | null) {
           setVisual(msg.data as unknown as Parameters<typeof setVisual>[0])
           break
         case "FLASHCARDS_READY": {
-          const payload = msg.data as { cards: Flashcard[], context_images?: string[] }
-          setFlashcards(payload.cards, payload.context_images)
+          const payload = msg.data as { cards: Flashcard[] }
+          setFlashcards(payload.cards)
           break
         }
         case "QUIZ_READY": {
-          const payload = msg.data as { questions: MCQ[], context_images?: string[] }
-          setQuizQuestions(payload.questions, payload.context_images)
+          const payload = msg.data as { questions: MCQ[] }
+          setQuizQuestions(payload.questions)
           break
         }
         case "CHAT_TOKEN":

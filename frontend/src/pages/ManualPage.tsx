@@ -21,7 +21,7 @@ interface Props {
 }
 
 export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Props) {
-  const { setGraph } = useGraphStore()
+  const { setGraph, nodes } = useGraphStore()
   const { setSession, activeNodeId, activeNodeLabel, setActiveNode, familiarity } = useSessionStore()
   const { documentId, setDocumentId } = useInteractionStore()
 
@@ -200,9 +200,10 @@ export function ManualPage({ session, sendEvent, onShowTree, onNeedSetup }: Prop
           Study Buddy
         </span>
 
-        {/* Document title */}
+        {/* Document title -> prefer the live-generated root node label over the raw
+            topic placeholder (which is "Study Session" whenever Topic was left blank) */}
         <span style={{ color: "#1A1A2E", fontSize: 15, fontWeight: 600, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {topic}
+          {nodes.find((n) => n.data.depth === 0)?.data.label || topic}
         </span>
 
         {/* Indexing badge */}
